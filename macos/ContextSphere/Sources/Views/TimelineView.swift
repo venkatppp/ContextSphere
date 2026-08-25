@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Chronological activity feed for a workspace, backed by the Rust
 /// timeline engine. Newest first, grouped by day, filtered by workspace
@@ -201,7 +202,11 @@ struct TimelineView: View {
                             event: event,
                             workspaceName: viewModel.workspaceName(for: event),
                             isLast: groupIndex == viewModel.groups.count - 1
-                                && eventIndex == group.events.count - 1)
+                                && eventIndex == group.events.count - 1,
+                            onOpen: { path in
+                                openFile(at: path)
+                            }
+                        )
                     }
                 }
                 if viewModel.hasMore {
@@ -234,14 +239,37 @@ struct TimelineView: View {
         .padding(.bottom, 8)
         .accessibilityLabel("\(group.label), \(group.events.count) events")
     }
+
+    private func openFile(at path: String) {
+        let url = URL(fileURLWithPath: path)
+        // NSWorkspace is the native macOS way; fallback to the Rust
+        // `open_file` RPC (which shells out to `open`) if the URL is not
+        // directly openable (e.g. stale path).
+        if NSWorkspace.shared.open(url) { return }
+        Task {
+            try? await CoreBridge.shared.call("open_file", params: ["path": path])
+        }
+    }
 }
 
 /// One timeline entry: type marker, human-readable description, artifact,
-/// workspace, and timestamp.
+/// workspace, and timestamp. File-backed events are tappable and vend a
+/// native macOS context menu (Open / Reveal / Copy).
 struct TimelineEventRow: View {
     let event: TimelineEvent
     let workspaceName: String?
     let isLast: Bool
+    var onOpen: ((String) -> Void)? = nil
+
+    private var primaryPath: String? {
+        event.metadata?.string("path")
+            ?? event.metadata?.string("to")
+            ?? event.metadata?.string("from")
+    }
+
+    private var isFileEvent: Bool {
+        primaryPath != nil
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -272,6 +300,12 @@ struct TimelineEventRow: View {
                     Text(event.occurredAtDate.formatted(date: .omitted, time: .shortened))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if isFileEvent {
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
                 if let artifact = event.artifactName {
                     Text(artifact)
@@ -298,11 +332,46 @@ struct TimelineEventRow: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.quaternary, lineWidth: 0.5)
+                    .strokeBorder(.separator, lineWidth: 0.5)
             )
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let path = primaryPath else { return }
+            onOpen?(path)
+        }
+        .contextMenu {
+            if let path = primaryPath {
+                Button {
+                    onOpen?(path)
+                } label: {
+                    Label("Open", systemImage: "arrow.up.forward.app")
+                }
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                } label: {
+                    Label("Reveal in Finder", systemImage: "folder")
+                }
+                Divider()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                } label: {
+                    Label("Copy Path", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(accessibilityText, forType: .string)
+            } label: {
+                Label("Copy Details", systemImage: "doc.text")
+            }
+        }
+        .help(isFileEvent ? "Click to open · Right-click for more actions" : "Timeline event")
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .accessibilityHint(isFileEvent ? "Double-click to open file, right-click for more actions" : "Timeline event")
+        .accessibilityAddTraits(isFileEvent ? .isButton : [])
     }
 
     private var accessibilityText: String {
