@@ -44,6 +44,13 @@ swiftc \
   Sources/SettingsViewModel.swift \
   Sources/MemoryViewModel.swift \
   Sources/LearningViewModel.swift \
+  Sources/Graph/GraphModel.swift \
+  Sources/Graph/GraphStyle.swift \
+  Sources/Graph/GraphFixture.swift \
+  Sources/Graph/GraphCamera.swift \
+  Sources/Graph/GraphRenderState.swift \
+  Sources/Graph/GraphLayoutEngine.swift \
+  Sources/Graph/GraphRenderer.swift \
   Sources/GraphLayout.swift \
   Sources/GraphViewModel.swift \
   Sources/Views/DashboardView.swift \

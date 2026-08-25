@@ -41,6 +41,21 @@ final class GraphViewModel: ObservableObject {
     @Published var showInspector = false
     @Published var edgeDensity: EdgeDensity = .all
 
+    // MARK: - Context field (prompt §6, §14)
+
+    /// Focus node for the "Context Field" — when set, the graph reorganizes
+    /// radially around it and unrelated regions are de-emphasized. `nil` =
+    /// global/clustered view.
+    @Published var contextFocusID: String?
+    @Published var isUsingFixture = false
+    /// Last layout pass duration in ms (for the debug overlay / benchmarks).
+    @Published private(set) var lastLayoutDurationMs: Double = 0
+
+    /// Adapter: current daemon data → visual model without DB migration (prompt §17).
+    var visualizationModel: GraphVisualizationModel {
+        GraphVisualizationModel.fromDaemon(nodes: nodes, edges: edges)
+    }
+
     // Search (graph_search)
     @Published var searchQuery = ""
     @Published private(set) var searchResults: [KgNode] = []
@@ -285,11 +300,34 @@ final class GraphViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Selection
+    // MARK: - Selection / Focus
 
     func selectNode(_ id: String?) {
         selectedNodeID = id
         if id != nil { showInspector = true }
+    }
+
+    /// Sets the Context Field focus. Triggers a radial relayout around the
+    /// node and animates the camera via the view's `focusNonce`.
+    func setContextFocus(_ id: String?) {
+        guard contextFocusID != id else { return }
+        contextFocusID = id
+        if let id {
+            focusedNodeID = id
+            selectedNodeID = id
+            showInspector = true
+            focusNonce += 1
+        }
+        relayout(anchorID: id ?? workspaceNodeID, incremental: false, focusID: id)
+    }
+
+    func clearContextFocus() {
+        contextFocusID = nil
+        relayout(anchorID: workspaceNodeID, incremental: false, focusID: nil)
+    }
+
+    func toggleContextFocus(_ id: String) {
+        if contextFocusID == id { clearContextFocus() } else { setContextFocus(id) }
     }
 
     // MARK: - Search (graph_search)
@@ -354,38 +392,98 @@ final class GraphViewModel: ObservableObject {
         pendingFocus = nil
     }
 
-    // MARK: - Layout
+        // MARK: - Layout
 
-    /// Recomputes layout positions; existing positions are preserved for
-    /// incremental expansion so the graph settles rather than jumping.
-    /// Runs on the main actor like the rest of the app — bounded by the
-    /// backend (≤ ~100 nodes per subgraph) and by `GraphLayout`'s
-    /// relaxation cap (400 nodes).
-    private func relayout(anchorID: String? = nil, incremental: Bool = false) {
+    /// Recomputes layout positions. Uses the hybrid `GraphLayoutEngine`
+    /// (cluster + force + radial focus) so the Context Field can
+    /// reorganize around a focal entity (prompt §6) without touching
+    /// the persistence layer.
+    private func relayout(anchorID: String? = nil, incremental: Bool = false, focusID: String? = nil) {
+        let effectiveFocus = focusID ?? contextFocusID
         layoutTask?.cancel()
-        let inputs = nodes.map { node in
-            GraphLayout.NodeInput(id: node.id,
-                                  nodeType: node.nodeType,
-                                  workspaceId: node.workspaceId,
-                                  entityId: node.entityId,
-                                  isWorkspace: node.nodeType == .workspace)
-        }
-        let edgeInputs = visibleEdges.map {
-            GraphLayout.EdgeInput(source: $0.sourceID, target: $0.targetID, weight: $0.weight)
-        }
+        let model = visualizationModel
+        let visible = visibleEdges
+        let nodesSnap = nodes
+        let edgesSnap = visible
         let existing = incremental ? positions : [:]
+        let start = CFAbsoluteTimeGetCurrent()
         layoutTask = Task {
-            let result = GraphLayout.layout(nodes: inputs, edges: edgeInputs,
-                                            existing: existing, anchorID: anchorID)
+            let result: [String: CGPoint]
+            if effectiveFocus != nil {
+                result = GraphLayoutEngine.layout(model: model, existing: existing,
+                                                  anchorID: anchorID, focusID: effectiveFocus)
+            } else {
+                let inputs = nodesSnap.map { node in
+                    GraphLayout.NodeInput(id: node.id, nodeType: node.nodeType,
+                                          workspaceId: node.workspaceId, entityId: node.entityId,
+                                          isWorkspace: node.nodeType == .workspace)
+                }
+                let edgeInputs = edgesSnap.map {
+                    GraphLayout.EdgeInput(source: $0.sourceID, target: $0.targetID, weight: $0.weight)
+                }
+                result = GraphLayout.layout(nodes: inputs, edges: edgeInputs,
+                                             existing: existing, anchorID: anchorID)
+            }
             guard !Task.isCancelled else { return }
-            positions = result
-            layoutGeneration += 1
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            self.lastLayoutDurationMs = elapsed
+            self.positions = result
+            self.layoutGeneration += 1
         }
     }
 
     /// Deterministic full relayout from scratch (reset button).
     func resetLayout() {
-        relayout(anchorID: workspaceNodeID)
+        if contextFocusID != nil {
+            clearContextFocus()
+        } else {
+            relayout(anchorID: workspaceNodeID)
+        }
+    }
+
+    // MARK: - Fixture & Benchmark (no DB, prompt §17–§18)
+
+    /// Loads the deterministic ContextSphere Development fixture (prompt §18)
+    /// into the view model without hitting the daemon — useful for previews,
+    /// layout benchmarking, and validating the Context Field without live data.
+    func loadFixture() {
+        loadTask?.cancel()
+        let (fnodes, fedges) = GraphFixture.contextSphereDevelopment()
+        registry.removeAll()
+        edgeSet.removeAll()
+        var newEdges: [KgEdge] = []
+        for n in fnodes { registry[n.id] = n }
+        for e in fedges where registry[e.sourceID] != nil && registry[e.targetID] != nil {
+            if edgeSet.insert(e.id).inserted { newEdges.append(e) }
+        }
+        edges = newEdges
+        nodes = Array(registry.values).sorted { ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title) }
+        state = .loaded
+        isUsingFixture = true
+        relayout(anchorID: nodes.first { $0.nodeType == .workspace }?.id)
+    }
+
+    /// Loads a synthetic graph of `count` nodes for performance testing (prompt §16).
+    func loadSyntheticFixture(count: Int) {
+        loadTask?.cancel()
+        let (snodes, sedges) = GraphFixture.synthetic(nodeCount: count)
+        registry.removeAll()
+        edgeSet.removeAll()
+        for n in snodes { registry[n.id] = n }
+        edges = sedges.filter { registry[$0.sourceID] != nil && registry[$0.targetID] != nil }
+        for e in edges { edgeSet.insert(e.id) }
+        nodes = Array(registry.values).sorted { $0.title < $1.title }
+        state = .loaded
+        isUsingFixture = true
+        relayout(anchorID: snodes.first?.id)
+    }
+
+    /// Returns layout timing for the current graph (ms). Used by the debug overlay.
+    func benchmarkLayout() -> Double {
+        let model = visualizationModel
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = GraphLayoutEngine.layout(model: model, existing: [:], anchorID: nil, focusID: nil)
+        return (CFAbsoluteTimeGetCurrent() - start) * 1000
     }
 
     // MARK: - Node presentation
