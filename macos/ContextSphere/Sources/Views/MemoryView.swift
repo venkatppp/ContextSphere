@@ -139,23 +139,22 @@ struct MemoryView: View {
     // MARK: - Overview
 
     private var overview: some View {
-        HStack(alignment: .top, spacing: 20) {
-            statTiles
-            healthGauges
+        HStack(alignment: .top, spacing: 16) {
+            ContentCard(cornerRadius: Theme.cornerLarge) {
+                statTiles
+            }
+            ContentCard(cornerRadius: Theme.cornerLarge) {
+                healthGauges
+            }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     private var statTiles: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Overview", symbol: "brain.head.profile")
             let stats = viewModel.stats
-            HStack(alignment: .top, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
+                      spacing: 14) {
                 statTile(value: stats?.totalRecords, label: "Learned items")
                 statTile(value: stats?.successful, label: "Succeeded")
                 statTile(value: stats?.failed, label: "Failed")
@@ -167,20 +166,23 @@ struct MemoryView: View {
     }
 
     private func statTile(value: Int?, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(value.map(String.init) ?? "—")
-                .font(.title2.weight(.semibold).monospacedDigit())
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(.primary)
             Text(label)
-                .font(.caption)
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.3)
         }
-        .frame(minWidth: 72, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label): \(value.map(String.init) ?? "unknown")")
     }
 
     private var healthGauges: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Learning health", symbol: "waveform.path.ecg")
             if let health = viewModel.health, health.confidenceAverage > 0 {
                 confidenceGauge(label: "Average confidence",
@@ -201,25 +203,32 @@ struct MemoryView: View {
                 Text("No learning signals yet — confidence builds with each remembered run.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func confidenceGauge(label: String, value: Double, help: String) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 150, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
+                    .lineLimit(1)
+                Spacer()
+                Text(value.percentString)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .accessibilityLabel("\(label): \(value.percentString)")
+            }
             ProgressView(value: value)
+                .tint(value >= 0.7 ? .green : value >= 0.4 ? .orange : .red)
+                .scaleEffect(x: 1, y: 1.1, anchor: .center)
                 .accessibilityLabel(label)
                 .help(help)
-            Text(value.percentString)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 42, alignment: .trailing)
-                .accessibilityLabel("\(label): \(value.percentString)")
         }
     }
 
@@ -410,104 +419,96 @@ struct MemoryView: View {
     }
 
     private var indexPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Vector index").font(.callout.weight(.semibold))
-            if let index = viewModel.indexStatus {
-                infoRow(label: "Provider", value: index.provider.isEmpty ? "none" : index.provider)
-                if index.dimensions > 0 {
-                    infoRow(label: "Dimensions", value: "\(index.dimensions)")
-                }
-                infoRow(label: "Indexed", value: "\(index.indexed) / \(index.totalRecords)")
-                if index.cacheHits + index.cacheMisses > 0 {
-                    infoRow(label: "Cache hit rate", value: index.cacheHitRate.percentString)
-                }
-            } else {
-                Text("No index information.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Button {
-                Task { await viewModel.reindex() }
-            } label: {
-                if viewModel.reindexRunning {
-                    ProgressView().controlSize(.small)
+        ContentCard(cornerRadius: Theme.cornerRegular) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Vector index", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                    .font(.callout.weight(.semibold))
+                if let index = viewModel.indexStatus {
+                    infoRow(label: "Provider", value: index.provider.isEmpty ? "none" : index.provider)
+                    if index.dimensions > 0 {
+                        infoRow(label: "Dimensions", value: "\(index.dimensions)")
+                    }
+                    infoRow(label: "Indexed", value: "\(index.indexed) / \(index.totalRecords)")
+                    if index.cacheHits + index.cacheMisses > 0 {
+                        infoRow(label: "Cache hit rate", value: index.cacheHitRate.percentString)
+                    }
                 } else {
-                    Label("Reindex", systemImage: "arrow.triangle.2.circlepath")
+                    Text("No index information.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Button {
+                    Task { await viewModel.reindex() }
+                } label: {
+                    if viewModel.reindexRunning {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Reindex", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.reindexRunning)
+                .help("Rebuild the memory vector index")
+                .accessibilityLabel("Reindex memory")
+                if let result = viewModel.reindexResult {
+                    Text("Indexed \(result.indexed) of \(result.requested) (\(result.failed) failed)")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Reindex finished: \(result.indexed) of \(result.requested)")
                 }
             }
-            .buttonStyle(.borderless)
-            .disabled(viewModel.reindexRunning)
-            .help("Rebuild the memory vector index")
-            .accessibilityLabel("Reindex memory")
-            if let result = viewModel.reindexResult {
-                Text("Indexed \(result.indexed) of \(result.requested) (\(result.failed) failed)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .accessibilityLabel("Reindex finished: \(result.indexed) of \(result.requested)")
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     private var storagePanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Storage").font(.callout.weight(.semibold))
-            if let storage = viewModel.storage {
-                infoRow(label: "Database", value: byteString(storage.databaseSizeBytes))
-                infoRow(label: "Vectors", value: byteString(storage.vectorIndexSizeBytes))
-                infoRow(label: "Permanent", value: "\(storage.permanentMemories)")
-                infoRow(label: "Archived", value: "\(storage.archivedMemories)")
-                infoRow(label: "Expired", value: "\(storage.expiredMemories)")
-            } else {
-                Text("No storage information.")
-                    .font(.callout).foregroundStyle(.secondary)
+        ContentCard(cornerRadius: Theme.cornerRegular) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Storage", systemImage: "internaldrive")
+                    .font(.callout.weight(.semibold))
+                if let storage = viewModel.storage {
+                    infoRow(label: "Database", value: byteString(storage.databaseSizeBytes))
+                    infoRow(label: "Vectors", value: byteString(storage.vectorIndexSizeBytes))
+                    infoRow(label: "Permanent", value: "\(storage.permanentMemories)")
+                    infoRow(label: "Archived", value: "\(storage.archivedMemories)")
+                    infoRow(label: "Expired", value: "\(storage.expiredMemories)")
+                } else {
+                    Text("No storage information.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     private var lifecyclePanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Lifecycle").font(.callout.weight(.semibold))
-            Text("Expired memories are removed on the next cleanup pass.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button {
-                Task { await viewModel.runCleanup() }
-            } label: {
-                if viewModel.cleanupRunning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Clean up now", systemImage: "sparkles")
+        ContentCard(cornerRadius: Theme.cornerRegular) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Lifecycle", systemImage: "clock.arrow.circlepath")
+                    .font(.callout.weight(.semibold))
+                Text("Expired memories are removed on the next cleanup pass.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    Task { await viewModel.runCleanup() }
+                } label: {
+                    if viewModel.cleanupRunning {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Clean up now", systemImage: "sparkles")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.cleanupRunning)
+                .help("Run one cleanup pass now")
+                .accessibilityLabel("Run memory cleanup now")
+                if let report = viewModel.cleanupReport {
+                    Text("Removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Cleanup result: removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
                 }
             }
-            .buttonStyle(.borderless)
-            .disabled(viewModel.cleanupRunning)
-            .help("Run one cleanup pass now")
-            .accessibilityLabel("Run memory cleanup now")
-            if let report = viewModel.cleanupReport {
-                Text("Removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .accessibilityLabel("Cleanup result: removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     private func infoRow(label: String, value: String) -> some View {
