@@ -95,6 +95,7 @@ final class AppRouter: ObservableObject {
     @Published var showCommandPalette = false
     @Published var newWorkspaceRequest = false
     @Published var revealWorkspaceRequest: String?
+    @Published var reloadRequest = false
 
     private init() {}
 }
@@ -154,10 +155,11 @@ struct AppShell: View {
             }
             CoreBridge.shared.start()
             await loadWorkspaces()
-            timeline.setWorkspaces(workspaces)
-            search.setWorkspaces(workspaces)
-            graph.setWorkspaces(workspaces)
-            memory.setWorkspaces(workspaces)
+        }
+        .onChange(of: router.reloadRequest) { _, requested in
+            guard requested else { return }
+            router.reloadRequest = false
+            Task { await loadWorkspaces() }
         }
     }
 
@@ -219,12 +221,25 @@ struct AppShell: View {
 
     private func loadWorkspaces() async {
         do {
-            workspaces = try await CoreBridge.shared.request(
+            async let active: [Workspace] = CoreBridge.shared.request(
                 "list_active_workspaces", as: [Workspace].self)
+            async let archived: [Workspace] = CoreBridge.shared.request(
+                "list_archived_workspaces", as: [Workspace].self)
+            let (a, b) = try await (active, archived)
+            workspaces = (a + b).sorted { $0.lastActiveAt > $1.lastActiveAt }
+            // Propagate to view models that cache workspace names
+            timeline.setWorkspaces(workspaces)
+            search.setWorkspaces(workspaces)
+            graph.setWorkspaces(workspaces)
+            memory.setWorkspaces(workspaces)
             loaded = true
         } catch {
             loadFailed = error.localizedDescription
         }
+    }
+
+    func reloadWorkspaces() {
+        Task { await loadWorkspaces() }
     }
 }
 
@@ -289,7 +304,7 @@ struct DetailHost: View {
     private var content: some View {
         switch section {
         case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace)
-        case .workspaces: WorkspacesView(workspaces: workspaces)
+        case .workspaces: WorkspacesView(workspaces: workspaces, onWorkspacesChanged: { AppRouter.shared.reloadRequest = true })
         case .timeline: TimelineView(viewModel: timeline)
         case .graph: GraphScreen(viewModel: graph)
         case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)

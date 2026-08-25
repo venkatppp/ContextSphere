@@ -24,7 +24,7 @@ struct Workspace: Decodable, Identifiable, Hashable {
     let updatedAt: String
 }
 
-enum WorkspaceStatus: String, Decodable {
+enum WorkspaceStatus: String, Codable {
     case active, archived, pending
 }
 
@@ -36,8 +36,8 @@ struct CreateWorkspaceInput: Encodable {
 
 struct UpdateWorkspaceInput: Encodable {
     let name: String?
-    let rootPath: String?
     let description: String?
+    let status: WorkspaceStatus?
 }
 
 // MARK: - Timeline

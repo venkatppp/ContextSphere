@@ -1,0 +1,276 @@
+import SwiftUI
+import AppKit
+
+struct CreateWorkspaceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedField: Field?
+    @State private var name = ""
+    @State private var rootPath = ""
+    @State private var description = ""
+    @State private var error: String?
+    @State private var working = false
+    var onCreated: ((Workspace) -> Void)? = nil
+
+    private enum Field { case name, path, description }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            form
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Error: \(error)")
+            }
+            actions
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onAppear { focusedField = .name }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("New Workspace")
+                .font(.title3.weight(.semibold))
+            Text("A workspace is a context boundary — ContextSphere learns the files, rhythms, and relationships inside it.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name")
+                    .font(.callout.weight(.medium))
+                TextField("My Project", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+                    .onSubmit { focusedField = .path }
+                    .accessibilityLabel("Workspace name")
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Root path")
+                        .font(.callout.weight(.medium))
+                    Text("optional")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.quaternary.opacity(0.4), in: Capsule())
+                }
+                HStack(spacing: 8) {
+                    TextField("/path/to/project", text: $rootPath)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .path)
+                        .onSubmit { focusedField = .description }
+                        .help("Absolute path to the directory this workspace represents")
+                        .accessibilityLabel("Workspace root path")
+                    Button("Browse…") { choosePath() }
+                        .help("Choose a folder")
+                        .accessibilityLabel("Browse for workspace folder")
+                }
+                Text("Leave empty to create a workspace without a directory.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Description")
+                        .font(.callout.weight(.medium))
+                    Text("optional")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.quaternary.opacity(0.4), in: Capsule())
+                }
+                TextField("What is this workspace for?", text: $description, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...4)
+                    .focused($focusedField, equals: .description)
+                    .accessibilityLabel("Workspace description")
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack {
+            Spacer()
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Cancel creating workspace")
+            Button {
+                Task { await create() }
+            } label: {
+                if working {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Create")
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+            .disabled(trimmedName.isEmpty || working)
+            .accessibilityLabel("Create workspace")
+        }
+    }
+
+    private func choosePath() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            rootPath = url.path
+        }
+    }
+
+    private func create() async {
+        working = true
+        defer { working = false }
+        do {
+            let params: [String: Any] = [
+                "name": trimmedName,
+                "rootPath": rootPath.trimmingCharacters(in: .whitespaces).isEmpty ? NSNull() : rootPath,
+                "description": description.trimmingCharacters(in: .whitespaces).isEmpty ? NSNull() : description,
+            ]
+            let ws: Workspace = try await CoreBridge.shared.request(
+                "create_workspace", params: params, as: Workspace.self)
+            onCreated?(ws)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+struct EditWorkspaceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedField: Field?
+    let workspace: Workspace
+    var onSaved: ((Workspace) -> Void)? = nil
+
+    @State private var name: String = ""
+    @State private var description: String = ""
+    @State private var error: String?
+    @State private var working = false
+
+    private enum Field { case name, description }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Rename Workspace")
+                    .font(.title3.weight(.semibold))
+                Text("Update the name or description for “\(workspace.name)”.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Name")
+                        .font(.callout.weight(.medium))
+                    TextField("My Project", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .name)
+                        .accessibilityLabel("Workspace name")
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text("Description")
+                            .font(.callout.weight(.medium))
+                        Text("optional")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(.quaternary.opacity(0.4), in: Capsule())
+                    }
+                    TextField("What is this workspace for?", text: $description, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...4)
+                        .focused($focusedField, equals: .description)
+                        .accessibilityLabel("Workspace description")
+                }
+                if let path = workspace.rootPath, !path.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Root path")
+                            .font(.callout.weight(.medium))
+                        Text(path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Error: \(error)")
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button {
+                    Task { await save() }
+                } label: {
+                    if working {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedName.isEmpty || working)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onAppear {
+            name = workspace.name
+            description = workspace.description ?? ""
+            focusedField = .name
+        }
+    }
+
+    private func save() async {
+        working = true
+        defer { working = false }
+        do {
+            var input: [String: Any] = ["name": trimmedName]
+            let trimmedDesc = description.trimmingCharacters(in: .whitespaces)
+            input["description"] = trimmedDesc.isEmpty ? NSNull() : trimmedDesc
+            let updated: Workspace = try await CoreBridge.shared.request(
+                "update_workspace",
+                params: ["id": workspace.id, "input": input],
+                as: Workspace.self)
+            onSaved?(updated)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}

@@ -49,6 +49,9 @@ swiftc \
   Sources/Views/DashboardView.swift \
   Sources/Views/TimelineView.swift \
   Sources/Views/WorkspacesView.swift \
+  Sources/Views/WorkspaceListRow.swift \
+  Sources/Views/WorkspaceDetailView.swift \
+  Sources/Views/WorkspaceSheets.swift \
   Sources/Views/SearchView.swift \
   Sources/Views/GraphView.swift \
   Sources/Views/GraphInspectorView.swift \
