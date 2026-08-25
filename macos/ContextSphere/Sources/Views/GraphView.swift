@@ -352,14 +352,15 @@ struct GraphScreen: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(width: 300)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
 
             if let error = viewModel.searchError {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
                     .frame(width: 300, alignment: .leading)
                     .accessibilityLabel("Search error: \(error)")
             }
@@ -372,7 +373,7 @@ struct GraphScreen: View {
 
     private var searchResultsList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(viewModel.searchResults) { node in
                     Button {
                         viewModel.focusSearchResult(node)
@@ -385,11 +386,12 @@ struct GraphScreen: View {
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(node.title)
-                                    .font(.callout)
+                                    .font(.callout.weight(.medium))
                                     .lineLimit(1)
+                                    .foregroundStyle(.primary)
                                 HStack(spacing: 6) {
                                     Text(node.nodeType.title)
-                                        .font(.caption2)
+                                        .font(.caption2.weight(.medium))
                                         .foregroundStyle(.secondary)
                                     if let workspace = viewModel.workspaceName(for: node) {
                                         Text(workspace)
@@ -402,7 +404,7 @@ struct GraphScreen: View {
                             Spacer(minLength: 4)
                         }
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 7)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -414,9 +416,9 @@ struct GraphScreen: View {
         }
         .frame(width: 300)
         .frame(maxHeight: 320)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(.quaternary, lineWidth: 0.5))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            .strokeBorder(.separator, lineWidth: 0.5))
         .accessibilityLabel("Graph search results")
     }
 
@@ -455,13 +457,14 @@ struct GraphScreen: View {
             }
         }
         .padding(6)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
     }
 
     private func glassControlButton(_ symbol: String, help: String,
-                                    action: @escaping () -> Void) -> some View {
+                                     action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
@@ -522,19 +525,13 @@ struct GraphScreen: View {
     private var stateOverlay: some View {
         switch viewModel.state {
         case .idle, .loading:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Loading context graph…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background.opacity(0.4))
-            .accessibilityElement(children: .combine)
+            LoadingView(label: "Loading context graph…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background.opacity(0.35))
         case .failed(let message):
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 30))
+                    .font(.system(size: 32))
                     .foregroundStyle(.orange)
                 Text("Graph unavailable")
                     .font(.title3.weight(.semibold))
@@ -542,32 +539,25 @@ struct GraphScreen: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
+                    .frame(maxWidth: 420)
                 Button("Retry") {
                     viewModel.retry()
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .accessibilityLabel("Retry loading the graph")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background.opacity(0.4))
+            .background(.background.opacity(0.45))
+            .accessibilityElement(children: .combine)
         case .loaded:
             if viewModel.nodes.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 30))
-                        .foregroundStyle(.tertiary)
-                    Text("No graph data yet")
-                        .font(.title3.weight(.semibold))
-                    Text("ContextSphere builds the graph from your workspaces and files. Search the graph or switch context to start exploring.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 380)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(
+                    title: "No graph data yet",
+                    message: "ContextSphere builds the graph from your workspaces and files. Switch workspace context or search to start exploring.",
+                    symbol: "point.3.connected.trianglepath.dotted"
+                )
                 .background(.background.opacity(0.3))
-                .accessibilityElement(children: .combine)
             }
         }
     }

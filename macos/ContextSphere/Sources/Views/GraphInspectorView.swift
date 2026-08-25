@@ -31,8 +31,8 @@ struct GraphInspectorView: View {
     }
 
     private var header: some View {
-        HStack {
-            Text("Inspector")
+        HStack(spacing: 8) {
+            Label("Inspector", systemImage: "sidebar.right")
                 .font(.headline)
             Spacer()
             Button {
@@ -41,6 +41,7 @@ struct GraphInspectorView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 22, height: 22)
+                    .background(.quaternary.opacity(0.4), in: Circle())
             }
             .buttonStyle(.plain)
             .help("Close inspector")
@@ -98,51 +99,60 @@ struct GraphInspectorView: View {
 
     @ViewBuilder
     private func metadataBlock(_ metadata: [String: JSONValue]) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(metadata.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                HStack(alignment: .top, spacing: 6) {
-                    Text(key)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 86, alignment: .leading)
-                        .accessibilityLabel("\(key)")
-                    Text(metadataString(value))
-                        .font(.caption2)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                        .accessibilityLabel("\(key): \(metadataString(value))")
+        ContentCard(cornerRadius: Theme.cornerSmall) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Details", systemImage: "info.circle")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.3)
+                ForEach(metadata.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(key)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 88, alignment: .leading)
+                            .accessibilityLabel("\(key)")
+                        Text(metadataString(value))
+                            .font(.caption2)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                            .accessibilityLabel("\(key): \(metadataString(value))")
+                    }
                 }
             }
         }
-        .padding(8)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func relationshipSection(_ node: KgNode) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Relationships")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Relationships")
-let breakdown = viewModel.relationshipBreakdown(for: node.id)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Relationships", symbol: "point.3.connected.trianglepath.dotted")
+            let breakdown = viewModel.relationshipBreakdown(for: node.id)
             if breakdown.isEmpty {
-                Text("No relationships")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Text("No relationships — expand to discover more.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     .accessibilityLabel("No relationships")
             } else {
-                ForEach(breakdown, id: \.type) { row in
-                    HStack {
-                        Text(row.type.title)
-                            .font(.caption)
-                            .accessibilityLabel(row.type.title)
-                        Spacer()
-                        Text("\(row.count)")
-                            .font(.caption.weight(.medium))
-                            .monospacedDigit()
-                            .foregroundStyle(row.type.color)
-                            .accessibilityLabel("\(row.count) relationships")
+                ContentCard(cornerRadius: Theme.cornerSmall) {
+                    VStack(spacing: 6) {
+                        ForEach(breakdown, id: \.type) { row in
+                            HStack {
+                                Label(row.type.title, systemImage: row.type.color == .gray ? "link" : "arrow.triangle.branch")
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                                    .accessibilityLabel(row.type.title)
+                                Spacer()
+                                Text("\(row.count)")
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(row.type.color)
+                                    .accessibilityLabel("\(row.count) relationships")
+                            }
+                            if row.type != breakdown.last?.type {
+                                Divider().opacity(0.4)
+                            }
+                        }
                     }
                 }
             }
