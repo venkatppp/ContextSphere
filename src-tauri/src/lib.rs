@@ -1149,7 +1149,7 @@ pub fn run() {
             commands::conversation::copilot_export_conversation_json,
             commands::conversation::copilot_export_conversation_markdown,
         ])
-        .build(tauri::generate_context!())
+        .build(tauri::generate_context!("tauri.core.conf.json"))
         .expect("error while building ContextSphere")
         .run(|app_handle, event| {
             // RC-10 M2: record the clean-shutdown checkpoint on exit so
