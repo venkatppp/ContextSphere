@@ -75,7 +75,6 @@ struct SettingsView: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                header
                 categoryPicker
                 categoryContent
             }
@@ -83,12 +82,19 @@ struct SettingsView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .top)
         }
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .safeAreaInset(edge: .top, spacing: 8) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
     }
 
     private var header: some View {
         ScreenHeader("Settings",
-                     subtitle: "Configuration, persisted by the ContextSphere core daemon.",
-                     symbol: "gearshape")
+                     subtitle: "Configuration for \(category.title.lowercased()) · persisted by the core daemon.",
+                     symbol: category.symbol)
     }
 
     private var categoryPicker: some View {
@@ -99,6 +105,7 @@ struct SettingsView: View {
         }
         .pickerStyle(.segmented)
         .accessibilityLabel("Settings category")
+        .padding(.horizontal, 2)
     }
 
     private var errorState: some View {
