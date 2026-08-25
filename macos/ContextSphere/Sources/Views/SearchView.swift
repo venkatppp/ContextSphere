@@ -19,12 +19,12 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
                 searchField
                 if let notice = viewModel.notice {
                     Text(notice)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
                         .accessibilityLabel(notice)
                 }
                 content
@@ -35,6 +35,12 @@ struct SearchView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .safeAreaInset(edge: .top, spacing: 8) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
         .task { await viewModel.loadInitialData() }
         .onChange(of: viewModel.state) { _, newState in
             if newState == .loaded {
@@ -156,17 +162,16 @@ struct SearchView: View {
     }
 
     private var recentSearchesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Recent Searches", systemImage: "clock.arrow.circlepath")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionHeader(title: "Recent", symbol: "clock.arrow.circlepath")
                 Spacer()
                 if !viewModel.history.isEmpty {
                     Button("Clear") {
                         Task { await viewModel.clearHistory() }
                     }
                     .buttonStyle(.link)
-                    .font(.callout)
+                    .font(.caption)
                     .help("Clear search history on the backend")
                     .accessibilityLabel("Clear search history")
                 }
@@ -180,45 +185,56 @@ struct SearchView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "clock")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.secondary)
                                     .accessibilityHidden(true)
                                 Text(item)
                                     .font(.callout)
                                     .lineLimit(1)
+                                    .foregroundStyle(.primary)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
                             .background(.regularMaterial,
                                         in: Capsule())
-                            .overlay(Capsule().strokeBorder(.quaternary, lineWidth: 0.5))
+                            .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
                         }
                         .buttonStyle(.plain)
                         .help("Run search: \(item)")
                         .accessibilityLabel("Run recent search: \(item)")
                     }
                 }
+            } else {
+                Text("No recent searches — your history appears here after you search.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var savedSearchesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if !viewModel.savedSearches.isEmpty {
-                Label("Saved Searches", systemImage: "bookmark")
-                    .font(.headline)
+                SectionHeader(title: "Saved", symbol: "bookmark")
+            }
+            if viewModel.savedSearches.isEmpty {
+                Text("Save a search with the bookmark button to reuse it quickly.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             ForEach(viewModel.savedSearches) { saved in
                 HStack(spacing: 10) {
                     Image(systemName: "bookmark.fill")
+                        .font(.system(size: 11))
                         .foregroundStyle(.tint)
                         .accessibilityHidden(true)
                     Button {
                         viewModel.runQuery(saved.query)
                     } label: {
                         Text(saved.query)
-                            .font(.callout)
+                            .font(.callout.weight(.medium))
                             .lineLimit(1)
+                            .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .help("Run saved search: \(saved.query)")
@@ -231,18 +247,18 @@ struct SearchView: View {
                     Button {
                         Task { await viewModel.deleteSavedSearch(saved.id) }
                     } label: {
-                        Image(systemName: "trash")
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
                     .help("Delete saved search")
                     .accessibilityLabel("Delete saved search: \(saved.query)")
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.vertical, 9)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(.quaternary, lineWidth: 0.5))
+                    .strokeBorder(.separator, lineWidth: 0.5))
             }
         }
     }
@@ -310,11 +326,12 @@ struct SearchView: View {
     // MARK: - Results
 
     private var resultsList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("\(viewModel.results.count) result\(viewModel.results.count == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .accessibilityLabel("\(viewModel.results.count) results")
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(
+                title: "Results",
+                subtitle: "\(viewModel.results.count)",
+                symbol: "magnifyingglass"
+            )
             LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(viewModel.results) { result in
                     SearchResultRow(
