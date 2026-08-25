@@ -100,6 +100,10 @@ final class AppRouter: ObservableObject {
     private init() {}
 }
 
+extension Notification.Name {
+    static let workspacesDidChange = Notification.Name("workspacesDidChange")
+}
+
 // MARK: - App shell
 
 struct AppShell: View {
@@ -112,6 +116,7 @@ struct AppShell: View {
     @StateObject private var graph = GraphViewModel()
     @StateObject private var memory = MemoryViewModel()
     @StateObject private var learning = LearningViewModel()
+    @State private var workspaceReloadTask: Task<Void, Never>?
 
     var body: some View {
         NavigationSplitView {
@@ -150,11 +155,26 @@ struct AppShell: View {
         }
         .task {
             CoreBridge.shared.onEvent = { event, payload in
+                // Existing timeline/search live updates
                 timeline.handle(event: event, payload: payload)
                 search.handle(event: event, payload: payload)
+                // Workspace live events — debounced reload to avoid storms
+                if event.hasPrefix("workspace:") {
+                    Task { @MainActor in
+                        NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
+                    }
+                }
             }
             CoreBridge.shared.start()
             await loadWorkspaces()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workspacesDidChange)) { _ in
+            workspaceReloadTask?.cancel()
+            workspaceReloadTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s debounce
+                guard !Task.isCancelled else { return }
+                await loadWorkspaces()
+            }
         }
         .onChange(of: router.reloadRequest) { _, requested in
             guard requested else { return }

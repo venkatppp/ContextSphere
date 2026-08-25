@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// ContextSphere's flagship screen. Communicates:
 /// - "What am I working on?"   → current workspace hero + resume context
@@ -359,22 +360,61 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(files) { file in
-                HStack(spacing: 8) {
-                    Image(systemName: "doc")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14)
-                    Text((file.filePath as NSString).lastPathComponent)
-                        .font(.callout)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(file.confidence.percentString)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                Button {
+                    openPredictedFile(file.filePath)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                        Text((file.filePath as NSString).lastPathComponent)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(file.confidence.percentString)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(file.filePath)
+                .contextMenu {
+                    Button {
+                        openPredictedFile(file.filePath)
+                    } label: {
+                        Label("Open", systemImage: "arrow.up.forward.app")
+                    }
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file.filePath)])
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    Divider()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(file.filePath, forType: .string)
+                    } label: {
+                        Label("Copy Path", systemImage: "doc.on.doc")
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(file.filePath), \(file.confidence.percentString) confidence")
+                .accessibilityHint("Opens the predicted file")
             }
+        }
+    }
+
+    private func openPredictedFile(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        if NSWorkspace.shared.open(url) { return }
+        Task {
+            try? await CoreBridge.shared.call("open_file", params: ["path": path])
         }
     }
 
