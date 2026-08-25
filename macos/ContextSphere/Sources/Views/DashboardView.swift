@@ -6,13 +6,14 @@ import SwiftUI
 /// - "What changed?"           → recent context (activity + open files)
 /// - "Is everything healthy?"  → compact system health strip
 ///
-/// Glass is used only for the floating hero chrome; the information
-/// panels stay on calm native material.
+/// The information layer uses calm native material. Glass is reserved for
+/// the hero chrome and interactive controls only.
 struct DashboardView: View {
     let workspaces: [Workspace]
     let onRevealWorkspace: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var activity: [TimelineEvent] = []
     @State private var health: RuntimeHealth?
     @State private var predictions: PredictionsSummary?
@@ -25,65 +26,8 @@ struct DashboardView: View {
         self.onRevealWorkspace = onRevealWorkspace
     }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                ScreenHeader("ContextSphere",
-                             subtitle: subtitle,
-                             symbol: "scope") {
-                    Button {
-                        Task { await load() }
-                    } label: {
-                        if loading {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(loading)
-                    .help("Refresh dashboard data")
-                    .accessibilityLabel("Refresh dashboard")
-                }
-
-                if workspaces.isEmpty {
-                    emptyWorkspaces
-                } else {
-                    hero
-                    intelligenceRow
-                    systemHealth
-                }
-            }
-            .frame(maxWidth: Theme.contentMaxWidth)
-            .padding(24)
-            .frame(maxWidth: .infinity)
-        }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
-        .task(id: workspaces.first?.id) {
-            await load()
-        }
-    }
-
-    // MARK: - Header
-
     private var currentWorkspace: Workspace? {
         workspaces.first { $0.status == .active } ?? workspaces.first
-    }
-
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        default: return "Good evening"
-        }
-    }
-
-    private var subtitle: String {
-        if let workspace = currentWorkspace {
-            return "\(greeting). You're working in \(workspace.name)."
-        }
-        return "\(greeting). No active workspace yet."
     }
 
     private var emptyWorkspaces: some View {
@@ -102,6 +46,78 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
         .accessibilityElement(children: .combine)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+                if workspaces.isEmpty {
+                    emptyWorkspaces
+                } else {
+                    hero
+                    intelligenceRow
+                    systemHealth
+                }
+            }
+            .frame(maxWidth: Theme.contentMaxWidth)
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .task(id: workspaces.first?.id) {
+            await load()
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
+                    Image(systemName: "scope")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
+                    Text("ContextSphere")
+                        .font(.system(size: 28, weight: .semibold))
+                        .tracking(-0.4)
+                        .accessibilityLabel("ContextSphere")
+                }
+                if let workspace = currentWorkspace {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(.tint)
+                            .font(.caption)
+                        Text(workspace.name)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+            Spacer()
+            refreshControl
+        }
+        .padding(.horizontal, 8)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.bottom, 4)
+    }
+
+    private var refreshControl: some View {
+        Button {
+            Task { await load() }
+        } label: {
+            if loading {
+                ProgressView().controlSize(.small)
+            } else {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Refresh dashboard data")
+        .accessibilityLabel("Refresh dashboard")
     }
 
     // MARK: - Hero

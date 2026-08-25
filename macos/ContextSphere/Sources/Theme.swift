@@ -17,9 +17,9 @@ enum Theme {
     /// Max width for reading columns on wide windows.
     static let contentMaxWidth: CGFloat = 1120
 
-    static let cornerSmall: CGFloat = 8
-    static let cornerRegular: CGFloat = 12
-    static let cornerLarge: CGFloat = 16
+    static let cornerSmall: CGFloat = 6
+    static let cornerRegular: CGFloat = 10
+    static let cornerLarge: CGFloat = 12
 
     /// Standard spring used for selection, expansion and materialization.
     /// Callers that already read `accessibilityReduceMotion` should prefer
@@ -39,12 +39,15 @@ enum Theme {
 struct ContentBackdrop: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            if reduceTransparency {
-                Color(nsColor: .windowBackgroundColor)
-            } else {
+        if reduceMotion {
+            Color(nsColor: .windowBackgroundColor)
+        } else if reduceTransparency {
+            Color(nsColor: .windowBackgroundColor)
+        } else {
+            ZStack {
                 LinearGradient(
                     colors: scheme == .dark
                         ? [Color(red: 0.085, green: 0.090, blue: 0.115),
@@ -63,8 +66,8 @@ struct ContentBackdrop: View {
                     )
                 }
             }
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea()
     }
 }
 
@@ -99,7 +102,7 @@ struct GlassSection<Content: View>: View {
         content
             .padding(18)
             .glassEffect(
-                interactive ? Glass.regular.tint(tint).interactive() : Glass.regular.tint(tint),
+                interactive ? Glass.regular.interactive() : Glass.regular,
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
     }

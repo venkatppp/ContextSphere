@@ -5,7 +5,7 @@ import SwiftUI
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case dashboard, workspaces, timeline
     case graph, search, memory, learning
-    case performance, recovery, maintenance, settings
+    case maintenance, settings
 
     var id: String { rawValue }
 
@@ -13,7 +13,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .dashboard, .workspaces, .timeline: .workspace
         case .graph, .search, .memory, .learning: .intelligence
-        case .performance, .recovery, .maintenance, .settings: .system
+        case .maintenance, .settings: .system
         }
     }
 
@@ -26,8 +26,6 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "Search"
         case .memory: "Memory"
         case .learning: "Learning"
-        case .performance: "Performance"
-        case .recovery: "Recovery"
         case .maintenance: "Maintenance"
         case .settings: "Settings"
         }
@@ -42,8 +40,6 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "magnifyingglass"
         case .memory: "brain.head.profile"
         case .learning: "graduationcap"
-        case .performance: "gauge.with.dots.needle.67percent"
-        case .recovery: "arrow.clockwise.icloud"
         case .maintenance: "wrench.and.screwdriver"
         case .settings: "gearshape"
         }
@@ -58,7 +54,8 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "5"
         case .memory: "6"
         case .learning: "7"
-        default: nil
+        case .maintenance: nil
+        case .settings: nil
         }
     }
 }
@@ -80,7 +77,7 @@ enum NavGroup: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .workspace: [.dashboard, .workspaces, .timeline]
         case .intelligence: [.graph, .search, .memory, .learning]
-        case .system: [.performance, .recovery, .maintenance, .settings]
+        case .system: [.maintenance, .settings]
         }
     }
 }
@@ -118,7 +115,6 @@ struct AppShell: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 224)
         } detail: {
             DetailHost(section: router.selection ?? .dashboard,
                        workspaces: workspaces,
@@ -149,6 +145,7 @@ struct AppShell: View {
         }
         .sheet(isPresented: $router.showCommandPalette) {
             CommandPaletteView()
+                .environmentObject(router)
         }
         .task {
             CoreBridge.shared.onEvent = { event, payload in
@@ -176,8 +173,10 @@ struct AppShell: View {
                             .accessibilityLabel(section.title)
                     }
                 }
+                .listSectionSeparator(.automatic)
             }
         }
+        .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             CoreStatusFooter(isRunning: CoreBridge.shared.isRunning,
                              version: CoreBridge.shared.backendVersion)
@@ -206,9 +205,6 @@ struct AppShell: View {
                         .foregroundStyle(.tint)
                     Text(workspace.name)
                         .font(.callout.weight(.medium))
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
             }
             .menuStyle(.borderlessButton)
@@ -299,9 +295,7 @@ struct DetailHost: View {
         case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)
         case .memory: MemoryView(viewModel: memory)
         case .learning: LearningView(viewModel: learning)
-        case .performance: EmptyStateView(title: "Performance", message: "Coming in a later build.", symbol: "gauge.with.dots.needle.67percent")
-        case .maintenance: EmptyStateView(title: "Maintenance", message: "Coming in a later build.", symbol: "wrench.and.screwdriver")
-        case .recovery: EmptyStateView(title: "Recovery", message: "Coming in a later build.", symbol: "arrow.clockwise.icloud")
+        case .maintenance: EmptyStateView(title: "Maintenance", message: "Under development.", symbol: "wrench.and.screwdriver")
         case .settings: SettingsView()
         }
     }
@@ -359,7 +353,7 @@ struct CommandPaletteView: View {
         .padding(16)
         .frame(width: 480, height: 420)
         .onAppear { fieldFocused = true }
-        .onChange(of: query) { _, _ in
+        .onChange(of: query) { newQuery, _ in
             if !filtered.contains(where: { $0.id == selection?.id }) {
                 selection = filtered.first
             }

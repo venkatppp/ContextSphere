@@ -252,7 +252,29 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
         "get_workspace_stats" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::get_workspace_stats, ("workspace_id": uuid::Uuid)),
 
         // ------------------------------------------------------------- graph
-        _ => dispatch_graph::dispatch_graph(app, method, params).await?,
+        _ => {
+            match dispatch_admin::dispatch_admin(app, method, params).await {
+                Ok(result) => result,
+                Err(admin_error) if admin_error.message == unknown_method(method) => {
+                    match dispatch_memory::dispatch_memory(app, method, params).await {
+                        Ok(result) => result,
+                        Err(memory_error) if memory_error.message == unknown_method(method) => {
+                            dispatch_graph::dispatch_graph(app, method, params).await?
+                        }
+                        Err(memory_error) => return Err(memory_error),
+                    }
+                }
+                Err(admin_error) => return Err(admin_error),
+            }
+        }
     };
     Ok(result)
+}
+
+/// The exact "unknown method" error message a domain dispatcher reports
+/// when it does not own `method` — used to fall through to the next
+/// dispatcher while still propagating genuine errors (invalid params,
+/// save failures, …) from the dispatcher that owns the method.
+fn unknown_method(method: &str) -> String {
+    format!("unknown method `{method}`")
 }
