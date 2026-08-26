@@ -464,3 +464,196 @@ The eight principles that guide all Apple design, including Liquid Glass:
 
 ---
 *Research compiled from Apple WWDC25 (Liquid Glass), WWDC2018 (Fluid Interfaces), WWDC2020 (UI Typography), deepika-builds/liquid-glass reference repo, and cross-OS analysis of iOS 26 / macOS Tahoe / watchOS 26 / tvOS 26 developer betas.*
+
+## A. Material System Quick Reference
+
+The following table summarizes the ChronoDesk material system specifications (from `CHRONODESK_LIQUID_GLASS_HANDOFF.md`):
+
+| Material | CSS Utility | Blur | Specular/Rim Strategy | Use Case |
+|---|---|---|---|---|
+| **Chrome** | `.glass-chrome` | 32px | Sharp top, deep shadow, underlight | Sidebar, Header, Sheets |
+| **Surface** | `.glass-surface` | 22px | Moderate specular edge | Hero panels, large cards |
+| **Panel** | `.glass-panel` | 16px | Subtle edge | Secondary panels |
+| **Well** | `.glass-well` | 12px | Inset interior | Inputs, search fields |
+| **Control** | `.glass-control` | 12px | Focused highlight | Buttons, segments |
+| **Sheet** | `.glass-sheet` | 40px | Strongest specular | Dialogs |
+| **Accent** | `.glass-accent` | 14px | Strong top highlight | Primary action |
+
+### Technical Implementation Requirements (from `CHRONODESK_LIQUID_GLASS_HANDOFF.md`)
+
+- **Background:** `#05060a`
+- **Glass Tints (Refined):**
+  - `--glass-tint-top: rgba(255, 255, 255, 0.08)`
+  - `--glass-tint-mid: rgba(255, 255, 255, 0.035)`
+  - `--glass-tint-bottom: rgba(255, 255, 255, 0.015)`
+  - `--glass-tint-strong: rgba(20, 22, 30, 0.12)`
+- **Specular/Edge:**
+  - `--glass-specular: rgba(255, 255, 255, 0.55)`
+  - `--glass-edge-dark: rgba(0, 0, 0, 0.5)`
+  - `--glass-underlight: rgba(255, 255, 255, 0.06)`
+- **Default Refraction:** Increase `scale` to `-112` for chrome surfaces for more dramatic, Apple-like lensing.
+- **Chromatics:** Set `chroma` to `5` for clearer rim-fringe.
+- **Area Guard:** Maintain `420,000` px² threshold.
+
+## 3. Current Problems (Resolved)
+
+### 3.1 Sidebar does NOT yet look like premium Liquid Glass
+
+**Issues:**
+- `w-[222px]` is too narrow — should be `w-[280px]` or `w-[260px]` for a premium feel
+- The sidebar is `rounded-2xl` but should use a larger border-radius — the `rounded-3xl` (24px) or `rounded-[1.5rem]` would be better
+- No specular top edge on the sidebar (the `GlassSurface` doesn't apply one)
+- The nav items are not glass — they use `glass-nav` which is a lighter blur than `glass-chrome`
+- The bottom status bar has no specular highlight
+- The sidebar has no top specular sheen
+
+**What should stay:**
+- `w-[222px]` — the narrow width is intentional for a left sidebar, but the width should be `w-[280px]` for a premium feel
+- `rounded-2xl` — correct but should be `rounded-3xl` for the sidebar
+- `overflow-y-auto` — correct
+
+**What needs improvement:**
+- Width: `w-[222px]` → `w-[280px]`
+- Radius: `rounded-2xl` → `rounded-3xl` (24px)
+- Add specular top edge to sidebar
+- Add bottom specular highlight to status bar
+- Use `glass-chrome` material for the entire sidebar, not `glass-surface`
+- Add `glass-nav` to the nav items for a consistent look
+
+### 3.2 Top header does NOT yet look sufficiently Liquid Glass
+
+**Issues:**
+- The topbar uses `GlassSurface` with `material="chrome"` which is correct but the specular top edge is missing
+- The topbar is not properly part of the Liquid Glass functional layer — it's just a Chrome surface but the specular edge is not applied
+- The search field inside the topbar uses `glass-well` but should use `glass-chrome`
+- The topbar is not properly part of the Liquid Glass functional layer — it's using `glass-surface`
+- The user avatar area needs a stronger specular edge
+- The search field could use `glass-well` or `glass-chrome` — currently `glass-well` is correct but could be more elevated
+- The topbar needs a proper shadow — `0 24px 60px rgba(0,0,0,0.5)` with `inset 0 1px 0 rgba(255,255,255,0.22)` — this is correct but should be stronger
+
+**What should stay:**
+- `GlassSurface` with `material="chrome"` — correct
+- `h-12` — correct
+- The search field inside the topbar — correct
+
+**What needs improvement:**
+- The topbar should have a proper specular top edge (using the `glass-chrome` utility)
+- The search field should use `glass-well` or `glass-chrome`
+- The shadow on the topbar should be stronger
+- Add a proper bottom-edge specular highlight
+- The topbar should have better dark-mode glass treatment
+
+### 3.3 Sidebar font is too small
+
+**Issues:**
+- The "ChronoDesk" title uses `text-[13px]` which is too small for the sidebar branding
+- The "Workspace Layer" text uses `text-[10px]` which is very small
+- The nav labels use `text-[13px]` which is correct for the main nav
+- The status text uses `text-[11px]` which is correct for the status bar
+
+**What needs improvement:**
+- `ChronoDesk` title: `text-[13px]` → `text-[15px]`
+- "Workspace Layer": `text-[10px]` → `text-[11px]`
+- The sidebar brand should use `font-[16px]` or `font-semibold` for the brand name
+
+### 3.4 Sidebar icons need better semantic/premium icons
+
+**Issues:**
+- The sidebar uses `lucide-react` icons which are generic
+- The `Command` icon uses `strokeWidth={1.75}` which is correct for sidebar icons
+- The status dot uses `bg-(--color-danger)` etc. which is generic but works
+- No premium visual differentiation between icon families
+
+**What needs improvement:**
+- Use a more premium icon style — consider `@photon-perfect` or `lucide-react` with `strokeWidth={2}` for a more refined look
+- Add a subtle accent color to each icon (the blue accent `var(--color-accent)`) for better semantic hierarchy
+- Use SF Symbols-style icons for the bottom status bar
+
+### 3.5 Dashboard Predictive Intelligence and Priority Queue are buried too low
+
+**Issues:**
+- In the dashboard, Predictive Intelligence and Priority Queue are in a 2-column right sidebar and are buried behind other elements
+- The dashboard uses `flex-col gap-4` for the right sidebar which is too compressed
+- The Predictive Card and Priority Queue are inside the right sidebar but not prominently displayed
+
+**What needs improvement:**
+- The Predictive Intelligence and Priority Queue should be moved to the top of the dashboard content
+- The dashboard should have a more prominent placement for predictive intelligence
+- The `glass-chrome` material should be used for the Predictive Intelligence section to make it stand out
+
+### 3.6 Accidental/incorrect white/light backgrounds
+
+**Issues:**
+- The `GlassSurface` on the `body` or page-level containers may be adding white/light backgrounds in dark mode
+- The `color-scheme: light` is defined on `.light` class, but it's being applied incorrectly
+- The `glass-chrome` utility in light mode uses `rgba(255,255,255,0.82)` for `glass-tint-top` which is correct but the light theme uses `color-scheme: light` which means the `body` has `background-color: var(--color-background)` with `#e9e9ec` — this is a light background which is correct for light mode
+- In dark mode, the `background-color: #05060a` is correct, but there might be accidental white backgrounds leaking through
+
+**What needs improvement:**
+- Ensure no `rgba(255,255,255,0.9)` or `background: white` is used anywhere in the dark theme
+- The `color-scheme: dark` should be set on `html` not `body`
+- The `body` should not have a white background in dark mode — it should use `#05060a`
+
+### 3.7 Insufficient dimensionality/refraction/specular response
+
+**Issues:**
+- The `scale` value of `-96` is too subtle for `glass-chrome` material
+- The `blur` value of `4px` for chrome is too low — should be `8–10px`
+- The `saturate` value of `1.5` is insufficient — should be `1.2` or `1.3`
+- The `blur` for surface is `18px` which is too low for a hero surface
+- The `blur` for sheet is `36px` which is too high
+- The specular highlight (`rgba(255,255,255,0.5)`) is too bright for glass-chrome
+- The `glass-tint-strong` is `rgba(20, 22, 30, 0.16)` which is too strong — should be `0.12`
+- The `glass-tint-top` is `rgba(255, 255, 255, 0.1)` which is too bright in dark mode — should be `0.08`
+
+**What needs improvement:**
+- Increase `scale` from `-96` to `-112` for glass-chrome
+- Increase `blur` from `4px` to `10px` for chrome
+- Increase `saturate` from `1.5` to `1.3` for chrome
+- Increase `blur` for surface from `18px` to `22px`
+- Increase `blur` for sheet from `36px` to `40px`
+- Adjust specular highlight brightness
+- Increase `glass-tint-strong` to `0.12`
+- Decrease `glass-tint-top` to `0.08` for dark theme
+
+### 3.8 Generic glassmorphism appearance
+
+**Issues:**
+- The `glass-chrome` material uses `blur(28px)` which is on the higher end
+- The `glass-surface` uses `blur(18px)` which is reasonable
+- The `glass-panel` uses `blur(14px)` which is reasonable
+- The `glass-well` uses `blur(10px)` which is good
+- The `glass-control` uses `blur(10px)` which is reasonable
+- The `glass-nav` uses `blur(8px)` which is too subtle for sidebar rows
+
+**What needs improvement:**
+- Increase `glass-chrome` blur from `28px` to `32px`
+- Increase `glass-surface` blur from `18px` to `22px`
+- Increase `glass-panel` blur from `14px` to `16px`
+- Increase `glass-well` blur from `10px` to `12px`
+- Increase `glass-control` blur from `10px` to `12px`
+- Increase `glass-nav` blur from `8px` to `10px`
+- The `glass-sheet` blur of `36px` is correct
+- The `glass-accent` blur of `12px` is correct
+
+### 3.9 Dark theme needs stronger environmental depth
+
+**Issues:**
+- The environmental orbs in dark mode are too dim (`rgba(120,165,255,0.07)`)
+- The `ambient-blue` is `rgba(120,165,255,0.07)` which is too dim
+- The `ambient-core` is `rgba(150,175,235,0.045)` which is too dim
+- The `orb-blue` is `rgba(120,165,255,0.08)` which is slightly better
+- The `orb-cyan` is `rgba(140,210,255,0.055)` which is correct
+- The `orb-violet` is `rgba(175,150,255,0.055)` which is correct
+- The `orb-emerald` is `rgba(130,220,170,0.035)` which is correct
+- The `orb-warm` is `rgba(255,205,140,0.03)` which is correct
+- The overall environmental depth is too subtle — the orbs are barely visible
+
+**What needs improvement:**
+- Increase ambient blue to `rgba(120,165,255,0.1)` for stronger depth
+- Increase ambient core to `rgba(150,175,235,0.06)` for stronger warmth
+- Increase orbs to `rgba(120,165,255,0.1)` (slightly brighter)
+- The overall environmental canvas needs stronger ambient light
+
+---
+*Research compiled from Apple WWDC25 (Liquid Glass), WWDC2018 (Fluid Interfaces), WWDC2020 (UI Typography), deepika-builds/liquid-glass reference repo, and cross-OS analysis of iOS 26 / macOS Tahoe / watchOS 26 / tvOS 26 developer betas.*
