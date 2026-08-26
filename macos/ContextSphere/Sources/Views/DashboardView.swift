@@ -21,12 +21,19 @@ struct DashboardView: View {
     @State private var recommendations: [Recommendation] = []
     @State private var resume: ResumeContext?
     @State private var lastSession: SessionSummary?
+    @State private var briefing: DailyBriefing?
     @State private var loading = true
     /// Per-load failures, one entry per panel that could not refresh.
     @State private var loadErrors: [String] = []
     /// Failure of the most recent explicit action (e.g. switching workspaces).
     @State private var actionError: String?
     @State private var isSwitching = false
+    /// Explanation for a recommendation ("Why…" flow).
+    @State private var explanation: ExplainablePrediction?
+    @State private var explainingId: String?
+    @State private var explainError: String?
+    /// Debounce task for live `prediction/recommendation:updated` nudges.
+    @State private var intelligenceRefreshTask: Task<Void, Never>?
 
     init(workspaces: [Workspace], onRevealWorkspace: @escaping (String) -> Void = { _ in }) {
         self.workspaces = workspaces
@@ -66,6 +73,7 @@ struct DashboardView: View {
                     emptyWorkspaces
                 } else {
                     hero
+                    briefingCard
                     intelligenceRow
                     systemHealth
                 }
@@ -77,6 +85,23 @@ struct DashboardView: View {
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .task(id: workspaces.first?.id) {
             await load()
+        }
+        // Live intelligence nudges (`prediction:updated`,
+        // `recommendation:updated`, `workflow:changed`): refresh the
+        // forward-looking panels, debounced so event storms coalesce.
+        .onReceive(NotificationCenter.default.publisher(for: .intelligenceDidChange)) { _ in
+            intelligenceRefreshTask?.cancel()
+            intelligenceRefreshTask = Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                guard !Task.isCancelled else { return }
+                await refreshIntelligence()
+            }
+        }
+        .sheet(isPresented: Binding(get: { explanation != nil },
+                                    set: { if !$0 { explanation = nil } })) {
+            if let explanation {
+                ExplanationSheet(explanation: explanation) { explanation = nil }
+            }
         }
     }
 
@@ -467,36 +492,118 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Daily briefing
+
+    /// Today's briefing from the analytics engine: greeting, activity
+    /// summary, insights and suggestions. Content uses regular material;
+    /// glass stays reserved for interactive controls.
+    private var briefingCard: some View {
+        ContentCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Daily Briefing",
+                              subtitle: briefing?.greeting,
+                              symbol: "sun.max")
+                if let briefing {
+                    HStack(spacing: 14) {
+                        briefingStat(briefing.summary.durationSeconds >= 3600
+                                     ? "\(briefing.summary.durationSeconds / 3600) h active"
+                                     : "\(max(briefing.summary.durationSeconds / 60, 0)) min active",
+                                     symbol: "clock")
+                        briefingStat("\(briefing.summary.sessionCount) sessions",
+                                     symbol: "rectangle.stack")
+                        if let lang = briefing.primaryLanguage ?? briefing.summary.primaryLanguage {
+                            briefingStat(lang, symbol: "chevron.left.forwardslash.chevron.right")
+                        }
+                    }
+                    if !briefing.insights.isEmpty {
+                        Divider().opacity(0.5)
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(briefing.insights.prefix(3).enumerated()),
+                                    id: \.offset) { _, insight in
+                                Label(insight, systemImage: "sparkle")
+                                    .font(.callout)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                    if !briefing.suggestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(briefing.suggestions.prefix(2).enumerated()),
+                                    id: \.offset) { _, suggestion in
+                                Label(suggestion, systemImage: "lightbulb")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } else if !loadErrors.contains(where: { $0.hasPrefix("Daily briefing") }) {
+                    Text("Your day at a glance will appear here once there is some activity.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func briefingStat(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+    }
+
     private var recommendationsBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recommended")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             ForEach(recommendations.prefix(3)) { recommendation in
-                Button {
-                    onRevealWorkspace(recommendation.workspaceId)
-                } label: {
-                    HStack(alignment: .top, spacing: 8) {
-                        PriorityPill(priority: recommendation.priority)
-                            .padding(.top, 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(recommendation.title)
-                                .font(.callout.weight(.medium))
-                                .multilineTextAlignment(.leading)
-                            Text(recommendation.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                HStack(alignment: .top, spacing: 8) {
+                    Button {
+                        onRevealWorkspace(recommendation.workspaceId)
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            PriorityPill(priority: recommendation.priority)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(recommendation.title)
+                                    .font(.callout.weight(.medium))
+                                    .multilineTextAlignment(.leading)
+                                Text(recommendation.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        Task { await loadExplanation(for: recommendation) }
+                    } label: {
+                        if explainingId == recommendation.id {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Label("Why", systemImage: "questionmark.circle")
+                                .labelStyle(.titleAndIcon)
+                                .font(.caption2)
                         }
                     }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Explain why this is recommended")
+                    .accessibilityLabel("Explain recommendation: \(recommendation.title)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
                 .accessibilityLabel("\(recommendation.priority) priority: \(recommendation.title). \(recommendation.description)")
+                if explainError != nil && explainingId == recommendation.id {
+                    Text(explainError!)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             }
         }
     }
@@ -593,10 +700,11 @@ struct DashboardView: View {
         async let recommendationsResult: [Recommendation]? = loadRecommendations(workspace)
         async let resumeResult: ResumeContext? = loadResume(workspace)
         async let sessionResult: SessionSummary? = loadLastSession()
+        async let briefingResult: DailyBriefing? = loadBriefing()
 
-        let (act, heal, pred, rec, res, sess) = await (
+        let (act, heal, pred, rec, res, sess, brief) = await (
             activityResult, healthResult, predictionsResult, recommendationsResult, resumeResult,
-            sessionResult)
+            sessionResult, briefingResult)
 
         activity = act ?? []
         health = heal
@@ -604,6 +712,7 @@ struct DashboardView: View {
         recommendations = rec ?? []
         resume = res
         lastSession = sess
+        briefing = brief
     }
 
     /// Failures from individual panel loads land here so they can be
@@ -683,6 +792,60 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Recommendation explanations
+
+    /// Fetches `explain_recommendation` for one recommendation. Failures
+    /// surface inline next to the row (never silently).
+    private func loadExplanation(for recommendation: Recommendation) async {
+        guard let workspace = workspaces.first(where: { $0.id == recommendation.workspaceId })
+            ?? currentWorkspace else {
+            explainError = "No workspace context available for this recommendation."
+            explainingId = recommendation.id
+            return
+        }
+        explainingId = recommendation.id
+        explainError = nil
+        do {
+            let result: ExplainablePrediction = try await CoreBridge.shared.request(
+                "explain_recommendation",
+                params: [
+                    "workspace_id": recommendation.workspaceId,
+                    "recommendation_id": recommendation.id,
+                ],
+                as: ExplainablePrediction.self)
+            explanation = result
+            if explainError?.isEmpty != false { explainError = nil }
+        } catch {
+            explainError = error.localizedDescription
+        }
+        explainingId = nil
+    }
+
+    /// Refreshes only the forward-looking panels after a live
+    /// intelligence event.
+    private func refreshIntelligence() async {
+        loadErrors.removeAll { $0.hasPrefix("Predictions")
+            || $0.hasPrefix("Recommendations")
+            || $0.hasPrefix("Daily briefing") }
+        async let pred: PredictionsSummary? = loadPredictions()
+        async let recs: [Recommendation]? = loadRecommendations(currentWorkspace)
+        async let brief: DailyBriefing? = loadBriefing()
+        let (p, r, b) = await (pred, recs, brief)
+        if Task.isCancelled { return }
+        predictions = p
+        recommendations = r ?? []
+        briefing = b
+    }
+
+    private func loadBriefing() async -> DailyBriefing? {
+        do {
+            return try await CoreBridge.shared.request("get_daily_briefing", as: DailyBriefing.self)
+        } catch {
+            recordLoadError("Daily briefing", error)
+            return nil
+        }
+    }
+
     // MARK: - Workspace switching
 
     /// Real resume: makes the workspace active in the daemon (context
@@ -737,6 +900,70 @@ struct DashboardView: View {
 }
 
 // MARK: - Supporting views
+
+/// Presents the reasoning behind a recommendation: plain-language
+/// explanation, per-engine sources, and supporting evidence.
+struct ExplanationSheet: View {
+    let explanation: ExplainablePrediction
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Why this recommendation", systemImage: "questionmark.circle")
+                    .font(.headline)
+                Spacer()
+                Text("confidence \(Int((explanation.confidence * 100).rounded()))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Text(explanation.explanation)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !explanation.supportingEvidence.isEmpty {
+                Divider().opacity(0.5)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Supporting evidence")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(explanation.supportingEvidence.prefix(6)) { evidence in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "checkmark.seal")
+                                .font(.caption2)
+                                .foregroundStyle(.tint)
+                                .padding(.top, 2)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(evidence.description)
+                                    .font(.callout)
+                                Text("\(evidence.source) · \(Int((evidence.confidence * 100).rounded()))%")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+
+            if !explanation.sourceEngines.isEmpty {
+                Text("Sources: \(explanation.sourceEngines.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") { onDismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 440, minHeight: 220)
+    }
+}
 
 struct DashboardActivityRow: View {
     let event: TimelineEvent

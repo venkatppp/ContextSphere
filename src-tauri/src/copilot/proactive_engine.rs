@@ -26,6 +26,12 @@ pub struct ProactiveEngine {
     // In-memory notification queue
     notifications: Arc<RwLock<Vec<ProactiveNotification>>>,
     permissions: Arc<RwLock<Vec<AutomationPermission>>>,
+
+    /// Optional event sink. When set, every queued notification is also
+    /// forwarded to the frontend as `proactive:notification` so native
+    /// macOS notifications can be raised. Wired in `lib.rs`; `None` in
+    /// tests keeps emission inert.
+    emitter: Option<std::sync::Arc<dyn crate::app_events::AppEventEmitter>>,
 }
 
 impl ProactiveEngine {
@@ -54,6 +60,28 @@ impl ProactiveEngine {
             session_engine,
             notifications: Arc::new(RwLock::new(Vec::new())),
             permissions: Arc::new(RwLock::new(Vec::new())),
+            emitter: None,
+        }
+    }
+
+    /// Attaches the frontend event sink after construction (the engine is
+    /// wrapped in an `Arc` immediately, so this must run before sharing).
+    pub fn set_event_emitter(
+        &mut self,
+        emitter: std::sync::Arc<dyn crate::app_events::AppEventEmitter>,
+    ) {
+        self.emitter = Some(emitter);
+    }
+
+    /// Forwards one notification to the frontend as a
+    /// `proactive:notification` event (best-effort; never fails).
+    fn notify(&self, notification: &ProactiveNotification) {
+        if let Some(emitter) = self.emitter.as_ref() {
+            crate::app_events::emit(
+                emitter.as_ref(),
+                crate::app_events::EVENT_PROACTIVE_NOTIFICATION,
+                notification,
+            );
         }
     }
 
@@ -68,8 +96,11 @@ impl ProactiveEngine {
             .detect_workspace_switch(from_workspace_id, to_workspace_id)
             .await?;
 
-        let mut notifications = self.notifications.write().await;
-        notifications.push(notification);
+        {
+            let mut notifications = self.notifications.write().await;
+            notifications.push(notification.clone());
+        }
+        self.notify(&notification);
 
         Ok(())
     }
@@ -83,8 +114,11 @@ impl ProactiveEngine {
         // Check for repeated edits
         if event_type == "edit" {
             if let Some(notification) = self.detector.detect_repeated_edits(workspace_id).await? {
-                let mut notifications = self.notifications.write().await;
-                notifications.push(notification);
+                {
+                    let mut notifications = self.notifications.write().await;
+                    notifications.push(notification.clone());
+                }
+                self.notify(&notification);
             }
         }
 
@@ -121,8 +155,11 @@ impl ProactiveEngine {
                 expires_at: None,
             };
 
-            let mut notifications = self.notifications.write().await;
-            notifications.push(notification);
+            {
+                let mut notifications = self.notifications.write().await;
+                notifications.push(notification.clone());
+            }
+            self.notify(&notification);
         }
 
         Ok(())
@@ -146,7 +183,8 @@ impl ProactiveEngine {
                     && n.workspace_id == Some(workspace_id)
                     && !n.dismissed
             }) {
-                notifications.push(notification);
+                notifications.push(notification.clone());
+                self.notify(&notification);
             }
         }
 
@@ -158,7 +196,8 @@ impl ProactiveEngine {
                     && n.workspace_id == Some(workspace_id)
                     && !n.dismissed
             }) {
-                notifications.push(notification);
+                notifications.push(notification.clone());
+                self.notify(&notification);
             }
         }
 
@@ -174,7 +213,8 @@ impl ProactiveEngine {
                     && n.workspace_id == Some(workspace_id)
                     && !n.dismissed
             }) {
-                notifications.push(notification);
+                notifications.push(notification.clone());
+                self.notify(&notification);
             }
         }
 

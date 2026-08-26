@@ -39,6 +39,7 @@ swiftc \
   Sources/RPCModels.swift \
   Sources/Theme.swift \
   Sources/AppShell.swift \
+  Sources/Notifications.swift \
   Sources/TimelineViewModel.swift \
   Sources/SearchViewModel.swift \
   Sources/SettingsViewModel.swift \
