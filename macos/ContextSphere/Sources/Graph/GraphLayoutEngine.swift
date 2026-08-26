@@ -68,8 +68,10 @@ enum GraphLayoutEngine {
             return base * factor
         }
 
-        // Ring radii grow with distance; inner rings carry neighbors
-        let radii: [Int: CGFloat] = [1: 110, 2: 230, 3: 360]
+        // Ring radii grow with distance; inner rings carry neighbors.
+        // For large fan-out (e.g. 300 direct neighbors) distribute across
+        // multiple sub-rings so the graph doesn't become a single overcrowded circle.
+        let baseRadii: [Int: CGFloat] = [1: 110, 2: 230, 3: 360]
         for dist in [1, 2, 3] {
             guard let members = rings[dist], !members.isEmpty else { continue }
             // Sort by relevance then importance so most relevant neighbors are at "north"
@@ -78,15 +80,16 @@ enum GraphLayoutEngine {
                 if abs(ra - rb) > 0.08 { return ra > rb }
                 return $0.importance > $1.importance
             }
-            let baseRadius = radii[dist] ?? 360 + CGFloat(dist - 3) * 70
-            // Distribute evenly, offset by hash for stability
-            let offset = CGFloat(fnv1a(focusID) % 360) * .pi / 180
+            let baseRadius = baseRadii[dist] ?? 360 + CGFloat(dist - 3) * 70
             for (idx, node) in sorted.enumerated() {
                 if node.id == focusID { continue }
-                let angle = offset + 2 * .pi * CGFloat(idx) / CGFloat(sorted.count)
-                // Add small jitter seeded by node id so coincident rings don't stack
-                let jitter = CGFloat(Int(fnv1a(node.id) % 20) - 10)
-                let base = baseRadius + jitter
+                // Distribute high fan-out across concentric sub-rings (ringGeometry)
+                let (ringOff, ringCap, ringAngOff) = ringGeometryForFocus(index: idx)
+                // Primary relevance stays inner sub-ring, ambient drifts outer
+                let relevanceBias = (0.5 - (relevance[node.id] ?? 0.5)) * 22 // -11 at 1.0, +11 at 0
+                let base = baseRadius + ringOff + relevanceBias + CGFloat(Int(fnv1a(node.id) % 10) - 5)
+                let angle = CGFloat(fnv1a(focusID) % 360) * .pi / 180
+                    + ringAngOff + 2 * .pi * CGFloat(idx % ringCap) / CGFloat(ringCap)
                 let r = relevancePull(node.id, base: base)
                 positions[node.id] = CGPoint(x: cos(angle) * r, y: sin(angle) * r)
             }
@@ -95,16 +98,19 @@ enum GraphLayoutEngine {
         // Background nodes: place in a faint outer circle, spread widely, but
         // highly relevant background nodes are pulled inward so a relevant file
         // outside the immediate cluster does not stay crushed at the edge.
+        // For very large background (e.g. 200+), use ring distribution as well.
         if !background.isEmpty {
-            let outerRadius: CGFloat = 520
+            let outerBase: CGFloat = 520
             let sortedBG = background.sorted {
                 let ra = relevance[$0.id] ?? 0, rb = relevance[$1.id] ?? 0
                 if abs(ra - rb) > 0.08 { return ra > rb }
                 return fnv1a($0.id) < fnv1a($1.id)
             }
             for (idx, node) in sortedBG.enumerated() {
-                let angle = 2 * .pi * CGFloat(idx) / CGFloat(sortedBG.count) + 0.17
-                let base = outerRadius + CGFloat(fnv1a(node.id) % 120)
+                let (ringOff, ringCap, ringAngOff) = ringGeometryForFocus(index: idx)
+                let base = outerBase + ringOff + CGFloat(fnv1a(node.id) % 60)
+                let angle = 2 * .pi * CGFloat(idx % max(ringCap, 1)) / CGFloat(max(ringCap, 1))
+                    + ringAngOff + 0.17
                 let r = relevancePull(node.id, base: base)
                 positions[node.id] = CGPoint(x: cos(angle) * r, y: sin(angle) * r)
             }
@@ -207,7 +213,24 @@ enum GraphLayoutEngine {
         return result
     }
 
-    // MARK: Deterministic hash (stable across runs)
+    // MARK: Deterministic helpers
+
+    /// Sub-ring geometry for focus radial — distributes high fan-out across
+    /// concentric rings (capacity 14, 26, 38…) instead of a single overcrowded circle.
+    private static func ringGeometryForFocus(index: Int) -> (radiusOffset: CGFloat, capacity: Int, angleOffset: CGFloat) {
+        var ring = 0
+        var capacity = 14
+        var remaining = index
+        var radiusOff: CGFloat = 0
+        while remaining >= capacity {
+            remaining -= capacity
+            ring += 1
+            capacity = 14 + 12 * ring
+            radiusOff += 62
+        }
+        let angleOff = CGFloat(ring) * 2.39996
+        return (radiusOff, capacity, angleOff)
+    }
 
     private static func fnv1a(_ s: String) -> UInt64 {
         var h: UInt64 = 0xcbf29ce484222325

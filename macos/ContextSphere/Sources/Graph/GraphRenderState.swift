@@ -119,45 +119,52 @@ enum GraphRenderStateBuilder {
             let dist = distances[vn.id]
             let opacity: Double = {
                 guard focusedID != nil else {
-                    // No focus: relevance defines hierarchy — ambient still visible but subdued
-                    // Primary 1.0, secondary ~0.88, ambient 0.62
+                    // No focus: relevance defines hierarchy — primary 1.0, secondary ~0.82, ambient 0.55
                     if vn.isRecent && level == .overview { return 1.0 }
-                    return 0.58 + rel * 0.42 // 0.58 .. 1.0
+                    // Stronger separation than before (0.58→0.55 ambient vs 1.0 primary)
+                    return 0.55 + rel * 0.45 // 0.55 .. 1.0
                 }
                 let base: Double
                 switch dist {
-                case 0: base = 1.0
+                case 0: base = 1.0 // focus unmistakable
                 case 1: base = 0.92
                 case 2: base = 0.62
-                case nil: base = 0.22
-                default: base = 0.18
+                case nil: base = 0.20
+                default: base = 0.16
                 }
-                // Relevance gently lifts ambient secondary context;
-                // high relevance + old stays readable (0.22→0.45), low+old stays ambient (0.22→0.30)
-                // high+recent was already strong via activity, now reinforced by relevance.
+                // Primary vs secondary vs ambient: relevance now creates distinct tiers
                 if dist == nil {
-                    if rel > 0.70 { return min(0.68, base + 0.35) } // promote highly relevant ambient to secondary
-                    if rel > 0.45 { return base + rel * 0.22 } // modest lift
-                    return base + rel * 0.10
+                    if rel > 0.70 { return min(0.60, base + 0.38) } // highly relevant ambient → secondary
+                    if rel > 0.45 { return base + rel * 0.22 }
+                    return base + rel * 0.10 // low+old stays 0.22→0.30
                 }
-                // For focused and neighbor rings, relevance subtly modulates within tier
+                if dist == 1 {
+                    // Distance 1 holds 300 neighbors — relevance must separate primary (1.0) from ambient (0.68)
+                    return min(1.0, base + (rel - 0.5) * 0.38)
+                }
+                if dist == 2 {
+                    return min(0.88, base + (rel - 0.5) * 0.32)
+                }
                 return min(1.0, base + (rel - 0.5) * 0.14)
             }()
             let showLabel: Bool = {
                 if vn.isWorkspace { return level != .overview }
-                // Relevance drives label visibility: primary always, secondary at normal+, ambient only if focused/selected
                 if rel > 0.68 { return level != .overview } // primary shows at normal & detailed
+                // Density-aware: with 200+ nodes, hide ambient labels even at detailed unless primary/selected
+                let isDense = model.nodes.count > 200
                 switch level {
                 case .overview: return vn.importance > 0.75 || vn.isRecent || rel > 0.75
                 case .normal: return vn.importance > 0.45 || vn.isRecent || rel > 0.55 || vn.id == selectedID || vn.id == focusedID
-                case .detailed: return true
+                case .detailed: return isDense ? (rel > 0.55 || vn.isRecent || vn.id == selectedID || vn.id == focusedID) : true
                 }
             }()
             let baseRadius = vn.nodeType.nodeRadius
             // Visual hierarchy: importance + recency + relevance (subtle, not neon)
-            // Primary context = strongest (+2.8), secondary = readable (+1.2), ambient = baseline
+            // Focus unmistakable: focus node +3.5, primary +2.1, secondary +0.6, ambient slightly smaller
             let relevanceBoost: CGFloat
-            if rel > 0.68 { relevanceBoost = CGFloat((rel - 0.68) * 6.5) } // 0→2.1
+            if dist == 0 {
+                relevanceBoost = 3.5 + CGFloat((rel) * 1.2) // focus always largest
+            } else if rel > 0.68 { relevanceBoost = CGFloat((rel - 0.68) * 6.5) } // 0→2.1
             else if rel > 0.38 { relevanceBoost = CGFloat((rel - 0.38) * 2.0) } // 0→0.6
             else { relevanceBoost = CGFloat((rel - 0.38) * 0.8) } // -0.3 .. 0
             let scaledRadius = baseRadius + CGFloat(vn.importance * 3.0) + CGFloat(vn.activityIntensity * 1.5) + relevanceBoost
