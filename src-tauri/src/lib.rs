@@ -367,8 +367,8 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
 
             let ai_state = commands::ai::AIState {
                 manager: model_manager,
-                reranker: None,
-                embedding_provider: None,
+                reranker: parking_lot::RwLock::new(None),
+                embedding_provider: parking_lot::RwLock::new(None),
             };
 
             // --- Semantic Intelligence Layer (Phase 6A) ---
@@ -1035,6 +1035,7 @@ pub fn run() {
             commands::ai::get_inference_statistics,
             commands::ai::get_ai_diagnostics,
             commands::ai::rerank_documents,
+            commands::ai::graph_ai_vector_search,
             commands::learning::submit_feedback,
             commands::learning::get_learning_insights,
             commands::learning::adjust_prediction_confidence,

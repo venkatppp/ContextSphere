@@ -4,10 +4,12 @@ import Foundation
 /// relevance field. Reuses the daemon's vector/FTS infrastructure — does
 /// not create a new embedding system, vector DB, or FTS index.
 ///
-/// Desired flow:
+/// Desired flow (real embeddings when available):
 ///   current focus / search text
 ///        ↓
-///   existing retrieval (`graph_vector_search` → `graph_ranked_search` fallback)
+///   existing retrieval (`graph_ai_vector_search` [ONNX all-MiniLM-L6-v2 384-d, cosine 0…1]
+///                       → `graph_vector_search` [hash fallback, threshold 0.20]
+///                       → `graph_ranked_search` [keyword])
 ///        ↓
 ///   ranked hits + similarity 0…1
 ///        ↓
@@ -17,8 +19,10 @@ import Foundation
 ///        ↓
 ///   Context Field
 ///
-/// All queries are bounded top-K and cached per focus/search value so
-/// semantic relevance never becomes O(n²).
+/// All queries are bounded top-K 20 and cached per focus/search value so
+/// semantic relevance never becomes O(n²). When the ONNX model is not
+/// downloaded/loaded, `graph_ai_vector_search` returns empty and the adapter
+/// falls back to the hash vector search (still functional, but near-random).
 enum GraphSemanticAdapter {
     static let defaultLimit: UInt32 = 20
     /// Minimum score surfaced by the backend vector search (KgOptService::VECTOR_HIT_THRESHOLD).
@@ -46,7 +50,11 @@ enum GraphSemanticAdapter {
         let key = "\(trimmed.lowercased())#\(limit)"
         if let cached = cache[key] { return cached }
 
-        // Prefer vector (semantic) search; fall back to keyword ranked search if vector unavailable/empty.
+        // Prefer real ONNX vector search; fall back to hash vector then keyword.
+        if let aiScores = await aiVectorScores(for: trimmed, limit: limit), !aiScores.isEmpty {
+            cache[key] = aiScores
+            return aiScores
+        }
         if let vectorScores = await vectorScores(for: trimmed, limit: limit), !vectorScores.isEmpty {
             cache[key] = vectorScores
             return vectorScores
@@ -74,6 +82,26 @@ enum GraphSemanticAdapter {
     }
 
     // MARK: - Private vector / ranked fetch
+
+    private static func aiVectorScores(for query: String, limit: UInt32) async -> [String: Double]? {
+        do {
+            let hits: [RankedSearchHit] = try await CoreBridge.shared.request(
+                "graph_ai_vector_search",
+                params: ["query": query, "limit": limit],
+                as: [RankedSearchHit].self)
+            if hits.isEmpty { return nil } // no ONNX model loaded or no hits
+            var dict: [String: Double] = [:]
+            dict.reserveCapacity(hits.count)
+            for hit in hits {
+                let s = min(1.0, max(0, hit.score))
+                guard s >= vectorThreshold - 0.001 else { continue }
+                dict[hit.node.id] = s
+            }
+            return dict.isEmpty ? nil : dict
+        } catch {
+            return nil // RPC not yet available or model not loaded — fallback
+        }
+    }
 
     private static func vectorScores(for query: String, limit: UInt32) async -> [String: Double]? {
         do {
