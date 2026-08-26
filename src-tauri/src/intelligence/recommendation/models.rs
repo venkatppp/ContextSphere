@@ -109,14 +109,25 @@ pub enum RecommendationAction {
 
 impl Recommendation {
     /// Creates a new recommendation builder.
+    ///
+    /// The id is derived deterministically from the stable content
+    /// (workspace + category + title) rather than a random UUID, so a
+    /// regenerated recommendation set keeps the same ids across calls.
+    /// `explain_recommendation` relies on this: it re-runs the
+    /// generators and looks the recommendation up by id.
     pub fn new(
         workspace_id: String,
         category: RecommendationCategory,
         title: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
+        let title = title.into();
+        let id = format!(
+            "{:016x}",
+            fxhash_string(&format!("{workspace_id}|{:?}|{title}", category))
+        );
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             workspace_id,
             category,
             priority: RecommendationPriority::Medium,
@@ -182,4 +193,15 @@ impl Recommendation {
             false
         }
     }
+}
+
+/// FNV-1a 64-bit over a string — cheap, stable, dependency-free id
+/// derivation for deterministic recommendation ids.
+fn fxhash_string(s: &str) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in s.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
