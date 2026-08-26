@@ -246,7 +246,7 @@ final class CoreBridge: ObservableObject {
         restartAttempts += 1
         isReconnecting = true
         let delay = min(pow(2.0, Double(restartAttempts)), 10)
-        Task { [weak self] @MainActor in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !self.intentionalStop, self.process == nil else { return }
             self.spawnDaemon()
