@@ -246,9 +246,7 @@ struct TimelineView: View {
         // `open_file` RPC (which shells out to `open`) if the URL is not
         // directly openable (e.g. stale path).
         if NSWorkspace.shared.open(url) { return }
-        Task {
-            try? await CoreBridge.shared.call("open_file", params: ["path": path])
-        }
+        Task { await viewModel.openViaCoreFallback(path) }
     }
 }
 

@@ -143,6 +143,19 @@ final class TimelineViewModel: ObservableObject {
         recomputeGroups()
     }
 
+    // MARK: - File actions
+
+    /// `open_file` RPC fallback for paths NSWorkspace could not open
+    /// directly (e.g. stale or non-registered). Failures surface in the
+    /// same inline banner as refresh errors.
+    func openViaCoreFallback(_ path: String) async {
+        do {
+            try await CoreBridge.shared.call("open_file", params: ["path": path])
+        } catch {
+            lastError = "Could not open \(path): \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Live updates
 
     /// Entry point for daemon notifications routed by `AppShell`.

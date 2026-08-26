@@ -28,15 +28,9 @@ final class RecoveryViewModel: ObservableObject {
             async let s: HealthSnapshot = CoreBridge.shared.request("recovery_status", as: HealthSnapshot.self)
             async let h: RecoveryHistory = CoreBridge.shared.request("recovery_history", params: ["limit": 20], as: RecoveryHistory.self)
             async let c: [CrashReport] = CoreBridge.shared.request("recovery_crash_reports", params: ["limit": 20], as: [CrashReport].self)
+            // May be null when no checkpoint exists yet.
             async let j: RecoveryJournalEntry? = CoreBridge.shared.request("recovery_latest_checkpoint", as: RecoveryJournalEntry?.self)
-            let ss = try await s
-            let hh = try await h
-            let cc = try await c
-            let jj: RecoveryJournalEntry? = try? await CoreBridge.shared.request("recovery_latest_checkpoint", as: RecoveryJournalEntry.self)
-            status = ss
-            history = hh
-            crashes = cc
-            latestCheckpoint = jj
+            (status, history, crashes, latestCheckpoint) = try await (s, h, c, j)
             state = .loaded
             lastError = nil
         } catch {

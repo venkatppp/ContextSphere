@@ -5,7 +5,7 @@ import SwiftUI
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case dashboard, workspaces, timeline
     case graph, search, memory, learning
-    case maintenance, settings
+    case performance, maintenance, recovery, settings
 
     var id: String { rawValue }
 
@@ -13,7 +13,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .dashboard, .workspaces, .timeline: .workspace
         case .graph, .search, .memory, .learning: .intelligence
-        case .maintenance, .settings: .system
+        case .performance, .maintenance, .recovery, .settings: .system
         }
     }
 
@@ -26,7 +26,9 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "Search"
         case .memory: "Memory"
         case .learning: "Learning"
+        case .performance: "Performance"
         case .maintenance: "Maintenance"
+        case .recovery: "Recovery"
         case .settings: "Settings"
         }
     }
@@ -40,7 +42,9 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "magnifyingglass"
         case .memory: "brain.head.profile"
         case .learning: "graduationcap"
+        case .performance: "gauge.with.dots.needle.67percent"
         case .maintenance: "wrench.and.screwdriver"
+        case .recovery: "heart.text.square"
         case .settings: "gearshape"
         }
     }
@@ -54,8 +58,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .search: "5"
         case .memory: "6"
         case .learning: "7"
-        case .maintenance: nil
-        case .settings: nil
+        case .performance, .maintenance, .recovery, .settings: nil
         }
     }
 }
@@ -77,7 +80,7 @@ enum NavGroup: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .workspace: [.dashboard, .workspaces, .timeline]
         case .intelligence: [.graph, .search, .memory, .learning]
-        case .system: [.maintenance, .settings]
+        case .system: [.performance, .maintenance, .recovery, .settings]
         }
     }
 }
@@ -108,6 +111,9 @@ extension Notification.Name {
 
 struct AppShell: View {
     @StateObject private var router = AppRouter.shared
+    /// Observed so the sidebar footer and reconnect handling react to
+    /// daemon lifecycle changes.
+    @ObservedObject private var bridge = CoreBridge.shared
     @State private var workspaces: [Workspace] = []
     @State private var loaded = false
     @State private var loadFailed: String?
@@ -116,6 +122,9 @@ struct AppShell: View {
     @StateObject private var graph = GraphViewModel()
     @StateObject private var memory = MemoryViewModel()
     @StateObject private var learning = LearningViewModel()
+    @StateObject private var performance = PerformanceViewModel()
+    @StateObject private var maintenance = MaintenanceViewModel()
+    @StateObject private var recovery = RecoveryViewModel()
     @State private var workspaceReloadTask: Task<Void, Never>?
 
     var body: some View {
@@ -131,7 +140,10 @@ struct AppShell: View {
                        graph: graph,
                        memory: memory,
                        learning: learning,
-                       onRevealWorkspace: { _ in router.selection = .workspaces })
+                       performance: performance,
+                       maintenance: maintenance,
+                       recovery: recovery,
+                       onRevealWorkspace: revealWorkspace)
                 .background(ContentBackdrop())
         }
         .navigationSplitViewStyle(.balanced)
@@ -154,6 +166,7 @@ struct AppShell: View {
                 .environmentObject(router)
         }
         .task {
+            // Register the event sink before the daemon can emit anything.
             CoreBridge.shared.onEvent = { event, payload in
                 // Existing timeline/search live updates + graph live updates
                 timeline.handle(event: event, payload: payload)
@@ -168,6 +181,12 @@ struct AppShell: View {
             }
             CoreBridge.shared.start()
             await loadWorkspaces()
+        }
+        // After an automatic daemon restart, refresh global state; screens
+        // reload on demand via their own tasks/refresh actions.
+        .onChange(of: bridge.isRunning) { _, running in
+            guard running, loaded else { return }
+            NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
         }
         .onReceive(NotificationCenter.default.publisher(for: .workspacesDidChange)) { _ in
             workspaceReloadTask?.cancel()
@@ -201,9 +220,19 @@ struct AppShell: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            CoreStatusFooter(isRunning: CoreBridge.shared.isRunning,
-                             version: CoreBridge.shared.backendVersion)
+            CoreStatusFooter(isRunning: bridge.isRunning,
+                             isReconnecting: bridge.isReconnecting,
+                             version: bridge.backendVersion) {
+                bridge.reconnect()
+            }
         }
+    }
+
+    /// Reveals a workspace in the Workspaces master list without switching
+    /// the daemon's active workspace.
+    private func revealWorkspace(_ id: String) {
+        router.selection = .workspaces
+        router.revealWorkspaceRequest = id
     }
 
     // MARK: Toolbar
@@ -266,15 +295,27 @@ struct AppShell: View {
 
 struct CoreStatusFooter: View {
     let isRunning: Bool
+    var isReconnecting: Bool = false
     let version: String?
+    /// Manual recovery affordance, shown while offline.
+    var onReconnect: (() -> Void)? = nil
+
+    private var statusColor: Color {
+        isRunning ? .green : (isReconnecting ? .orange : .red)
+    }
+
+    private var statusText: String {
+        if isRunning { return "Core online" }
+        return isReconnecting ? "Core reconnecting…" : "Core offline"
+    }
 
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(isRunning ? Color.green : Color.red)
+                .fill(statusColor)
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
-            Text(isRunning ? "Core online" : "Core offline")
+            Text(statusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let version {
@@ -282,13 +323,20 @@ struct CoreStatusFooter: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+            if !isRunning, let onReconnect {
+                Button("Retry", action: onReconnect)
+                    .buttonStyle(.link)
+                    .font(.caption2)
+                    .help("Restart the core daemon")
+                    .accessibilityLabel("Retry core connection")
+            }
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isRunning
                             ? "ContextSphere core online\(version.map { ", version \($0)" } ?? "")"
-                            : "ContextSphere core offline")
+                            : "ContextSphere core offline\(isReconnecting ? ", reconnecting" : "")")
     }
 }
 
@@ -302,6 +350,9 @@ struct DetailHost: View {
     let graph: GraphViewModel
     let memory: MemoryViewModel
     let learning: LearningViewModel
+    let performance: PerformanceViewModel
+    let maintenance: MaintenanceViewModel
+    let recovery: RecoveryViewModel
     let onRevealWorkspace: (String) -> Void
 
     var body: some View {
@@ -331,7 +382,9 @@ struct DetailHost: View {
         case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)
         case .memory: MemoryView(viewModel: memory)
         case .learning: LearningView(viewModel: learning)
-        case .maintenance: EmptyStateView(title: "Maintenance", message: "Under development.", symbol: "wrench.and.screwdriver")
+        case .performance: PerformanceView(viewModel: performance)
+        case .maintenance: MaintenanceView(viewModel: maintenance)
+        case .recovery: RecoveryView(viewModel: recovery)
         case .settings: SettingsView()
         }
     }
@@ -525,9 +578,9 @@ struct CommandPaletteView: View {
                 router.newWorkspaceRequest = true
                 dismiss()
             case .refresh:
-                Task {
-                    try? await CoreBridge.shared.call("health_check")
-                }
+                // Real recovery: restarts the daemon if it is down or
+                // wedged, instead of only probing health.
+                CoreBridge.shared.reconnect()
                 dismiss()
             }
         }
