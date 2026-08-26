@@ -178,6 +178,15 @@ struct KgSubgraph: Decodable {
     let edges: [KgEdge]
 }
 
+/// Ranked hit from `graph_vector_search` / `graph_ranked_search` (RC-8 M4).
+/// Score is normalized 0…1 (cosine 0…1 for vector, keyword+recency for ranked).
+struct RankedSearchHit: Decodable {
+    let node: KgNode
+    let score: Double
+    let method: String
+    let reason: String
+}
+
 // MARK: - Knowledge graph (legacy `graph_edges` view)
 
 /// Type of relationship in the legacy graph (`get_graph`).

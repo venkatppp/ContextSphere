@@ -52,6 +52,7 @@ swiftc \
   Sources/Graph/GraphLayoutEngine.swift \
   Sources/Graph/GraphRenderer.swift \
   Sources/Graph/GraphRelevance.swift \
+  Sources/Graph/GraphSemanticAdapter.swift \
   Sources/GraphLayout.swift \
   Sources/GraphViewModel.swift \
   Sources/Views/DashboardView.swift \

@@ -69,9 +69,12 @@ final class GraphViewModel: ObservableObject {
     @Published private(set) var relevanceScores: [String: Double] = [:]
     @Published private(set) var relevanceBreakdowns: [String: GraphRelevance.Breakdown] = [:]
     var relevanceProfile: GraphRelevance.Profile = .hybrid
-    /// Semantic extension point: if vector search returns similarity 0…1 per node,
-    /// populate this and relevance will blend it. Empty today (no second system).
-    var semanticScores: [String: Double] = [:]
+    /// Semantic scores from existing retrieval (graph_vector_search → ranked fallback).
+    /// 0…1 per nodeID; empty = no semantic signal. Populated once per
+    /// focus/search change (bounded top-K 20, cached), not per node → no O(n²).
+    private var semanticScores: [String: Double] = [:]
+    private var semanticTask: Task<Void, Never>?
+    private var lastSemanticQuery: String?
 
     /// Adapter: current daemon data → visual model without DB migration (prompt §17).
     var visualizationModel: GraphVisualizationModel {
@@ -94,6 +97,57 @@ final class GraphViewModel: ObservableObject {
             profile: relevanceProfile)
         relevanceScores = result.scores
         relevanceBreakdowns = result.breakdowns
+    }
+
+    // MARK: - Semantic adapter (existing retrieval → relevance)
+
+    /// Fetches semantic scores for a free-text query via the daemon's existing
+    /// vector/FTS stack (graph_vector_search, threshold 0.20, top 20). Cached
+    /// per query, debounced 220 ms, bounded — never O(n²).
+    private func fetchSemantic(for query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            semanticScores = [:]
+            computeRelevance()
+            return
+        }
+        guard trimmed != lastSemanticQuery else { return }
+        lastSemanticQuery = trimmed
+        semanticTask?.cancel()
+        semanticTask = Task {
+            // Debounce: coalesce rapid focus/search changes.
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled else { return }
+            let scores = await GraphSemanticAdapter.fetchScores(for: trimmed)
+            guard !Task.isCancelled else { return }
+            self.semanticScores = scores
+            self.computeRelevance()
+            // Semantic affects layout as a gentle field bias; nudge positions
+            // incrementally without destroying cluster structure.
+            if self.contextFocusID != nil || self.focusedNodeID != nil {
+                self.relayout(anchorID: self.contextFocusID ?? self.focusedNodeID, incremental: true)
+            }
+        }
+    }
+
+    /// Focus-driven semantic context: uses focused entity's title/summary as query.
+    /// Example: focus = GraphRenderer.swift → semantically near GraphLayout.swift,
+    /// GraphCamera.swift, Canvas, Metal. Only one RPC per focus change, top 20.
+    private func fetchSemanticForFocus(_ focusID: String?) {
+        guard let focusID, let node = registry[focusID] ?? nodes.first(where: { $0.id == focusID }) else {
+            // No focus → clear semantic scores so field falls back to
+            // structural/temporal/workspace only; still visible but not central.
+            semanticScores = [:]
+            lastSemanticQuery = nil
+            computeRelevance()
+            return
+        }
+        // Build query from node's title (+ summary prefix). This reuses
+        // existing embeddings (node titles were embedded at index time) — no
+        // new embedding system, no DB change. Disconnected semantic matches
+        // remain projection-level relevance (no permanent edge).
+        let query = node.title + (node.summary.map { " " + String($0.prefix(80)) } ?? "")
+        fetchSemantic(for: query)
     }
 
     // Search (graph_search)
@@ -349,6 +403,9 @@ final class GraphViewModel: ObservableObject {
 
     /// Sets the Context Field focus. Triggers a radial relayout around the
     /// node and animates the camera via the view's `focusNonce`.
+    /// Also fetches semantic neighbors (one vector query, top 20) for this
+    /// focus so structurally disconnected but semantically related nodes can
+    /// appear as temporary relevance (no permanent edge).
     func setContextFocus(_ id: String?) {
         guard contextFocusID != id else { return }
         contextFocusID = id
@@ -359,11 +416,13 @@ final class GraphViewModel: ObservableObject {
             focusNonce += 1
         }
         relayout(anchorID: id ?? workspaceNodeID, incremental: false, focusID: id)
+        fetchSemanticForFocus(id)
     }
 
     func clearContextFocus() {
         contextFocusID = nil
         relayout(anchorID: workspaceNodeID, incremental: false, focusID: nil)
+        fetchSemanticForFocus(nil)
     }
 
     func toggleContextFocus(_ id: String) {
@@ -378,6 +437,10 @@ final class GraphViewModel: ObservableObject {
             searchResults = []
             return
         }
+        // Semantic relevance for the query — bounded top-K, cached, no O(n²).
+        // Uses existing graph_vector_search (cosine 0…1) with threshold 0.20;
+        // missing → 0, never fakes scores.
+        fetchSemantic(for: trimmed)
         searchTask?.cancel()
         searchTask = Task { await performSearch(trimmed) }
     }
