@@ -56,10 +56,29 @@ impl RpcError {
 
 /// Serves the request loop on the tauri async runtime. Stops when stdin
 /// reaches EOF (the Swift frontend terminated the daemon).
+///
+/// Requests are dispatched concurrently (each on its own task, bounded by
+/// `MAX_INFLIGHT_REQUESTS`) so one slow command cannot starve the others.
+/// Responses may therefore arrive out of order — the Swift bridge matches
+/// them by id, which is the JSON-RPC contract this server implements.
+/// Event notifications interleave safely because [`write_response`] writes
+/// each message under a single locked `write_all`.
 pub async fn serve(app: AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Upper bound on concurrently executing requests before the reader
+    /// waits. Generous for a single-user local daemon; prevents unbounded
+    /// task spawn if a client floods the pipe.
+    const MAX_INFLIGHT_REQUESTS: usize = 32;
+
     let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_REQUESTS));
+    let stdout_broken = std::sync::Arc::new(AtomicBool::new(false));
     let mut line = String::new();
     loop {
+        if stdout_broken.load(Ordering::Relaxed) {
+            break;
+        }
         line.clear();
         match tokio::io::AsyncBufReadExt::read_line(&mut stdin, &mut line).await {
             Ok(0) | Err(_) => break, // EOF / pipe closed
@@ -80,11 +99,22 @@ pub async fn serve(app: AppHandle) {
                 continue;
             }
         };
-        let response = dispatch(&app, &request).await;
-        if let Err(error) = write_response(&app, &response) {
-            eprintln!("core-server: failed to write response: {error}");
-            break;
-        }
+        // Permit acquisition happens on the reader loop (backpressure);
+        // the permit moves into the task and is released when it finishes.
+        let permit = match std::sync::Arc::clone(&semaphore).acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => break, // semaphore closed: shutting down
+        };
+        let task_app = app.clone();
+        let broken_flag = std::sync::Arc::clone(&stdout_broken);
+        tauri::async_runtime::spawn(async move {
+            let response = dispatch(&task_app, &request).await;
+            if write_response(&task_app, &response).is_err() {
+                tracing::warn!("core-server: failed to write response (stdout closed)");
+                broken_flag.store(true, Ordering::Relaxed);
+            }
+            drop(permit);
+        });
     }
     // The frontend closed the pipe; take the whole daemon down.
     app.exit(0);
@@ -240,7 +270,7 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
         }
         "list_watch_paths" => rpc_state!(app, params, crate::watcher::FileWatcher, crate::commands::watcher::list_watch_paths, ()),
 
-        // ------------------------------------------------------------- search
+        // -------------------------------------------------------------- search
         "search" => rpc_state_app!(app, params, crate::services::SearchService, crate::commands::search::search, ("query": String, "entity_types": Option<Vec<crate::models::search::SearchEntityType>>, "workspace_id": Option<uuid::Uuid>, "limit": Option<i64>)),
         "get_search_history" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::get_search_history, ("limit": Option<i64>)),
         "save_search_query" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::save_search_query, ("query": String)),
@@ -250,8 +280,21 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
         "delete_saved_search" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::delete_saved_search, ("id": uuid::Uuid)),
         "get_recent_files" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::get_recent_files, ("workspace_id": uuid::Uuid, "limit": Option<i64>)),
         "get_workspace_stats" => rpc_state!(app, params, crate::services::SearchService, crate::commands::search::get_workspace_stats, ("workspace_id": uuid::Uuid)),
+        "graph_ai_vector_search" => {
+            let query: String = pget(params, "query")?;
+            let limit: Option<u32> = pget(params, "limit")?;
+            let r = crate::commands::ai::graph_ai_vector_search(
+                query,
+                limit,
+                app.state::<crate::graph::GraphEngine>(),
+                app.state::<crate::commands::ai::AIState>(),
+            )
+            .await
+            .map_err(|e| RpcError::message(e))?;
+            serde_json::to_value(r).map_err(|e| RpcError::message(e.to_string()))?
+        },
 
-        // ------------------------------------------------------------- graph
+        // --------------------------------------------------------------- graph
         _ => {
             match dispatch_admin::dispatch_admin(app, method, params).await {
                 Ok(result) => result,
