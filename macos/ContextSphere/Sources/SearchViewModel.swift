@@ -33,6 +33,10 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var history: [String] = []
     @Published private(set) var savedSearches: [SavedSearch] = []
     @Published private(set) var lastError: String?
+    /// Fetch failures for the Recent / Saved sections, so those panels
+    /// never silently vanish.
+    @Published private(set) var historyError: String?
+    @Published private(set) var savedError: String?
     @Published var selectedResultID: String?
     /// Transient feedback for save/delete actions (auto-clears).
     @Published private(set) var notice: String?
@@ -146,8 +150,11 @@ final class SearchViewModel: ObservableObject {
                 "get_search_history",
                 params: ["limit": historyLimit],
                 as: [String].self)
+            historyError = nil
         } catch {
-            // Non-fatal: the initial screen still works without history.
+            // Non-fatal: the initial screen still works without history,
+            // but the failure is surfaced instead of hiding the section.
+            historyError = error.localizedDescription
         }
     }
 
@@ -155,8 +162,9 @@ final class SearchViewModel: ObservableObject {
         do {
             try await CoreBridge.shared.call("clear_search_history")
             history = []
+            historyError = nil
         } catch {
-            showNotice("Could not clear history")
+            showNotice("Could not clear history: \(error.localizedDescription)")
         }
     }
 
@@ -166,8 +174,9 @@ final class SearchViewModel: ObservableObject {
         do {
             savedSearches = try await CoreBridge.shared.request(
                 "list_saved_searches", as: [SavedSearch].self)
+            savedError = nil
         } catch {
-            // Non-fatal.
+            savedError = error.localizedDescription
         }
     }
 
@@ -180,7 +189,7 @@ final class SearchViewModel: ObservableObject {
             await refreshSavedSearches()
             showNotice("Search saved")
         } catch {
-            showNotice("Could not save search")
+            showNotice("Could not save search: \(error.localizedDescription)")
         }
     }
 
@@ -189,7 +198,25 @@ final class SearchViewModel: ObservableObject {
             try await CoreBridge.shared.call("delete_saved_search", params: ["id": id])
             savedSearches.removeAll { $0.id == id }
         } catch {
-            showNotice("Could not delete saved search")
+            showNotice("Could not delete saved search: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Workspace activation
+
+    /// Activating a workspace hit really switches the daemon's active
+    /// workspace (context tracking follows) before the view navigates.
+    /// Returns whether the switch succeeded; failures surface via `notice`.
+    func switchToWorkspace(_ id: String) async -> Bool {
+        do {
+            try await CoreBridge.shared.call("switch_workspace", params: ["id": id])
+            if let name = workspaces.first(where: { $0.id == id })?.name {
+                showNotice("Switched to \(name)")
+            }
+            return true
+        } catch {
+            showNotice("Could not switch workspace: \(error.localizedDescription)")
+            return false
         }
     }
 

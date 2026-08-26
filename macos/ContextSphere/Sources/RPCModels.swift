@@ -1097,20 +1097,376 @@ struct RuntimeComponentMetrics: Decodable, Hashable, Identifiable {
     var isHealthy: Bool { status.lowercased() == "healthy" }
 }
 
+// MARK: - Maintenance (RC-10 M3)
+
+/// Mirrors the backend `BackupRun` ledger row (`maintenance_backups`).
+/// `kind` / `status` stay strings — the view only compares them against
+/// the snake_case enum values the backend serializes.
+struct BackupRun: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let kind: String
+    let status: String
+    let path: String
+    let sizeBytes: Int64
+    let checksum: String
+    let detail: String
+    let durationMs: Int64
+    let startedAt: String
+    let completedAt: String
+}
+
+/// One parsed PRAGMA verdict (`integrity_check` / `quick_check`).
+struct IntegrityLines: Decodable, Hashable {
+    let ok: Bool
+    let lines: [String]
+}
+
+/// The full PRAGMA battery for one database file.
+struct IntegrityChecks: Decodable, Hashable {
+    let databaseSizeBytes: Int64
+    let pageCount: Int64
+    let pageSize: Int64
+    let freelistCount: Int64
+    let journalMode: String
+    let integrity: IntegrityLines
+    let quickCheck: IntegrityLines
+    let foreignKeyCheck: [String]
+}
+
+/// Complete integrity report (`maintenance_integrity`).
+struct IntegrityReport: Decodable, Hashable {
+    let checkedAt: String
+    let dbPath: String
+    let main: IntegrityChecks
+    let ok: Bool
+}
+
+/// Result of a staged restore (`maintenance_restore`,
+/// `maintenance_pending_restore`). The swap happens on next launch.
+struct RestoreResult: Decodable, Hashable {
+    let ok: Bool
+    let message: String
+    let backupPath: String
+    let stagedPath: String
+    let appliesOnNextLaunch: Bool
+    let validated: IntegrityChecks
+}
+
+/// Result of a maintenance pass (`maintenance_optimize`).
+struct MaintenanceReport: Decodable, Hashable {
+    let checkedAt: String
+    let freelistBefore: Int64
+    let freelistAfter: Int64
+    let freedPages: Int64
+    let sizeBeforeBytes: Int64
+    let sizeAfterBytes: Int64
+    let recoveredBytes: Int64
+    let vacuumRan: Bool
+    let checkpointedFrames: Int64
+}
+
+// MARK: - Performance (RC-10 M1)
+
+/// Per-operation profiler aggregate (`performance_profile`).
+struct ProfileAggregate: Decodable, Hashable, Identifiable {
+    let category: String
+    let name: String
+    let count: UInt64
+    let avgMs: Double
+    let minMs: UInt64
+    let maxMs: UInt64
+    let p95Ms: Double
+
+    var id: String { "\(category):\(name)" }
+}
+
+/// One measured operation sample.
+struct ProfileSample: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let category: String
+    let name: String
+    let durationMs: UInt64
+    let metadata: JSONValue?
+    let occurredAt: String
+}
+
+/// Point-in-time profiler view.
+struct ProfileSnapshot: Decodable, Hashable {
+    let capturedAt: String
+    let aggregates: [ProfileAggregate]
+    let recent: [ProfileSample]
+    let slowest: [ProfileSample]
+}
+
+/// One timed startup phase.
+struct StartupStage: Decodable, Hashable, Identifiable {
+    let name: String
+    let label: String
+    let durationMs: UInt64
+    let startedAt: String
+
+    var id: String { name }
+}
+
+/// Full report of one application launch (`performance_startup`).
+struct StartupProfile: Decodable, Hashable {
+    let runId: String
+    let totalMs: UInt64
+    let stages: [StartupStage]
+    let recordedAt: String
+}
+
+/// One measured micro-benchmark within a suite run.
+struct BenchmarkResult: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let name: String
+    let operation: String
+    let category: String
+    let iterations: UInt32
+    let durationMs: UInt64
+    let throughputPerSec: Double?
+    let ok: Bool
+    let payload: JSONValue?
+    let createdAt: String
+}
+
+/// Result of running one or more benchmark suites (`performance_benchmark`).
+struct BenchmarkSuiteResult: Decodable, Hashable {
+    let suiteName: String
+    let benchmarks: [BenchmarkResult]
+    let totalDurationMs: UInt64
+    let ranAt: String
+}
+
+struct CpuUsage: Decodable, Hashable {
+    let usagePercent: Double
+    let cores: Int
+    let cpuParallelism: Int
+}
+
+struct MemoryUsage: Decodable, Hashable {
+    let totalBytes: UInt64
+    let usedBytes: UInt64
+    let percent: Double
+}
+
+struct DbUsage: Decodable, Hashable {
+    let sizeBytes: UInt64
+    let path: String
+}
+
+struct CacheUsage: Decodable, Hashable {
+    let runtimeEntries: Int
+    let runtimeHitRate: Double
+    let graphCacheEntries: UInt64
+    let graphCacheSizeBytes: UInt64
+}
+
+/// One background worker's observable state.
+struct WorkerInfo: Decodable, Hashable, Identifiable {
+    let name: String
+    let status: String
+    let executionCount: UInt64
+    let errorCount: UInt64
+    let avgExecutionTimeMs: Double
+    let lastExecution: String?
+
+    var id: String { name }
+}
+
+struct ThreadUsage: Decodable, Hashable {
+    let totalThreads: Int
+    let processCount: Int
+}
+
+/// Whole-application + machine snapshot (`performance_diagnostics`).
+struct DiagnosticsSnapshot: Decodable, Hashable {
+    let capturedAt: String
+    let cpu: CpuUsage
+    let memory: MemoryUsage
+    let db: DbUsage
+    let cache: CacheUsage
+    let workers: [WorkerInfo]
+    let threads: ThreadUsage
+}
+
+/// One actionable finding from the optimizer analysis.
+struct OptimizationRecommendation: Decodable, Hashable, Identifiable {
+    let id: String
+    let category: String
+    /// `info` | `warning` | `critical`.
+    let severity: String
+    let title: String
+    let detail: String
+    /// The safe remediation to apply, when one exists (enum or
+    /// externally-tagged map on the backend).
+    let action: JSONValue?
+}
+
+/// Output of an optimizer run (`performance_optimize`).
+struct OptimizeResult: Decodable, Hashable {
+    let recommendations: [OptimizationRecommendation]
+    /// Recommendation ids whose action was applied.
+    let applied: [String]
+    let analyzedAt: String
+}
+
+/// Combined recent history (`performance_history`).
+struct PerformanceHistory: Decodable, Hashable {
+    let profiles: [ProfileSample]
+    let benchmarks: [BenchmarkResult]
+    let startups: [StartupProfile]
+}
+
+// MARK: - Recovery (RC-10 M2)
+
+/// One append-only reliability event.
+struct RecoveryJournalEntry: Decodable, Hashable, Identifiable {
+    let id: Int64
+    /// snake_case enum string (`checkpoint`, `heartbeat`, …).
+    let entryType: String
+    let scope: String
+    let entity: String
+    let state: String
+    let payload: JSONValue?
+    let checksum: String
+    let createdAt: String
+}
+
+/// One detected crash.
+struct CrashReport: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let component: String
+    /// snake_case enum string (`panic`, `timeout`, …).
+    let crashType: String
+    /// `error` | `critical`.
+    let severity: String
+    let message: String
+    let stackTrace: String
+    let metadata: JSONValue?
+    let wasRecovered: Bool
+    let recoveredAt: String?
+    let reportedAt: String
+}
+
+/// One monitored worker's persisted health row.
+struct WorkerHealth: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let worker: String
+    /// snake_case enum string (`healthy`, `stalled`, …).
+    let status: String
+    let lastHeartbeat: String
+    let consecutiveMisses: UInt64
+    let executionCount: UInt64
+    let errorCount: UInt64
+    let lastError: String
+    let details: JSONValue?
+    let updatedAt: String
+}
+
+/// Point-in-time aggregate health view (`recovery_status`).
+struct HealthSnapshot: Decodable, Hashable {
+    let capturedAt: String
+    let status: String
+    /// `0..=100`, derived from worker liveness.
+    let overallScore: Double
+    let workers: [WorkerHealth]
+    let issues: [String]
+    let details: JSONValue?
+}
+
+/// One completed recovery run (audit row).
+struct RecoveryRun: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let runId: String
+    let trigger: String
+    let outcome: String
+    /// `success` | `partial` | `failed`.
+    let status: String
+    let actions: [String]
+    let recoveredJobs: [String]
+    let rolledBackTo: Int64?
+    let errors: [String]
+    let durationMs: UInt64
+    let startedAt: String
+    let completedAt: String
+}
+
+/// Result of a rollback operation (`recovery_rollback`).
+struct RollbackResult: Decodable, Hashable {
+    let rolledBackTo: Int64?
+    let restored: [String]
+    let ok: Bool
+    let message: String
+}
+
+/// Combined history for the recovery surface (`recovery_history`).
+struct RecoveryHistory: Decodable, Hashable {
+    let runs: [RecoveryRun]
+    let crashes: [CrashReport]
+    let journal: [RecoveryJournalEntry]
+}
+
+/// What the self-healing service did on one pass (`recovery_self_heal`).
+struct SelfHealingReport: Decodable, Hashable {
+    let executed: [String]
+    let failed: [String]
+    let healedWorkers: [String]
+    let ranAt: String
+}
+
+// MARK: - Smart resume sessions
+
+/// Mirror of the backend `SessionSummary` (`get_smart_resume_session`) —
+/// the most recent working session, used to drive "Resume last session".
+struct SessionSummary: Decodable, Hashable {
+    let workspaceId: String
+    let workspaceName: String
+    let startedAt: String
+    let endedAt: String
+    let durationSeconds: Int
+    let fileCount: Int
+    let languages: [String]
+    let productivityScore: Double
+    let scoreFactors: [SessionScoreFactor]
+    let recentEvents: [SessionEventSummary]
+}
+
+struct SessionScoreFactor: Decodable, Hashable {
+    let name: String
+    let weight: Double
+    let value: Double
+    let reason: String
+}
+
+struct SessionEventSummary: Decodable, Hashable {
+    let occurredAt: String
+    let eventType: String
+    let fileName: String?
+    let description: String
+}
+
 // MARK: - Utility
 
 extension String {
-    /// ISO-8601 date as serialized by chrono (RFC 3339, fractional seconds
-    /// present when the value has sub-second precision). The formatter
-    /// accepts both fractional and non-fractional timestamps.
+    /// ISO-8601 date as serialized by chrono (RFC 3339). Chrono omits the
+    /// fractional part when sub-second precision is zero (`AutoSi`), so a
+    /// non-fractional fallback keeps whole-second timestamps parseable.
     private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
+    private static let isoFormatterWholeSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     var isoDate: Date? {
         String.isoFormatter.date(from: self)
+            ?? String.isoFormatterWholeSeconds.date(from: self)
     }
 
     var relativeTime: String {

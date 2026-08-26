@@ -44,6 +44,9 @@ swiftc \
   Sources/SettingsViewModel.swift \
   Sources/MemoryViewModel.swift \
   Sources/LearningViewModel.swift \
+  Sources/PerformanceViewModel.swift \
+  Sources/MaintenanceViewModel.swift \
+  Sources/RecoveryViewModel.swift \
   Sources/Graph/GraphModel.swift \
   Sources/Graph/GraphStyle.swift \
   Sources/Graph/GraphFixture.swift \
@@ -68,6 +71,9 @@ swiftc \
   Sources/Views/MemoryView.swift \
   Sources/Views/MemoryDetailView.swift \
   Sources/Views/LearningView.swift \
+  Sources/Views/PerformanceView.swift \
+  Sources/Views/MaintenanceView.swift \
+  Sources/Views/RecoveryView.swift \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "==> Assembling bundle"

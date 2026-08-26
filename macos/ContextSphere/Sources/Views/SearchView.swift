@@ -204,6 +204,10 @@ struct SearchView: View {
                         .accessibilityLabel("Run recent search: \(item)")
                     }
                 }
+            } else if let historyError = viewModel.historyError {
+                Label("History unavailable: \(historyError)", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             } else {
                 Text("No recent searches — your history appears here after you search.")
                     .font(.callout)
@@ -217,7 +221,11 @@ struct SearchView: View {
             if !viewModel.savedSearches.isEmpty {
                 SectionHeader(title: "Saved", symbol: "bookmark")
             }
-            if viewModel.savedSearches.isEmpty {
+            if viewModel.savedSearches.isEmpty, let savedError = viewModel.savedError {
+                Label("Saved searches unavailable: \(savedError)", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if viewModel.savedSearches.isEmpty {
                 Text("Save a search with the bookmark button to reuse it quickly.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -349,12 +357,16 @@ struct SearchView: View {
         }
     }
 
-    /// Select the result; workspace results also navigate to the
-    /// Workspaces section (the existing app navigation).
+    /// Select the result; workspace results also switch the daemon's
+    /// active workspace before revealing it in the Workspaces section.
     private func activate(_ result: SearchResult) {
         viewModel.selectedResultID = result.id
-        if result.entityType == .workspace {
-            onRevealWorkspace(result.workspaceId)
+        guard result.entityType == .workspace else { return }
+        let workspaceId = result.workspaceId
+        Task {
+            if await viewModel.switchToWorkspace(workspaceId) {
+                onRevealWorkspace(workspaceId)
+            }
         }
     }
 

@@ -20,7 +20,13 @@ struct DashboardView: View {
     @State private var predictions: PredictionsSummary?
     @State private var recommendations: [Recommendation] = []
     @State private var resume: ResumeContext?
+    @State private var lastSession: SessionSummary?
     @State private var loading = true
+    /// Per-load failures, one entry per panel that could not refresh.
+    @State private var loadErrors: [String] = []
+    /// Failure of the most recent explicit action (e.g. switching workspaces).
+    @State private var actionError: String?
+    @State private var isSwitching = false
 
     init(workspaces: [Workspace], onRevealWorkspace: @escaping (String) -> Void = { _ in }) {
         self.workspaces = workspaces
@@ -53,6 +59,9 @@ struct DashboardView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
+                if !loadErrors.isEmpty {
+                    loadErrorBanner
+                }
                 if workspaces.isEmpty {
                     emptyWorkspaces
                 } else {
@@ -69,6 +78,32 @@ struct DashboardView: View {
         .task(id: workspaces.first?.id) {
             await load()
         }
+    }
+
+    /// Aggregated failures from the parallel dashboard loads. Every entry
+    /// is retryable via the banner's Retry action.
+    private var loadErrorBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(loadErrors, id: \.self) { message in
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("Dashboard data failed to load: \(message)")
+            }
+            HStack(spacing: 10) {
+                Button("Retry") { Task { await load() } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Button("Dismiss") { loadErrors = [] }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(Color.orange.opacity(0.4), lineWidth: 0.5))
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - Header
@@ -136,19 +171,33 @@ struct DashboardView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Button {
-                            onRevealWorkspace(workspace.id)
+                            Task { await switchToWorkspace(id: workspace.id, name: workspace.name) }
                         } label: {
-                            Label("Resume", systemImage: "arrow.uturn.forward.circle")
+                            Label(isSwitching ? "Switching…" : "Resume",
+                                  systemImage: "arrow.uturn.forward.circle")
                         }
                         .buttonStyle(.glassProminent)
                         .tint(.indigo)
-                        .accessibilityHint("Opens the Workspaces section")
+                        .disabled(isSwitching)
+                        .accessibilityHint("Makes this the active workspace and restores its context")
                     }
+                }
+
+                if let actionError {
+                    Label(actionError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("Action failed: \(actionError)")
                 }
 
                 if let resume, !resume.unfinishedWork.isEmpty {
                     Divider().opacity(0.5)
                     unfinishedWorkList(resume.unfinishedWork)
+                } else if let session = lastSession,
+                          session.workspaceId != currentWorkspace?.id {
+                    Divider().opacity(0.5)
+                    lastSessionRow(session)
                 }
             }
         }
@@ -534,6 +583,7 @@ struct DashboardView: View {
     private func load() async {
         loading = true
         defer { loading = false }
+        loadErrors = []
 
         let workspace = workspaces.first
 
@@ -542,47 +592,147 @@ struct DashboardView: View {
         async let predictionsResult: PredictionsSummary? = loadPredictions()
         async let recommendationsResult: [Recommendation]? = loadRecommendations(workspace)
         async let resumeResult: ResumeContext? = loadResume(workspace)
+        async let sessionResult: SessionSummary? = loadLastSession()
 
-        let (act, heal, pred, rec, res) = await (
-            activityResult, healthResult, predictionsResult, recommendationsResult, resumeResult)
+        let (act, heal, pred, rec, res, sess) = await (
+            activityResult, healthResult, predictionsResult, recommendationsResult, resumeResult,
+            sessionResult)
 
         activity = act ?? []
         health = heal
         predictions = pred
         recommendations = rec ?? []
         resume = res
+        lastSession = sess
+    }
+
+    /// Failures from individual panel loads land here so they can be
+    /// surfaced (and retried) instead of silently blanking a panel.
+    private func recordLoadError(_ panel: String, _ error: Error) {
+        loadErrors.append("\(panel): \(error.localizedDescription)")
     }
 
     private func loadActivity(_ workspace: Workspace?) async -> [TimelineEvent]? {
         guard let workspace else { return [] }
-        return try? await CoreBridge.shared.request(
-            "get_recent_activity",
-            params: ["workspace_id": workspace.id],
-            as: [TimelineEvent].self)
+        do {
+            return try await CoreBridge.shared.request(
+                "get_recent_activity",
+                params: ["workspace_id": workspace.id],
+                as: [TimelineEvent].self)
+        } catch {
+            recordLoadError("Recent activity", error)
+            return nil
+        }
     }
 
     private func loadHealth() async -> RuntimeHealth? {
-        try? await CoreBridge.shared.request("get_runtime_health", as: RuntimeHealth.self)
+        do {
+            return try await CoreBridge.shared.request("get_runtime_health", as: RuntimeHealth.self)
+        } catch {
+            recordLoadError("System health", error)
+            return nil
+        }
     }
 
     private func loadPredictions() async -> PredictionsSummary? {
-        try? await CoreBridge.shared.request("get_predictions_summary", as: PredictionsSummary.self)
+        do {
+            return try await CoreBridge.shared.request("get_predictions_summary", as: PredictionsSummary.self)
+        } catch {
+            recordLoadError("Predictions", error)
+            return nil
+        }
     }
 
     private func loadRecommendations(_ workspace: Workspace?) async -> [Recommendation]? {
         guard let workspace else { return [] }
-        return try? await CoreBridge.shared.request(
-            "get_workspace_recommendations",
-            params: ["workspace_id": workspace.id],
-            as: [Recommendation].self)
+        do {
+            return try await CoreBridge.shared.request(
+                "get_workspace_recommendations",
+                params: ["workspace_id": workspace.id],
+                as: [Recommendation].self)
+        } catch {
+            recordLoadError("Recommendations", error)
+            return nil
+        }
     }
 
     private func loadResume(_ workspace: Workspace?) async -> ResumeContext? {
         guard let workspace else { return nil }
-        return try? await CoreBridge.shared.request(
-            "copilot_get_resume_context",
-            params: ["workspace_id": workspace.id],
-            as: ResumeContext.self)
+        do {
+            return try await CoreBridge.shared.request(
+                "copilot_get_resume_context",
+                params: ["workspace_id": workspace.id],
+                as: ResumeContext.self)
+        } catch {
+            recordLoadError("Resume context", error)
+            return nil
+        }
+    }
+
+    /// The most recent working session across all workspaces
+    /// (`get_smart_resume_session`); drives the "resume last session"
+    /// fallback when there is no unfinished work in the current workspace.
+    private func loadLastSession() async -> SessionSummary? {
+        do {
+            return try await CoreBridge.shared.request(
+                "get_smart_resume_session",
+                as: SessionSummary?.self)
+        } catch {
+            recordLoadError("Smart resume", error)
+            return nil
+        }
+    }
+
+    // MARK: - Workspace switching
+
+    /// Real resume: makes the workspace active in the daemon (context
+    /// tracking, sessions, and timeline follow), then lets the refreshed
+    /// workspace list drive the hero update.
+    private func switchToWorkspace(id: String, name: String) async {
+        isSwitching = true
+        defer { isSwitching = false }
+        do {
+            try await CoreBridge.shared.call("switch_workspace", params: ["id": id])
+            actionError = nil
+            NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
+        } catch {
+            actionError = "Could not resume \(name): \(error.localizedDescription)"
+        }
+    }
+
+    private func lastSessionRow(_ session: SessionSummary) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Resume last session in \(session.workspaceName)")
+                    .font(.callout.weight(.medium))
+                Text(Self.lastSessionDetail(session))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Switch") {
+                Task { await switchToWorkspace(id: session.workspaceId,
+                                               name: session.workspaceName) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isSwitching)
+            .accessibilityLabel("Switch to \(session.workspaceName) to resume your last session")
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private static func lastSessionDetail(_ session: SessionSummary) -> String {
+        let minutes = max(session.durationSeconds / 60, 0)
+        let duration = minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
+        var parts = ["\(duration)", "\(session.fileCount) file\(session.fileCount == 1 ? "" : "s")"]
+        if !session.languages.isEmpty {
+            parts.append(session.languages.prefix(3).joined(separator: ", "))
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
