@@ -288,14 +288,10 @@ impl ModelManager {
     where
         F: Fn(DownloadProgress),
     {
-        // Check if file already exists and is complete
+        // Check if file already exists — treat any existing file as downloaded
+        // (allows manual copy of the 86 MB ONNX file even though metadata says 23 MB).
         if path.exists() {
-            let metadata = fs::metadata(path).await.map_err(|e| {
-                DatabaseError::IoError(format!("Failed to get file metadata: {}", e))
-            })?;
-            if metadata.len() == total_size {
-                return Ok(()); // Already downloaded
-            }
+            return Ok(());
         }
 
         // Check for partial download
