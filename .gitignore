@@ -25,3 +25,7 @@ macos/ContextSphere/build/
 
 ## Local runtime data
 .freebuff/
+liquid-glass-main 2/
+desktop-v2.db
+desktop-v2.db-shm
+desktop-v2.db-wal
