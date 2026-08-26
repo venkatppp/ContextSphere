@@ -105,6 +105,11 @@ final class AppRouter: ObservableObject {
 
 extension Notification.Name {
     static let workspacesDidChange = Notification.Name("workspacesDidChange")
+    /// Intelligence panels should refresh (payload: none). Emitted on
+    /// `prediction:updated` / `recommendation:updated`.
+    static let intelligenceDidChange = Notification.Name("intelligenceDidChange")
+    /// Workspace health changed (userInfo: workspaceId, healthScore).
+    static let workspaceHealthDidChange = Notification.Name("workspaceHealthDidChange")
 }
 
 // MARK: - App shell
@@ -125,6 +130,7 @@ struct AppShell: View {
     @StateObject private var performance = PerformanceViewModel()
     @StateObject private var maintenance = MaintenanceViewModel()
     @StateObject private var recovery = RecoveryViewModel()
+    @StateObject private var proactiveNotifier = ProactiveNotifier()
     @State private var workspaceReloadTask: Task<Void, Never>?
 
     var body: some View {
@@ -177,6 +183,29 @@ struct AppShell: View {
                     Task { @MainActor in
                         NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
                     }
+                }
+                // Intelligence refresh nudges (debounced on the receiver).
+                if event == "prediction:updated" || event == "recommendation:updated"
+                    || event == "workflow:changed" {
+                    Task { @MainActor in
+                        NotificationCenter.default.post(name: .intelligenceDidChange, object: nil)
+                    }
+                }
+                // Live workspace health updates carry the fresh score.
+                if event == "health:updated", let payload,
+                   let obj = try? JSONDecoder().decode([String: JSONValue].self, from: payload) {
+                    let workspaceId = obj.string("workspaceId") ?? ""
+                    let score = (obj["healthScore"] ?? .number(-1)).jsonObject as? Double ?? -1
+                    Task { @MainActor in
+                        NotificationCenter.default.post(
+                            name: .workspaceHealthDidChange, object: nil,
+                            userInfo: ["workspaceId": workspaceId, "healthScore": score])
+                    }
+                }
+                // Proactive engine output → native macOS notifications.
+                if event == "proactive:notification" {
+                    let data = payload
+                    Task { @MainActor in await proactiveNotifier.deliver(data) }
                 }
             }
             CoreBridge.shared.start()

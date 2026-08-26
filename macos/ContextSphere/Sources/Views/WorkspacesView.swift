@@ -364,9 +364,14 @@ struct WorkspacesView: View {
                 params: ["id": detail.id, "input": ["status": targetStatus.rawValue]],
                 as: Workspace.self)
             triggerReload()
-            // Move selection to reflect new status
-            if let updated = try? await CoreBridge.shared.request("get_workspace", params: ["id": detail.id], as: Workspace.self) {
+            // Move selection to reflect new status; a stale detail pane
+            // would misreport the outcome of the archive toggle.
+            do {
+                let updated: Workspace = try await CoreBridge.shared.request(
+                    "get_workspace", params: ["id": detail.id], as: Workspace.self)
                 self.detail = updated
+            } catch {
+                mutationError = "Archived, but the details could not be refreshed: \(error.localizedDescription)"
             }
         } catch {
             mutationError = error.localizedDescription

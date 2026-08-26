@@ -1446,6 +1446,122 @@ struct SessionEventSummary: Decodable, Hashable {
     let description: String
 }
 
+// MARK: - Daily briefing (analytics)
+
+/// Mirror of the backend `ActivitySummary`.
+struct ActivitySummary: Decodable, Hashable {
+    let timeRange: String
+    let durationSeconds: Int
+    let sessionCount: Int
+    let workspaceCount: Int
+    let fileCount: Int64
+    let editCount: Int64
+    let commitCount: Int64
+    let primaryLanguage: String?
+}
+
+/// Mirror of the backend `WorkspaceDaySummary`.
+struct WorkspaceDaySummary: Decodable, Hashable {
+    let workspaceId: String
+    let workspaceName: String
+    let durationSeconds: Int
+    let sessionCount: Int
+    let editCount: Int64
+}
+
+/// Mirror of the backend `DailyBriefing` (`get_daily_briefing`).
+struct DailyBriefing: Decodable, Hashable {
+    let greeting: String
+    let summary: ActivitySummary
+    let mostActiveWorkspace: WorkspaceDaySummary?
+    let longestFocusSession: Int?
+    let primaryLanguage: String?
+    let insights: [String]
+    let suggestions: [String]
+}
+
+// MARK: - Recommendation explanation (semantic reasoning)
+
+/// Mirror of the backend `Evidence` supporting a prediction.
+struct ExplanationEvidence: Decodable, Hashable, Identifiable {
+    let source: String
+    let description: String
+    let confidence: Double
+    let data: JSONValue?
+
+    var id: String { "\(source):\(description)" }
+}
+
+/// Mirror of the backend `ExplainablePrediction`
+/// (`explain_recommendation`).
+struct ExplainablePrediction: Decodable, Hashable {
+    let predictionType: String
+    let value: JSONValue?
+    let confidence: Double
+    let explanation: String
+    let supportingEvidence: [ExplanationEvidence]
+    let sourceEngines: [String]
+    let relatedDocuments: [String]
+    let createdAt: String
+}
+
+// MARK: - Proactive notifications
+
+/// Mirror of the backend `ProactiveNotification` — delivered live as a
+/// `proactive:notification` daemon event.
+struct ProactiveNotificationPayload: Decodable, Hashable, Identifiable {
+    let id: String
+    let workspaceId: String?
+    /// snake_case enum string (`resume_work`, `unfinished_work`, …).
+    let notificationType: String
+    let title: String
+    let message: String
+    /// lowercase enum string (`low`, `medium`, `high`, `critical`).
+    let priority: String
+    let suggestedActions: [String]
+    let dismissible: Bool
+    let dismissed: Bool
+    let createdAt: String
+
+    var isHighPriority: Bool { priority == "high" || priority == "critical" }
+}
+
+// MARK: - Workspace health (intelligence)
+
+/// Mirror of the backend `HealthMetric`.
+struct HealthMetric: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let value: Double
+    let idealValue: Double?
+    let unit: String
+}
+
+/// Mirror of the backend `HealthFactor`.
+struct HealthFactor: Decodable, Hashable, Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    /// 0.0 – 1.0.
+    let score: Double
+    let weight: Double
+    let metrics: [HealthMetric]
+}
+
+/// Mirror of the backend `WorkspaceHealth`
+/// (`get_workspace_health`; history returns the same type per day).
+struct WorkspaceHealthReport: Decodable, Hashable, Identifiable {
+    let workspaceId: String
+    /// 0.0 – 1.0, where 1.0 is healthiest.
+    let overallScore: Double
+    let factors: [HealthFactor]
+    let calculatedAt: String
+    /// Trend vs previous assessment (positive = improving).
+    let trend: Double?
+
+    var id: String { calculatedAt }
+}
+
 // MARK: - Utility
 
 extension String {
