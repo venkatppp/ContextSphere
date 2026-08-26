@@ -81,6 +81,12 @@ struct CanvasGraphRenderer: GraphRenderer {
                 let inner = Path(ellipseIn: CGRect(x: center.x - r - 2, y: center.y - r - 2, width: (r+2)*2, height: (r+2)*2))
                 context.fill(inner, with: .color(node.color.opacity(0.07 * node.activityIntensity)))
             }
+            // Relevance primary halo — subtle emphasis for what matters now (not neon)
+            if node.relevance > 0.68 && !node.isSelected && !node.isFocused && !node.isRecent && state.semanticLevel != .overview {
+                let relR = r + 3 + CGFloat((node.relevance - 0.68) * 5)
+                let halo = Path(ellipseIn: CGRect(x: center.x - relR, y: center.y - relR, width: relR*2, height: relR*2))
+                context.stroke(halo, with: .color(node.color.opacity(0.14 * (node.relevance - 0.5))), lineWidth: 0.9)
+            }
 
             // Main disc
             let disc = Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r,

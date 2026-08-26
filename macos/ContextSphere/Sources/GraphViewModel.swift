@@ -62,9 +62,38 @@ final class GraphViewModel: ObservableObject {
     /// Last layout pass duration in ms (for the debug overlay / benchmarks).
     @Published private(set) var lastLayoutDurationMs: Double = 0
 
+    /// Relevance field — normalized 0…1 per node, inspectable via breakdowns.
+    /// Computed from focus, distance, importance, temporal, workspace, semantic.
+    /// O(n+m), updated on graph/focus/workspace changes; small temporal bumps
+    /// only affect visual hierarchy, not layout, to preserve mental map.
+    @Published private(set) var relevanceScores: [String: Double] = [:]
+    @Published private(set) var relevanceBreakdowns: [String: GraphRelevance.Breakdown] = [:]
+    var relevanceProfile: GraphRelevance.Profile = .hybrid
+    /// Semantic extension point: if vector search returns similarity 0…1 per node,
+    /// populate this and relevance will blend it. Empty today (no second system).
+    var semanticScores: [String: Double] = [:]
+
     /// Adapter: current daemon data → visual model without DB migration (prompt §17).
     var visualizationModel: GraphVisualizationModel {
         GraphVisualizationModel.fromDaemon(nodes: nodes, edges: edges)
+    }
+
+    /// Inspectable normalized relevance 0…1 for a node (for inspector/debug).
+    func relevance(for nodeID: String) -> Double { relevanceScores[nodeID] ?? 0 }
+    func relevanceBreakdown(for nodeID: String) -> GraphRelevance.Breakdown? { relevanceBreakdowns[nodeID] }
+
+    /// Recomputes relevance scores O(n+m). Call on focus/workspace/graph changes.
+    /// Small temporal bumps only update scores (visual hierarchy) without
+    /// triggering a full relayout, preserving mental map.
+    private func computeRelevance() {
+        let result = GraphRelevance.compute(
+            model: visualizationModel,
+            focusID: contextFocusID ?? focusedNodeID,
+            activeWorkspaceID: selectedWorkspaceId,
+            semanticScores: semanticScores,
+            profile: relevanceProfile)
+        relevanceScores = result.scores
+        relevanceBreakdowns = result.breakdowns
     }
 
     // Search (graph_search)
@@ -381,6 +410,9 @@ final class GraphViewModel: ObservableObject {
     /// Focuses the graph on a found entity: select it, center the view,
     /// and make sure it is part of the displayed graph (merging its
     /// subgraph if it is not already present).
+    /// Search result temporarily becomes the Context Field focus and
+    /// reorganizes the field around it without destroying graph state
+    /// (nodes/edges preserved, only relevance-biased positions shift).
     func focusSearchResult(_ node: KgNode) {
         clearSearch()
         let isKnown = registry[node.id] != nil
@@ -389,13 +421,10 @@ final class GraphViewModel: ObservableObject {
             nodes = registry.values.sorted {
                 ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)
             }
-            relayout(anchorID: node.id, incremental: true)
         }
-        focusedNodeID = node.id
-        selectedNodeID = node.id
-        showInspector = true
-        focusNonce += 1
-        pendingFocus = (node.id, focusNonce)
+        // Reuse existing focus mechanism so relevance field, layout and
+        // visual hierarchy all respond consistently.
+        setContextFocus(node.id)
     }
 
     /// The view confirms it has animated to the requested focus.
@@ -564,9 +593,12 @@ final class GraphViewModel: ObservableObject {
     /// Recomputes layout positions. Uses the hybrid `GraphLayoutEngine`
     /// (cluster + force + radial focus) so the Context Field can
     /// reorganize around a focal entity (prompt §6) without touching
-    /// the persistence layer.
+    /// the persistence layer. Relevance is a continuous spatial field that
+    /// nudges highly relevant nodes inward while preserving workspace clusters.
     private func relayout(anchorID: String? = nil, incremental: Bool = false, focusID: String? = nil) {
         let effectiveFocus = focusID ?? contextFocusID
+        computeRelevance()
+        let relevanceSnap = relevanceScores
         layoutTask?.cancel()
         let model = visualizationModel
         let visible = visibleEdges
@@ -578,8 +610,12 @@ final class GraphViewModel: ObservableObject {
             let result: [String: CGPoint]
             if effectiveFocus != nil {
                 result = GraphLayoutEngine.layout(model: model, existing: existing,
-                                                  anchorID: anchorID, focusID: effectiveFocus)
+                                                  anchorID: anchorID, focusID: effectiveFocus,
+                                                  relevance: relevanceSnap)
             } else {
+                // Hybrid workspace-cluster + relevance: relevance gently biases
+                // cluster placement when no explicit focus exists, using the
+                // active workspace as implicit focus inside GraphRelevance.
                 let inputs = nodesSnap.map { node in
                     GraphLayout.NodeInput(id: node.id, nodeType: node.nodeType,
                                           workspaceId: node.workspaceId, entityId: node.entityId,
@@ -589,7 +625,8 @@ final class GraphViewModel: ObservableObject {
                     GraphLayout.EdgeInput(source: $0.sourceID, target: $0.targetID, weight: $0.weight)
                 }
                 result = GraphLayout.layout(nodes: inputs, edges: edgeInputs,
-                                             existing: existing, anchorID: anchorID)
+                                             existing: existing, anchorID: anchorID,
+                                             relevance: relevanceSnap)
             }
             guard !Task.isCancelled else { return }
             let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000

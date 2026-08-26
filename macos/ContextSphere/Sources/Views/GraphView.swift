@@ -75,7 +75,8 @@ struct GraphScreen: View {
                 selectedID: viewModel.selectedNodeID,
                 hoveredID: hoveredNodeID,
                 focusedID: viewModel.contextFocusID ?? viewModel.focusedNodeID,
-                edgeDensity: density
+                edgeDensity: density,
+                relevance: viewModel.relevanceScores
             )
             var ctx = context
             renderer.render(state: state, in: &ctx, size: cSize)

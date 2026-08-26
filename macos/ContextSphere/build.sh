@@ -51,6 +51,7 @@ swiftc \
   Sources/Graph/GraphRenderState.swift \
   Sources/Graph/GraphLayoutEngine.swift \
   Sources/Graph/GraphRenderer.swift \
+  Sources/Graph/GraphRelevance.swift \
   Sources/GraphLayout.swift \
   Sources/GraphViewModel.swift \
   Sources/Views/DashboardView.swift \

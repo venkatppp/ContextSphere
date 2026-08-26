@@ -39,7 +39,8 @@ enum GraphLayout {
 
     static func layout(nodes: [NodeInput], edges: [EdgeInput],
                        existing: [String: CGPoint] = [:],
-                       anchorID: String? = nil) -> [String: CGPoint] {
+                       anchorID: String? = nil,
+                       relevance: [String: Double] = [:]) -> [String: CGPoint] {
         guard !nodes.isEmpty else { return [:] }
 
         var positions = existing
@@ -57,7 +58,7 @@ enum GraphLayout {
 
         // Full (re)layout when nothing exists yet.
         if existing.isEmpty {
-            positions = clusterLayout(nodes: nodes)
+            positions = clusterLayout(nodes: nodes, relevance: relevance)
         }
 
         // Relaxation.
@@ -75,7 +76,7 @@ enum GraphLayout {
 
     // MARK: - Cluster + ring layout
 
-    private static func clusterLayout(nodes: [NodeInput]) -> [String: CGPoint] {
+    private static func clusterLayout(nodes: [NodeInput], relevance: [String: Double] = [:]) -> [String: CGPoint] {
         var clusters: [String: [NodeInput]] = [:]
         for node in nodes {
             let key = node.workspaceId ?? "orphan:\(node.nodeType.rawValue)"
@@ -105,7 +106,7 @@ enum GraphLayout {
             let center = CGPoint(x: cos(angle) * ringRadius,
                                  y: sin(angle) * ringRadius)
             for member in clusters[cluster.key] ?? [] {
-                let local = placeClusterSingle(member, in: clusters[cluster.key] ?? [])
+                let local = placeClusterSingle(member, in: clusters[cluster.key] ?? [], relevance: relevance)
                 result[member.id] = CGPoint(x: center.x + local.x, y: center.y + local.y)
             }
         }
@@ -113,15 +114,26 @@ enum GraphLayout {
     }
 
     private static func placeClusterSingle(_ node: NodeInput,
-                                           in members: [NodeInput]) -> CGPoint {
+                                           in members: [NodeInput],
+                                           relevance: [String: Double] = [:]) -> CGPoint {
         let head = members.first { $0.isWorkspace }
         if node.id == head?.id {
             return .zero
         }
         let nonHeads = members.filter { $0.id != head?.id }
-        let sorted = nonHeads.sorted { fnv1a($0.id) < fnv1a($1.id) }
+        // Hybrid: relevance sorts inner vs outer ring, but workspace clusters remain legible.
+        // Highly relevant → inner ring (smaller radius), low relevance → outer but still visible.
+        let sorted = nonHeads.sorted {
+            let ra = relevance[$0.id] ?? 0.5, rb = relevance[$1.id] ?? 0.5
+            if abs(ra - rb) > 0.07 { return ra > rb }
+            return fnv1a($0.id) < fnv1a($1.id)
+        }
         guard let index = sorted.firstIndex(where: { $0.id == node.id }) else { return .zero }
-        let (radius, capacity, offset) = ringGeometry(index: index)
+        let (baseRadius, capacity, offset) = ringGeometry(index: index)
+        // Subtle relevance radius tweak within ring: relevant ~ -8, ambient ~ +8 (preserves ring)
+        let rel = relevance[node.id] ?? 0.5
+        let tweak = (0.5 - CGFloat(rel)) * 16 // -8 at 1.0, +8 at 0.0
+        let radius = baseRadius + tweak
         let angle = offset + 2 * .pi * CGFloat(index) / CGFloat(capacity)
         return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
     }

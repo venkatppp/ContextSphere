@@ -17,32 +17,34 @@ enum GraphLayoutEngine {
     static let worldWidth: CGFloat = 1400
     static let worldHeight: CGFloat = 900
 
-    /// Entry point used by the view model.
+    /// Entry point used by the view model. Relevance is a 0…1 field per node.
     static func layout(model: GraphVisualizationModel,
                        existing: [String: CGPoint] = [:],
                        anchorID: String? = nil,
-                       focusID: String? = nil) -> [String: CGPoint] {
-        // If focused, prefer radial focus layout
+                       focusID: String? = nil,
+                       relevance: [String: Double] = [:]) -> [String: CGPoint] {
+        // If focused, prefer relevance-aware radial focus layout
         if let focusID, model.nodeByID[focusID] != nil {
-            return focusRadialLayout(model: model, focusID: focusID, existing: existing)
+            return focusRadialLayout(model: model, focusID: focusID, existing: existing, relevance: relevance)
         }
-        // Otherwise reuse the proven cluster+ring+force pipeline
+        // Otherwise hybrid workspace-cluster + relevance pipeline
         let nodes = model.nodes.map { vn in
             GraphLayout.NodeInput(id: vn.id, nodeType: vn.nodeType,
-                                  workspaceId: vn.workspaceId, entityId: vn.entityId,
-                                  isWorkspace: vn.isWorkspace)
+                                   workspaceId: vn.workspaceId, entityId: vn.entityId,
+                                   isWorkspace: vn.isWorkspace)
         }
         let edges = model.edges.map { e in
             GraphLayout.EdgeInput(source: e.sourceID, target: e.targetID, weight: e.weight)
         }
-        return GraphLayout.layout(nodes: nodes, edges: edges, existing: existing, anchorID: anchorID)
+        return GraphLayout.layout(nodes: nodes, edges: edges, existing: existing, anchorID: anchorID, relevance: relevance)
     }
 
     // MARK: Radial focus layout
 
     private static func focusRadialLayout(model: GraphVisualizationModel,
-                                          focusID: String,
-                                          existing: [String: CGPoint]) -> [String: CGPoint] {
+                                           focusID: String,
+                                           existing: [String: CGPoint],
+                                           relevance: [String: Double] = [:]) -> [String: CGPoint] {
         let distances = model.distances(from: focusID)
         // Group by distance: 0 = focus, 1 = neighbors, 2 = second-degree, nil = background
         var rings: [Int: [GraphVisualizationModel.VisualNode]] = [:]
@@ -56,13 +58,27 @@ enum GraphLayoutEngine {
         // Focus at origin
         positions[focusID] = .zero
 
+        // Relevance as continuous field: highly relevant pulls inward ~30%,
+        // medium stays, low drifts outward but remains visible (ambient).
+        func relevancePull(_ id: String, base: CGFloat) -> CGFloat {
+            let rel = relevance[id] ?? 0.5 // neutral if missing
+            // 1.15 at rel 0 → +15% outward (ambient still visible)
+            // 0.70 at rel 1 → –30% inward (strong pull)
+            let factor = 1.15 - CGFloat(rel) * 0.45
+            return base * factor
+        }
+
         // Ring radii grow with distance; inner rings carry neighbors
         let radii: [Int: CGFloat] = [1: 110, 2: 230, 3: 360]
         for dist in [1, 2, 3] {
             guard let members = rings[dist], !members.isEmpty else { continue }
-            // Sort by importance so important neighbors are at "north"
-            let sorted = members.sorted { $0.importance > $1.importance }
-            let radius = radii[dist] ?? 360 + CGFloat(dist - 3) * 70
+            // Sort by relevance then importance so most relevant neighbors are at "north"
+            let sorted = members.sorted {
+                let ra = relevance[$0.id] ?? 0, rb = relevance[$1.id] ?? 0
+                if abs(ra - rb) > 0.08 { return ra > rb }
+                return $0.importance > $1.importance
+            }
+            let baseRadius = radii[dist] ?? 360 + CGFloat(dist - 3) * 70
             // Distribute evenly, offset by hash for stability
             let offset = CGFloat(fnv1a(focusID) % 360) * .pi / 180
             for (idx, node) in sorted.enumerated() {
@@ -70,18 +86,26 @@ enum GraphLayoutEngine {
                 let angle = offset + 2 * .pi * CGFloat(idx) / CGFloat(sorted.count)
                 // Add small jitter seeded by node id so coincident rings don't stack
                 let jitter = CGFloat(Int(fnv1a(node.id) % 20) - 10)
-                let r = radius + jitter
+                let base = baseRadius + jitter
+                let r = relevancePull(node.id, base: base)
                 positions[node.id] = CGPoint(x: cos(angle) * r, y: sin(angle) * r)
             }
         }
 
-        // Background nodes: place in a faint outer circle, spread widely
+        // Background nodes: place in a faint outer circle, spread widely, but
+        // highly relevant background nodes are pulled inward so a relevant file
+        // outside the immediate cluster does not stay crushed at the edge.
         if !background.isEmpty {
             let outerRadius: CGFloat = 520
-            let sortedBG = background.sorted { fnv1a($0.id) < fnv1a($1.id) }
+            let sortedBG = background.sorted {
+                let ra = relevance[$0.id] ?? 0, rb = relevance[$1.id] ?? 0
+                if abs(ra - rb) > 0.08 { return ra > rb }
+                return fnv1a($0.id) < fnv1a($1.id)
+            }
             for (idx, node) in sortedBG.enumerated() {
                 let angle = 2 * .pi * CGFloat(idx) / CGFloat(sortedBG.count) + 0.17
-                let r = outerRadius + CGFloat(fnv1a(node.id) % 120)
+                let base = outerRadius + CGFloat(fnv1a(node.id) % 120)
+                let r = relevancePull(node.id, base: base)
                 positions[node.id] = CGPoint(x: cos(angle) * r, y: sin(angle) * r)
             }
         }
