@@ -237,6 +237,7 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
                 app.state::<crate::context_memory::ContextMemoryEngine>(),
                 app.state::<crate::repositories::FileRepository>(),
                 app.state::<std::sync::Arc<crate::runtime::RuntimeWorkers>>(),
+                app.state::<std::sync::Arc<crate::copilot::ProactiveEngine>>(),
                 id,
             )
             .await;
