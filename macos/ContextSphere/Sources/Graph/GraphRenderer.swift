@@ -61,11 +61,15 @@ struct CanvasGraphRenderer: GraphRenderer {
             let r = node.radius
             let center = node.screen
 
-            // Focus halo (outermost)
+            // Focus halo (outermost) — unmistakable but calm native
             if node.isFocused {
-                let halo = Path(ellipseIn: CGRect(x: center.x - r - 9, y: center.y - r - 9,
-                                                   width: (r + 9) * 2, height: (r + 9) * 2))
-                context.fill(halo, with: .color(node.color.opacity(0.14)))
+                let outer = Path(ellipseIn: CGRect(x: center.x - r - 11, y: center.y - r - 11,
+                                                   width: (r + 11) * 2, height: (r + 11) * 2))
+                context.fill(outer, with: .color(.accentColor.opacity(0.16)))
+                context.stroke(outer, with: .color(.accentColor.opacity(0.32)), lineWidth: 1.2)
+                let inner = Path(ellipseIn: CGRect(x: center.x - r - 6, y: center.y - r - 6,
+                                                   width: (r + 6) * 2, height: (r + 6) * 2))
+                context.fill(inner, with: .color(.white.opacity(0.09)))
             }
             // Selection halo
             if node.isSelected {
