@@ -115,10 +115,10 @@ struct GraphScreen: View {
     private func hitTest(_ screen: CGPoint) -> String? {
         let world = camera.screenToWorld(screen)
         var best: (id: String, d: CGFloat)?
-        for id in viewModel.positions.keys {
-            guard let p = viewModel.positions[id],
-                  let node = viewModel.nodes.first(where: { $0.id == id }) else { continue }
-            let hr = max(node.nodeType.nodeRadius, 12) + 8
+        for (id, p) in viewModel.positions {
+            guard let node = viewModel.node(for: id) else { continue }
+            // Screen-space slop so tiny far-apart nodes stay grabbable.
+            let hr = max(node.nodeType.nodeRadius / camera.zoom, 6) + 6
             let dx = p.x - world.x, dy = p.y - world.y
             let d = sqrt(dx*dx + dy*dy)
             if d <= hr, best == nil || d < best!.d { best = (id, d) }
@@ -300,6 +300,10 @@ struct GraphScreen: View {
             HStack(spacing: 6) {
                 Text("\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships")
                     .font(.caption).foregroundStyle(.secondary)
+                if viewModel.isTruncated {
+                    Text("· showing first \(viewModel.nodes.count) of \(viewModel.totalNodeCount)")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
                 if viewModel.contextFocusID != nil { Text("· focused").font(.caption2).foregroundStyle(.orange) }
                 if camera.semanticLevel == .overview { Text("· overview").font(.caption2).foregroundStyle(.tertiary) }
             }

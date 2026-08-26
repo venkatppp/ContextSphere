@@ -786,7 +786,7 @@ impl CopilotEngine {
 
         // Get today's events
         let events = if let Some(ws_id) = workspace_id {
-            self.timeline_engine.recent_events(ws_id, Some(100)).await?
+            self.timeline_engine.recent_events(ws_id, Some(100), None).await?
         } else {
             Vec::new()
         };

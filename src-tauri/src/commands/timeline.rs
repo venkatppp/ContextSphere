@@ -21,8 +21,9 @@ pub async fn list_workspace_timeline(
     engine: State<'_, TimelineEngine>,
     workspace_id: Uuid,
     limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<TimelineEvent>, DatabaseError> {
-    engine.recent_events(workspace_id, limit).await
+    engine.recent_events(workspace_id, limit, offset).await
 }
 
 /// Convenience alias for the dashboard's "recent activity" use case:
@@ -36,6 +37,6 @@ pub async fn get_recent_activity(
     workspace_id: Uuid,
 ) -> Result<Vec<TimelineEvent>, DatabaseError> {
     engine
-        .recent_events(workspace_id, Some(RECENT_ACTIVITY_LIMIT))
+        .recent_events(workspace_id, Some(RECENT_ACTIVITY_LIMIT), None)
         .await
 }

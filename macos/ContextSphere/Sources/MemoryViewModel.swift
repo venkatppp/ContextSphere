@@ -71,6 +71,33 @@ final class MemoryViewModel: ObservableObject {
     @Published private(set) var cleanupRunning = false
     @Published private(set) var reindexRunning = false
 
+    // MARK: - Depth: duplicates / snapshots / transfer / compression
+
+    /// Identical-memory groups detected by the core (`memory_duplicate_groups`).
+    @Published private(set) var duplicateGroups: [MemoryDuplicateGroup] = []
+    @Published private(set) var duplicatesLoading = false
+    @Published private(set) var mergeRunning = false
+    @Published private(set) var mergeResult: MergeResult?
+
+    /// Stored snapshots, newest first (`memory_snapshot_list`).
+    @Published private(set) var snapshots: [MemorySnapshot] = []
+    @Published private(set) var snapshotsLoading = false
+    @Published private(set) var snapshotRunning = false
+    /// Last snapshot action outcome, surfaced inline.
+    @Published private(set) var snapshotNotice: String?
+    @Published private(set) var restoreResult: SnapshotRestoreResult?
+    /// Snapshot id awaiting the user's restore confirmation.
+    @Published var pendingRestoreSnapshotID: String?
+
+    @Published private(set) var importExportRunning = false
+    @Published private(set) var importResult: MemoryImportResult?
+    /// Inline confirmation for export/import outcomes.
+    @Published var transferNotice: String?
+
+    @Published private(set) var compressRunning = false
+    @Published private(set) var compressResult: CompressionResult?
+    @Published private(set) var restoreCompressedState: [String: ActionState] = [:]
+
     private(set) var workspaces: [Workspace] = []
 
     // MARK: - Configuration
@@ -111,8 +138,10 @@ final class MemoryViewModel: ObservableObject {
         async let storage: MemoryStorageStats? = try? CoreBridge.shared.request("memory_storage_stats", as: MemoryStorageStats.self)
         async let families: [WorkflowFamily]? = try? CoreBridge.shared.request("memory_workflow_families", as: [WorkflowFamily].self)
         async let failures: [FailurePattern]? = try? CoreBridge.shared.request("memory_failure_patterns", as: [FailurePattern].self)
+        async let duplicates: [MemoryDuplicateGroup]? = try? CoreBridge.shared.request("memory_duplicate_groups", as: [MemoryDuplicateGroup].self)
+        async let snapshots: [MemorySnapshot]? = try? CoreBridge.shared.request("memory_snapshot_list", as: [MemorySnapshot].self)
 
-        let results = await (stats, health, aging, index, storage, families, failures)
+        let results = await (stats, health, aging, index, storage, families, failures, duplicates, snapshots)
         self.stats = results.0 ?? self.stats
         self.health = results.1 ?? self.health
         self.aging = results.2 ?? self.aging
@@ -120,6 +149,8 @@ final class MemoryViewModel: ObservableObject {
         self.storage = results.4 ?? self.storage
         self.families = results.5 ?? self.families
         self.failurePatterns = results.6 ?? self.failurePatterns
+        self.duplicateGroups = results.7 ?? self.duplicateGroups
+        self.snapshots = results.8 ?? self.snapshots
 
         do {
             try await searchNow()
@@ -268,6 +299,138 @@ final class MemoryViewModel: ObservableObject {
         do {
             reindexResult = try await CoreBridge.shared.request("memory_reindex", as: IndexResult.self)
             await refresh()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Depth: duplicates
+
+    func refreshDuplicates() async {
+        duplicatesLoading = true
+        defer { duplicatesLoading = false }
+        do {
+            duplicateGroups = try await CoreBridge.shared.request(
+                "memory_duplicate_groups", as: [MemoryDuplicateGroup].self)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Merges identical memories (the core keeps the best record of each
+    /// group). Confirmation lives in the view; this only runs the RPC.
+    func mergeDuplicates() async {
+        mergeRunning = true
+        defer { mergeRunning = false }
+        do {
+            mergeResult = try await CoreBridge.shared.request(
+                "memory_merge_duplicates", as: MergeResult.self)
+            await refresh()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Depth: snapshots
+
+    func createSnapshot(label: String?) async {
+        snapshotRunning = true
+        defer { snapshotRunning = false }
+        var params: [String: Any] = [:]
+        let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty { params["label"] = trimmed }
+        do {
+            _ = try await CoreBridge.shared.request(
+                "memory_snapshot_create", params: params, as: MemorySnapshot.self)
+            snapshotNotice = "Snapshot created"
+            await refresh()
+        } catch {
+            snapshotNotice = "Could not create snapshot: \(error.localizedDescription)"
+        }
+    }
+
+    func restoreSnapshot(_ id: String) async {
+        pendingRestoreSnapshotID = nil
+        snapshotRunning = true
+        defer { snapshotRunning = false }
+        do {
+            restoreResult = try await CoreBridge.shared.request(
+                "memory_snapshot_restore",
+                params: ["snapshot_id": id],
+                as: SnapshotRestoreResult.self)
+            snapshotNotice = "Restored \(restoreResult?.recordsRestored ?? 0) records"
+            deselect()
+            await refresh()
+        } catch {
+            snapshotNotice = "Restore failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Depth: export / import
+
+    /// Writes a full-store export to the chosen file. The save panel and
+    /// confirmation live in the view; returns success for the inline notice.
+    func exportToFile(at url: URL) async -> Bool {
+        importExportRunning = true
+        defer { importExportRunning = false }
+        do {
+            let payload = try await CoreBridge.shared.request(
+                "memory_export_json", as: String.self)
+            guard let data = payload.data(using: .utf8) else {
+                lastError = "Export produced invalid text"
+                return false
+            }
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            lastError = "Export failed: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// Imports an export payload previously written by `exportToFile`.
+    func importFromFile(at url: URL) async {
+        importExportRunning = true
+        defer { importExportRunning = false }
+        do {
+            let content = try String(contentsOf: url, encoding: .utf8)
+            importResult = try await CoreBridge.shared.request(
+                "memory_import_json", params: ["content": content], as: MemoryImportResult.self)
+            await refresh()
+        } catch {
+            lastError = "Import failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Depth: compression
+
+    func compressOversized() async {
+        compressRunning = true
+        defer { compressRunning = false }
+        do {
+            compressResult = try await CoreBridge.shared.request(
+                "memory_compress_oversized", as: CompressionResult.self)
+            await refresh()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// Restores one compressed record from its preservation archive.
+    func restoreCompressed(_ id: String) async {
+        restoreCompressedState[id] = .working
+        defer { restoreCompressedState[id] = nil }
+        do {
+            let restored = try await CoreBridge.shared.request(
+                "memory_restore_compressed",
+                params: ["memory_id": id],
+                as: Bool.self)
+            if restored {
+                if selectedID == id { await loadLineage(for: id) }
+                await refreshOverviewOnly()
+            } else {
+                lastError = "The core could not restore that memory"
+            }
         } catch {
             lastError = error.localizedDescription
         }

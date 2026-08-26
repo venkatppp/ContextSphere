@@ -104,7 +104,7 @@ impl ProactiveDetector {
     ) -> Result<Option<ProactiveNotification>, DatabaseError> {
         let timeline = self
             .timeline_engine
-            .recent_events(workspace_id, Some(100))
+            .recent_events(workspace_id, Some(100), None)
             .await?;
 
         let since = Utc::now() - Duration::minutes(10);
@@ -164,7 +164,7 @@ impl ProactiveDetector {
     ) -> Result<Option<ProactiveNotification>, DatabaseError> {
         let timeline = self
             .timeline_engine
-            .recent_events(workspace_id, Some(10))
+            .recent_events(workspace_id, Some(10), None)
             .await?;
 
         if let Some(last_event) = timeline.first() {
@@ -251,7 +251,7 @@ impl ProactiveDetector {
         // Check timeline for incomplete patterns
         let timeline = self
             .timeline_engine
-            .recent_events(workspace_id, Some(50))
+            .recent_events(workspace_id, Some(50), None)
             .await?;
 
         // Look for files that were opened but not saved

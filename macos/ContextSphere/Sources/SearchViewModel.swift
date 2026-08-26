@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// State and data flow for the Search screen.
 ///
@@ -200,6 +201,36 @@ final class SearchViewModel: ObservableObject {
         } catch {
             showNotice("Could not delete saved search: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Result actions
+
+    /// The absolute path of a file hit. For files the backend indexes
+    /// `path_or_url` as the FTS title, so the title *is* the path;
+    /// non-path titles simply fail gracefully downstream.
+    func filePath(for result: SearchResult) -> String? {
+        result.entityType == .file ? result.title : nil
+    }
+
+    /// Opens a file hit with AppKit, falling back to the core's
+    /// `open_file` RPC for stale/unregistered paths. Returns success so
+    /// the view can surface failures instead of failing silently.
+    func openFile(_ result: SearchResult) async -> Bool {
+        guard let path = filePath(for: result) else { return false }
+        if NSWorkspace.shared.open(URL(fileURLWithPath: path)) { return true }
+        do {
+            try await CoreBridge.shared.call("open_file", params: ["path": path])
+            return true
+        } catch {
+            showNotice("Could not open \(result.title): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Reveals a file hit in Finder; surfaces failure as a notice.
+    func revealInFinder(_ result: SearchResult) {
+        guard let path = filePath(for: result) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
     // MARK: - Workspace activation

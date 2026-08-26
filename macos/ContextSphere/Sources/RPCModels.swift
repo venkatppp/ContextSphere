@@ -180,6 +180,31 @@ struct KgSubgraph: Decodable {
 
 /// Ranked hit from `graph_vector_search` / `graph_ranked_search` (RC-8 M4).
 /// Score is normalized 0…1 (cosine 0…1 for vector, keyword+recency for ranked).
+/// One bounded page of graph nodes (`NodePage`) used to keep
+/// whole-graph loads off pathological sizes.
+struct GraphNodePage: Decodable {
+    let nodes: [KgNode]
+    let total: Int
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case nodes, total
+        case hasMore = "has_more"
+    }
+}
+
+/// One bounded page of graph edges (`EdgePage`).
+struct GraphEdgePage: Decodable {
+    let edges: [KgEdge]
+    let total: Int
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case edges, total
+        case hasMore = "has_more"
+    }
+}
+
 struct RankedSearchHit: Decodable {
     let node: KgNode
     let score: Double
@@ -734,6 +759,115 @@ struct MemoryStorageStats: Decodable, Hashable {
         case compressedRecords = "compressed_records"
         case compressionArchiveCount = "compression_archive_count"
     }
+}
+
+/// A set of identical memories with the record chosen to survive
+/// (`DuplicateGroup`).
+struct MemoryDuplicateGroup: Decodable, Hashable {
+    let goalFingerprint: String
+    /// All identical records, newest first.
+    let records: [ExecutionMemoryRecord]
+    /// Id of the record that survives a merge.
+    let keepId: String
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case records, reason
+        case goalFingerprint = "goal_fingerprint"
+        case keepId = "keep_id"
+    }
+
+    /// Records removed by a merge: every member except the keeper.
+    var duplicateIDs: [String] {
+        records.map(\.id).filter { $0 != keepId }
+    }
+}
+
+/// Outcome of a duplicate-merge pass (`MergeResult`).
+struct MergeResult: Decodable, Hashable {
+    let groupsMerged: Int
+    let recordsMerged: Int
+
+    enum CodingKeys: String, CodingKey {
+        case groupsMerged = "groups_merged"
+        case recordsMerged = "records_merged"
+    }
+}
+
+/// One stored memory snapshot (`MemorySnapshot`); the payload stays in the core.
+struct MemorySnapshot: Decodable, Hashable, Identifiable {
+    let id: String
+    let label: String
+    let createdAt: String
+    let recordCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, label
+        case createdAt = "created_at"
+        case recordCount = "record_count"
+    }
+}
+
+/// Outcome of restoring a snapshot (`RestoreResult`).
+struct SnapshotRestoreResult: Decodable, Hashable {
+    let recordsRestored: Int
+    let acceptanceRestored: Int
+    let snapshotsKept: Int
+
+    enum CodingKeys: String, CodingKey {
+        case recordsRestored = "records_restored"
+        case acceptanceRestored = "acceptance_restored"
+        case snapshotsKept = "snapshots_kept"
+    }
+}
+
+/// Outcome of importing an export payload (`ImportResult`).
+struct MemoryImportResult: Decodable, Hashable {
+    let imported: Int
+    let skipped: Int
+    let acceptanceRestored: Int
+
+    enum CodingKeys: String, CodingKey {
+        case imported, skipped
+        case acceptanceRestored = "acceptance_restored"
+    }
+}
+
+/// Outcome of a compression pass (`CompressionResult`).
+struct CompressionResult: Decodable, Hashable {
+    let examined: Int
+    let compressed: Int
+    let alreadyCompressed: Int
+
+    enum CodingKeys: String, CodingKey {
+        case examined, compressed
+        case alreadyCompressed = "already_compressed"
+    }
+}
+
+/// One work session derived from timeline events by the core's
+/// SessionEngine (`Session`). Sessions are not stored data — they are
+/// recomputed from the timeline on demand.
+struct WorkspaceSession: Decodable, Hashable, Identifiable {
+    let workspaceId: String
+    let startedAt: String
+    let endedAt: String
+    let durationSeconds: Int
+    let eventCount: Int
+    let fileCount: Int
+    let languages: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case languages
+        case workspaceId = "workspace_id"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case durationSeconds = "duration_seconds"
+        case eventCount = "event_count"
+        case fileCount = "file_count"
+    }
+
+    var id: String { "\(workspaceId):\(startedAt)" }
 }
 
 /// One node in a memory lineage (`LineageNode`).

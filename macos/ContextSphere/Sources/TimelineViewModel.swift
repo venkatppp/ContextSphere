@@ -24,16 +24,20 @@ final class TimelineViewModel: ObservableObject {
     /// Daemon notification carrying a serialized `TimelineEvent`.
     static let eventAddedEvent = "timeline:event_added"
 
-    /// Page sizes for `list_workspace_timeline`. The backend clamps to
-    /// 500; loading "more" moves to the next tier instead of unbounded
-    /// history.
-    private let pageSizes = [100, 250, 500]
+    /// Page size for `list_workspace_timeline`. The backend clamps to
+    /// 500 per request; deeper history is fetched with server-side
+    /// offsets instead of one oversized query.
+    private let pageSize = 250
 
     @Published private(set) var events: [TimelineEvent] = []
     @Published private(set) var groups: [DayGroup] = []
     @Published private(set) var state: LoadState = .idle
     @Published private(set) var isFetching = false
     @Published private(set) var hasMore = false
+    /// Recent work sessions for the selected workspace, computed by the
+    /// core's SessionEngine from timeline events (`get_workspace_sessions`).
+    @Published private(set) var sessions: [WorkspaceSession] = []
+    @Published private(set) var selectedSessionID: String?
     /// Non-fatal error (e.g. a background refresh failed while content is
     /// already on screen). Cleared on the next successful fetch.
     @Published private(set) var lastError: String?
@@ -58,9 +62,45 @@ final class TimelineViewModel: ObservableObject {
     func selectWorkspace(_ id: String?) {
         guard id != selectedWorkspaceId else { return }
         selectedWorkspaceId = id
-        pageIndex = 0
+        selectedSessionID = nil
         lastError = nil
-        Task { await fetch(append: false) }
+        Task {
+            await fetch(append: false)
+            await loadSessions()
+        }
+    }
+
+    // MARK: - Sessions
+
+    /// Selecting a session filters the feed to that session's window.
+    func selectSession(_ id: String?) {
+        guard let id else {
+            clearSessionSelection()
+            return
+        }
+        selectedSessionID = id == selectedSessionID ? nil : id
+        recomputeGroups()
+    }
+
+    func clearSessionSelection() {
+        selectedSessionID = nil
+        recomputeGroups()
+    }
+
+    private func loadSessions() async {
+        guard let workspaceId = selectedWorkspaceId else {
+            sessions = []
+            return
+        }
+        do {
+            sessions = try await CoreBridge.shared.request(
+                "get_workspace_sessions",
+                params: ["workspace_id": workspaceId, "limit": 4],
+                as: [WorkspaceSession].self)
+        } catch {
+            // Sessions are a summary layer; the feed still works without them.
+            sessions = []
+        }
     }
 
     func selectType(_ type: TimelineEventType?) {
@@ -87,17 +127,17 @@ final class TimelineViewModel: ObservableObject {
     func initialLoadIfNeeded() async {
         guard state == .idle else { return }
         await fetch(append: false)
+        await loadSessions()
     }
 
     func refresh() async {
-        pageIndex = 0
         lastError = nil
         await fetch(append: false)
+        await loadSessions()
     }
 
     func loadMore() async {
-        guard hasMore, !isFetching, pageIndex < pageSizes.count - 1 else { return }
-        pageIndex += 1
+        guard hasMore, !isFetching else { return }
         await fetch(append: true)
     }
 
@@ -118,10 +158,17 @@ final class TimelineViewModel: ObservableObject {
         defer { isFetching = false }
 
         do {
-            let limit = pageSizes[pageIndex]
+            // Server-side offset pagination: each page skips everything
+            // already loaded. Live events inserted at the top can shift
+            // offsets between pages; `knownIds` dedupes any overlap.
+            let offset = append ? events.count : 0
             let page: [TimelineEvent] = try await CoreBridge.shared.request(
                 "list_workspace_timeline",
-                params: ["workspace_id": workspaceId, "limit": limit],
+                params: [
+                    "workspace_id": workspaceId,
+                    "limit": pageSize,
+                    "offset": offset,
+                ],
                 as: [TimelineEvent].self)
             if append {
                 let fresh = page.filter { !knownIds.contains($0.id) }
@@ -131,7 +178,7 @@ final class TimelineViewModel: ObservableObject {
                 knownIds = Set(page.map(\.id))
                 events = page
             }
-            hasMore = page.count == limit && pageIndex < pageSizes.count - 1
+            hasMore = page.count == pageSize
             lastError = nil
             state = .loaded
         } catch {
@@ -176,9 +223,20 @@ final class TimelineViewModel: ObservableObject {
 
     private func recomputeGroups() {
         let calendar = Calendar.current
+        // A selected session narrows the feed to that session's window.
+        let sessionWindow: (ClosedRange<Date>)? = {
+            guard let id = selectedSessionID,
+                let session = sessions.first(where: { $0.id == id }) else { return nil }
+            let start = session.startedAt.isoDate ?? .distantPast
+            let end = session.endedAt.isoDate ?? .distantFuture
+            return start...end
+        }()
         var buckets: [Date: [TimelineEvent]] = [:]
-        for event in events where selectedType == nil || event.eventType == selectedType {
-            let day = calendar.startOfDay(for: event.occurredAtDate)
+        for event in events
+        where selectedType == nil || event.eventType == selectedType {
+            let date = event.occurredAtDate
+            if let window = sessionWindow, !window.contains(date) { continue }
+            let day = calendar.startOfDay(for: date)
             buckets[day, default: []].append(event)
         }
         groups = buckets.keys.sorted(by: >).map { day in

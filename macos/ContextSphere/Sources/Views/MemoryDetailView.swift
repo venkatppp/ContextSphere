@@ -340,6 +340,23 @@ struct MemoryDetailView: View {
     private var controlsRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
+            if record.compressedAt != nil {
+                HStack(spacing: 8) {
+                    Label("Reasoning compressed \(record.compressedAt?.relativeTime ?? "")",
+                          systemImage: "doc.zipper")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    actionButton("Restore full reasoning", symbol: "arrow.uturn.backward",
+                                 help: "Restore the original reasoning from the compression archive") {
+                        Task { await viewModel.restoreCompressed(record.id) }
+                    }
+                    .disabled(viewModel.restoreCompressedState[record.id] == .working)
+                    if viewModel.restoreCompressedState[record.id] == .working {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                Divider()
+            }
             HStack(spacing: 10) {
                 Text("Feedback")
                     .font(.caption)
