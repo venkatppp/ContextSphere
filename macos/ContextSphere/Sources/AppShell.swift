@@ -155,9 +155,10 @@ struct AppShell: View {
         }
         .task {
             CoreBridge.shared.onEvent = { event, payload in
-                // Existing timeline/search live updates
+                // Existing timeline/search live updates + graph live updates
                 timeline.handle(event: event, payload: payload)
                 search.handle(event: event, payload: payload)
+                graph.handle(event: event, payload: payload)
                 // Workspace live events — debounced reload to avoid storms
                 if event.hasPrefix("workspace:") {
                     Task { @MainActor in

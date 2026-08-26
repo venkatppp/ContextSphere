@@ -16,66 +16,63 @@ import Foundation
 enum GraphFixture {
 
     static func contextSphereDevelopment() -> (nodes: [KgNode], edges: [KgEdge]) {
-        // Stable IDs: type:entity
-        func nid(_ type: GraphNodeType, _ entity: String) -> String { "\(type.rawValue):\(entity)" }
-
         let wsID = "ws-contextsphere-dev"
         let projGraph = "proj-graph-arch"
         let projUI = "proj-ui-arch"
+        let now = Date()
+        let iso: (Date) -> String = { d in
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f.string(from: d)
+        }
+        func daysAgo(_ d: Double) -> String { iso(now.addingTimeInterval(-d * 86400)) }
 
-        // Nodes
         var nodes: [KgNode] = []
         func makeNode(_ type: GraphNodeType, _ eid: String, _ title: String,
-                      _ ws: String? = wsID, _ summary: String? = nil) -> KgNode {
-            KgNode(nodeType: type, entityId: eid, title: title,
+                      _ ws: String? = wsID, _ summary: String? = nil, daysAgo d: Double = 7) -> KgNode {
+            let ts = daysAgo(d)
+            return KgNode(nodeType: type, entityId: eid, title: title,
                    workspaceId: ws, summary: summary,
-                   metadata: .object([:]), createdAt: "", updatedAt: "")
+                   metadata: .object([:]), createdAt: ts, updatedAt: ts)
         }
-        // Workspace
-        nodes.append(makeNode(.workspace, wsID, "ContextSphere Development", nil, "Your computer understands what you're working on"))
-        // Projects (modeled as file/workspace-adjacent nodes; in RC-8 they are file or workspace; we use file for projects)
-        nodes.append(makeNode(.file, projGraph, "Graph Architecture", wsID, "Graph model, layout, renderer separation"))
-        nodes.append(makeNode(.file, projUI, "UI Architecture", wsID, "Dashboard, timeline, workspaces"))
-        // Applications (files with artifact type app via metadata)
-        nodes.append(makeNode(.file, "app-xcode", "Xcode", wsID))
-        nodes.append(makeNode(.file, "app-terminal", "Terminal", wsID))
-        nodes.append(makeNode(.file, "app-safari", "Safari", wsID))
-        nodes.append(makeNode(.file, "app-github", "GitHub", wsID))
-        // Documents
-        nodes.append(makeNode(.file, "doc-graph-research", "Graph Research", wsID, "Handshake Influence Dashboard study"))
-        nodes.append(makeNode(.file, "doc-arch-notes", "Architecture Notes", wsID, "Event-sourced vs typed property graph"))
-        // Topics (as memoryRecord nodes carrying topic semantics)
-        nodes.append(makeNode(.memoryRecord, "topic-graphrag", "GraphRAG", wsID))
-        nodes.append(makeNode(.memoryRecord, "topic-temporal", "Temporal Graph", wsID))
-        nodes.append(makeNode(.memoryRecord, "topic-swiftui", "SwiftUI", wsID))
-        nodes.append(makeNode(.memoryRecord, "topic-metal", "Metal", wsID))
-        nodes.append(makeNode(.memoryRecord, "topic-liquid-glass", "Liquid Glass", wsID))
-        // Files
-        nodes.append(makeNode(.file, "file-graph-engine", "GraphEngine.swift", wsID, "src-tauri/src/graph/mod.rs"))
-        nodes.append(makeNode(.file, "file-graph-renderer", "GraphRenderer.swift", wsID))
-        nodes.append(makeNode(.file, "file-workspace", "Workspace.swift", wsID))
-        nodes.append(makeNode(.file, "file-timeline", "Timeline.swift", wsID))
-        // Events (as executions)
-        nodes.append(makeNode(.execution, "evt-file-opened", "FileOpened: GraphEngine.swift", wsID))
-        nodes.append(makeNode(.execution, "evt-research-viewed", "ResearchViewed: Handshake Dashboard", wsID))
-        nodes.append(makeNode(.execution, "evt-code-modified", "CodeModified: GraphLayout", wsID))
-        nodes.append(makeNode(.execution, "evt-meeting", "Meeting: Graph Review", wsID))
-        // Memories / sessions
-        nodes.append(makeNode(.memoryRecord, "mem-1", "Memory: Graph layout stabilized", wsID))
-        nodes.append(makeNode(.autonomousSession, "sess-1", "Autonomous: Index workspace", wsID))
+        // Workspace — active now
+        nodes.append(makeNode(.workspace, wsID, "ContextSphere Development", nil, "Your computer understands what you're working on", daysAgo: 0))
+        nodes.append(makeNode(.file, projGraph, "Graph Architecture", wsID, "Graph model, layout, renderer separation", daysAgo: 0.5))
+        nodes.append(makeNode(.file, projUI, "UI Architecture", wsID, "Dashboard, timeline, workspaces", daysAgo: 2))
+        nodes.append(makeNode(.file, "app-xcode", "Xcode", wsID, daysAgo: 0))
+        nodes.append(makeNode(.file, "app-terminal", "Terminal", wsID, daysAgo: 5))
+        nodes.append(makeNode(.file, "app-safari", "Safari", wsID, daysAgo: 10))
+        nodes.append(makeNode(.file, "app-github", "GitHub", wsID, daysAgo: 1))
+        nodes.append(makeNode(.file, "doc-graph-research", "Graph Research", wsID, "Handshake Influence Dashboard study", daysAgo: 1))
+        nodes.append(makeNode(.file, "doc-arch-notes", "Architecture Notes", wsID, "Event-sourced vs typed property graph", daysAgo: 7))
+        nodes.append(makeNode(.memoryRecord, "topic-graphrag", "GraphRAG", wsID, daysAgo: 0.2))
+        nodes.append(makeNode(.memoryRecord, "topic-temporal", "Temporal Graph", wsID, daysAgo: 0.3))
+        nodes.append(makeNode(.memoryRecord, "topic-swiftui", "SwiftUI", wsID, daysAgo: 1))
+        nodes.append(makeNode(.memoryRecord, "topic-metal", "Metal", wsID, daysAgo: 3))
+        nodes.append(makeNode(.memoryRecord, "topic-liquid-glass", "Liquid Glass", wsID, daysAgo: 14))
+        nodes.append(makeNode(.file, "file-graph-engine", "GraphEngine.swift", wsID, "src-tauri/src/graph/mod.rs", daysAgo: 0))
+        nodes.append(makeNode(.file, "file-graph-renderer", "GraphRenderer.swift", wsID, daysAgo: 0.1))
+        nodes.append(makeNode(.file, "file-workspace", "Workspace.swift", wsID, daysAgo: 2))
+        nodes.append(makeNode(.file, "file-timeline", "Timeline.swift", wsID, daysAgo: 5))
+        nodes.append(makeNode(.execution, "evt-file-opened", "FileOpened: GraphEngine.swift", wsID, daysAgo: 0))
+        nodes.append(makeNode(.execution, "evt-research-viewed", "ResearchViewed: Handshake Dashboard", wsID, daysAgo: 1))
+        nodes.append(makeNode(.execution, "evt-code-modified", "CodeModified: GraphLayout", wsID, daysAgo: 0.05))
+        nodes.append(makeNode(.execution, "evt-meeting", "Meeting: Graph Review", wsID, daysAgo: 3))
+        nodes.append(makeNode(.memoryRecord, "mem-1", "Memory: Graph layout stabilized", wsID, daysAgo: 7))
+        nodes.append(makeNode(.autonomousSession, "sess-1", "Autonomous: Index workspace", wsID, daysAgo: 0.01))
 
-        // Edges — enough to make clustering meaningful
         var edges: [KgEdge] = []
         var eid = 0
         func link(_ srcType: GraphNodeType, _ src: String,
                   _ dstType: GraphNodeType, _ dst: String,
-                  _ rel: GraphRelationshipType, _ w: Double, _ conf: Double = 1.0) {
+                  _ rel: GraphRelationshipType, _ w: Double, _ conf: Double = 1.0, daysAgo d: Double = 0) {
             eid += 1
+            let ts = daysAgo(d)
             edges.append(KgEdge(id: "e\(eid)",
                                 sourceNodeType: srcType, sourceEntityId: src,
                                 targetNodeType: dstType, targetEntityId: dst,
                                 relationshipType: rel, weight: w, confidence: conf,
-                                metadata: .object([:]), createdAt: "", updatedAt: ""))
+                                metadata: .object([:]), createdAt: ts, updatedAt: ts))
         }
         // Workspace → Project
         link(.workspace, wsID, .file, projGraph, .contains, 0.95)
@@ -133,42 +130,49 @@ enum GraphFixture {
         var nodes: [KgNode] = []
         let wsCount = 5
         var wsIDs: [String] = []
+        let now = Date()
+        let iso: (Date) -> String = { d in
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f.string(from: d)
+        }
+        func daysAgo(_ d: Double) -> String { iso(now.addingTimeInterval(-d * 86400)) }
         for w in 0..<wsCount {
             let wsID = "ws-synth-\(w)"
             wsIDs.append(wsID)
             nodes.append(KgNode(nodeType: .workspace, entityId: wsID, title: "Synthetic Workspace \(w)",
-                                workspaceId: nil, summary: nil, metadata: .object([:]), createdAt: "", updatedAt: ""))
+                                workspaceId: nil, summary: nil, metadata: .object([:]), createdAt: daysAgo(Double(w)), updatedAt: daysAgo(Double(w) * 0.5)))
         }
         let types: [GraphNodeType] = [.file, .memoryRecord, .execution, .plannerReport, .autonomousSession]
         for i in 0..<max(0, nodeCount - wsCount) {
             let t = types[i % types.count]
             let eid = "synth-\(i)"
             let wsID = wsIDs[i % wsIDs.count]
+            let age = Double(i % 14) + Double(i % 3) * 0.3 // 0-14 days spread
             nodes.append(KgNode(nodeType: t, entityId: eid, title: "\(t.rawValue) \(i)",
-                                workspaceId: wsID, summary: nil, metadata: .object([:]), createdAt: "", updatedAt: ""))
+                                workspaceId: wsID, summary: nil, metadata: .object([:]), createdAt: daysAgo(age), updatedAt: daysAgo(age * 0.7)))
         }
         var edges: [KgEdge] = []
         let edgeCount = Int(Double(nodeCount) * 2.5)
         for i in 0..<edgeCount {
-            // Deterministic pseudo-random pairing
             let a = nodes[(i * 17) % nodes.count]
             let b = nodes[(i * 31 + 7) % nodes.count]
             if a.id == b.id { continue }
             let w = 0.3 + Double((i * 13) % 70) / 100.0
+            let age = Double((i * 7) % 14)
             edges.append(KgEdge(id: "se\(i)",
                                 sourceNodeType: a.nodeType, sourceEntityId: a.entityId,
                                 targetNodeType: b.nodeType, targetEntityId: b.entityId,
                                 relationshipType: .relatedTo, weight: min(w, 1.0), confidence: 0.9,
-                                metadata: .object([:]), createdAt: "", updatedAt: ""))
+                                metadata: .object([:]), createdAt: daysAgo(age), updatedAt: daysAgo(age)))
         }
-        // Ensure each workspace is connected to a couple of its members
         for (wIdx, wsID) in wsIDs.enumerated() {
             let members = nodes.filter { $0.workspaceId == wsID }
             for (j, m) in members.prefix(2).enumerated() {
                 edges.append(KgEdge(id: "ws-e\(wIdx)-\(j)", sourceNodeType: .workspace, sourceEntityId: wsID,
                                     targetNodeType: m.nodeType, targetEntityId: m.entityId,
                                     relationshipType: .contains, weight: 0.9, confidence: 1.0,
-                                    metadata: .object([:]), createdAt: "", updatedAt: ""))
+                                    metadata: .object([:]), createdAt: daysAgo(0), updatedAt: daysAgo(0)))
             }
         }
         return (nodes, edges)

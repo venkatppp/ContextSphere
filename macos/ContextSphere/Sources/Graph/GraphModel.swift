@@ -33,7 +33,11 @@ struct GraphVisualizationModel {
         let degree: Int
         /// Cluster assignment (workspace or orphan group).
         let clusterId: String
+        /// Recency 0…1 (1 = just now, 0 = stale). Exponential decay.
+        let activityIntensity: Double
+        let lastActivityAt: Date?
         var isWorkspace: Bool { nodeType == .workspace }
+        var isRecent: Bool { activityIntensity > 0.5 }
     }
 
     struct VisualEdge: Identifiable, Hashable {
@@ -46,6 +50,9 @@ struct GraphVisualizationModel {
         var strength: Double { weight * confidence }
         /// Structural vs semantic (used for edge decay semantics in RC-8 M2).
         var isStructural: Bool { relationship != .relatedTo }
+        let activityIntensity: Double
+        let lastActivityAt: Date?
+        var isRecent: Bool { activityIntensity > 0.4 }
     }
 
     struct VisualCluster: Identifiable, Hashable {
@@ -121,7 +128,6 @@ struct GraphVisualizationModel {
             adj[e.targetID, default: []].insert(e.sourceID)
         }
         let maxDegree = degree.values.max() ?? 1
-        // Type weight: workspaces anchor clusters, memory/execution are secondary.
         func typeWeight(_ t: GraphNodeType) -> Double {
             switch t {
             case .workspace: 1.0
@@ -132,20 +138,41 @@ struct GraphVisualizationModel {
             case .autonomousSession: 0.65
             }
         }
+        // Recency: exponential decay, half-life ≈ 4.8 days (decay 7 days).
+        // Chosen so today=1.0, 1 day≈0.87, 3 days≈0.65, 7 days≈0.37, 14 days≈0.13.
+        // Calm: recent nodes get subtle halo, not binary flash. Tunable via decayDays.
+        let decayDays: Double = 7
+        func nodeIntensity(_ n: KgNode) -> (Double, Date?) {
+            let raw = !n.updatedAt.isEmpty ? n.updatedAt : n.createdAt
+            guard !raw.isEmpty, let date = raw.isoDate else { return (0, nil) }
+            let ageDays = max(0, Date().timeIntervalSince(date) / 86400)
+            let intensity = exp(-ageDays / decayDays)
+            return (intensity, date)
+        }
+        func edgeIntensity(_ e: KgEdge) -> (Double, Date?) {
+            let raw = !e.updatedAt.isEmpty ? e.updatedAt : e.createdAt
+            guard !raw.isEmpty, let date = raw.isoDate else { return (0, nil) }
+            let ageDays = max(0, Date().timeIntervalSince(date) / 86400)
+            return (exp(-ageDays / decayDays), date)
+        }
         let visualNodes: [VisualNode] = nodes.map { n in
             let d = degree[n.id] ?? 0
             let normDegree = Double(d) / Double(maxDegree)
             let imp = min(1.0, normDegree * 0.7 + typeWeight(n.nodeType) * 0.3)
             let cluster = n.workspaceId ?? "orphan:\(n.nodeType.rawValue)"
+            let (act, date) = nodeIntensity(n)
             return VisualNode(id: n.id, entityId: n.entityId, nodeType: n.nodeType,
                               title: n.title, workspaceId: n.workspaceId,
                               summary: n.summary, metadata: n.metadata,
                               createdAt: n.createdAt, updatedAt: n.updatedAt,
-                              importance: imp, degree: d, clusterId: cluster)
+                              importance: imp, degree: d, clusterId: cluster,
+                              activityIntensity: act, lastActivityAt: date)
         }
         let visualEdges: [VisualEdge] = edges.map { e in
-            VisualEdge(id: e.id, sourceID: e.sourceID, targetID: e.targetID,
-                       relationship: e.relationshipType, weight: e.weight, confidence: e.confidence)
+            let (act, date) = edgeIntensity(e)
+            return VisualEdge(id: e.id, sourceID: e.sourceID, targetID: e.targetID,
+                       relationship: e.relationshipType, weight: e.weight, confidence: e.confidence,
+                       activityIntensity: act, lastActivityAt: date)
         }
         // Clusters by workspace
         var byCluster: [String: [String]] = [:]

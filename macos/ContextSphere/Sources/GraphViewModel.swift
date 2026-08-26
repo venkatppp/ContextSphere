@@ -1,6 +1,17 @@
 import Foundation
 import CoreGraphics
 
+/// Summary struct matching the Rust `GraphSyncSummary` for decoding
+/// `graph:updated` event payloads from the daemon.
+private struct GraphSyncSummary: Decodable {
+    let createdNodes: Int
+    let updatedNodes: Int
+    let createdEdges: Int
+    let updatedEdges: Int
+    let totalNodes: Int
+    let totalEdges: Int
+}
+
 /// State and data flow for the Context Graph screen.
 ///
 /// Follows the established architecture: `GraphView` observes this model;
@@ -392,7 +403,163 @@ final class GraphViewModel: ObservableObject {
         pendingFocus = nil
     }
 
-        // MARK: - Layout
+    // MARK: - Live updates
+
+    /// Entry point for daemon notifications routed by `AppShell`.
+    /// Handles `timeline:event_added`, `graph:edge_added`, and `graph:updated`.
+    func handle(event: String, payload: Data?) {
+        guard let payload else { return }
+        if event == "timeline:event_added" {
+            handleTimelineEventAdded(payload)
+        } else if event == "graph:edge_added" {
+            handleGraphEdgeAdded(payload)
+        } else if event == "graph:updated" {
+            handleGraphUpdated(payload)
+        }
+    }
+
+    private func handleTimelineEventAdded(_ payload: Data) {
+        do {
+            let timelineEvent = try JSONDecoder().decode(TimelineEvent.self, from: payload)
+            guard let selectedWorkspaceId else { return }
+            guard timelineEvent.workspaceId == selectedWorkspaceId else { return }
+
+            // Map file ID to a KgNode; bump recency on every event so the graph
+            // shows live activity without a full reload (prompt §17: in-memory projection).
+            guard let fileId = timelineEvent.fileId else { return }
+            let fileNodeId = "\(GraphNodeType.file.rawValue):\(fileId)"
+            let ts = timelineEvent.occurredAt
+            if var existing = registry[fileNodeId] {
+                // Refresh recency — reuse existing title/metadata but stamp now.
+                existing = KgNode(nodeType: existing.nodeType, entityId: existing.entityId,
+                                  title: existing.title, workspaceId: existing.workspaceId,
+                                  summary: existing.summary, metadata: existing.metadata,
+                                  createdAt: existing.createdAt, updatedAt: ts)
+                registry[fileNodeId] = existing
+            } else {
+                let fileNode = KgNode(
+                    nodeType: .file,
+                    entityId: fileId,
+                    title: "File \(fileId)",
+                    workspaceId: selectedWorkspaceId,
+                    summary: nil,
+                    metadata: .object([:]),
+                    createdAt: ts,
+                    updatedAt: ts)
+                registry[fileNodeId] = fileNode
+            }
+            nodes = registry.values.sorted { ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title) }
+
+            // Emit a weak edge from the workspace node to this file (if workspace node exists).
+            let workspaceNodeId = "\(GraphNodeType.workspace.rawValue):\(selectedWorkspaceId)"
+            if registry[workspaceNodeId] != nil {
+                let edgeId = "ws-\(selectedWorkspaceId)-file-\(fileId)"
+                if edgeSet.insert(edgeId).inserted {
+                    let newEdge = KgEdge(
+                        id: edgeId,
+                        sourceNodeType: .workspace,
+                        sourceEntityId: selectedWorkspaceId,
+                        targetNodeType: .file,
+                        targetEntityId: fileId,
+                        relationshipType: .relatedTo,
+                        weight: 1.0,
+                        confidence: 1.0,
+                        metadata: .object([:]),
+                        createdAt: ts,
+                        updatedAt: ts)
+                    edges.append(newEdge)
+                }
+            }
+
+            recomputeLayoutIfNeeded()
+        } catch {
+            lastError = "Failed to decode timeline event: \(error.localizedDescription)"
+        }
+    }
+
+    private func handleGraphEdgeAdded(_ payload: Data) {
+        do {
+            let jsonObject = try JSONSerialization.jsonObject(with: payload, options: [])
+            guard let dictionary = jsonObject as? [String: Any],
+                let sourceId = dictionary["sourceId"] as? String,
+                let targetId = dictionary["targetId"] as? String,
+                let weightValue = dictionary["weight"] as? Double
+                else { return }
+
+            // Ensure both nodes exist in registry - stamp as recent.
+            let nowISO = ISO8601DateFormatter().string(from: Date())
+            if registry[sourceId] == nil {
+                let sourceNode = KgNode(
+                    nodeType: .file,
+                    entityId: sourceId,
+                    title: sourceId,
+                    workspaceId: selectedWorkspaceId ?? "",
+                    summary: nil,
+                    metadata: .object([:]),
+                    createdAt: nowISO,
+                    updatedAt: nowISO)
+                registry[sourceId] = sourceNode
+            }
+            if registry[targetId] == nil {
+                let targetNode = KgNode(
+                    nodeType: .file,
+                    entityId: targetId,
+                    title: targetId,
+                    workspaceId: selectedWorkspaceId ?? "",
+                    summary: nil,
+                    metadata: .object([:]),
+                    createdAt: nowISO,
+                    updatedAt: nowISO)
+                registry[targetId] = targetNode
+            }
+            nodes = registry.values.sorted { ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title) }
+
+            let edgeId = "\(sourceId)-\(targetId)"
+            if edgeSet.insert(edgeId).inserted {
+                let newEdge = KgEdge(
+                    id: edgeId,
+                    sourceNodeType: sourceId.contains(":workspace") ? .workspace : .file,
+                    sourceEntityId: sourceId.components(separatedBy: ":").last ?? sourceId,
+                    targetNodeType: targetId.contains(":workspace") ? .workspace : .file,
+                    targetEntityId: targetId.components(separatedBy: ":").last ?? targetId,
+                    relationshipType: .relatedTo,
+                    weight: weightValue,
+                    confidence: 1.0,
+                    metadata: .object([:]),
+                    createdAt: nowISO,
+                    updatedAt: nowISO)
+                edges.append(newEdge)
+            }
+
+            recomputeLayoutIfNeeded()
+        } catch {
+            lastError = "Failed to decode graph edge added payload: \(error.localizedDescription)"
+        }
+    }
+
+    private func handleGraphUpdated(_ payload: Data) {
+        do {
+            _ = try JSONDecoder().decode(GraphSyncSummary.self, from: payload)
+            // Summary only has counts; trigger a full refresh so the graph
+            // picks up any new nodes/edges that have appeared since the last sync.
+            lastError = nil
+            Task { @MainActor in
+                self.refresh()
+            }
+        } catch {
+            lastError = "Failed to decode graph update summary: \(error.localizedDescription)"
+        }
+    }
+
+    private func recomputeLayoutIfNeeded() {
+        guard !nodes.isEmpty else { return }
+        // Small defer so the UI has consumed the new node/edge before layout.
+        Task { @MainActor in
+            relayout(anchorID: selectedWorkspaceId ?? workspaceNodeID, incremental: true)
+        }
+    }
+
+    // MARK: - Layout
 
     /// Recomputes layout positions. Uses the hybrid `GraphLayoutEngine`
     /// (cluster + force + radial focus) so the Context Field can

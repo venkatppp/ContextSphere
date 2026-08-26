@@ -45,6 +45,15 @@ struct CanvasGraphRenderer: GraphRenderer {
             if edge.isHighlighted {
                 context.stroke(path, with: .color(.accentColor.opacity(0.18)), lineWidth: edge.lineWidth + 3)
             }
+            // Temporal recent dot at midpoint — calm, not animated (prompt §11)
+            if edge.isRecent && !edge.isDimmed && state.semanticLevel != .overview {
+                let mid = CGPoint(x: (edge.sourceScreen.x + edge.targetScreen.x) / 2,
+                                  y: (edge.sourceScreen.y + edge.targetScreen.y) / 2)
+                let dotR: CGFloat = 2.0 + CGFloat(edge.activityIntensity * 1.2)
+                let dot = Path(ellipseIn: CGRect(x: mid.x - dotR, y: mid.y - dotR, width: dotR*2, height: dotR*2))
+                context.fill(dot, with: .color(.orange.opacity(0.50 * edge.activityIntensity)))
+                context.stroke(dot, with: .color(.white.opacity(0.70)), lineWidth: 0.6)
+            }
         }
 
         // Nodes
@@ -55,14 +64,22 @@ struct CanvasGraphRenderer: GraphRenderer {
             // Focus halo (outermost)
             if node.isFocused {
                 let halo = Path(ellipseIn: CGRect(x: center.x - r - 9, y: center.y - r - 9,
-                                                  width: (r + 9) * 2, height: (r + 9) * 2))
+                                                   width: (r + 9) * 2, height: (r + 9) * 2))
                 context.fill(halo, with: .color(node.color.opacity(0.14)))
             }
             // Selection halo
             if node.isSelected {
                 let halo = Path(ellipseIn: CGRect(x: center.x - r - 5.5, y: center.y - r - 5.5,
-                                                  width: (r + 5.5) * 2, height: (r + 5.5) * 2))
+                                                   width: (r + 5.5) * 2, height: (r + 5.5) * 2))
                 context.fill(halo, with: .color(.accentColor.opacity(0.20)))
+            }
+            // Temporal recent halo — calm, not flashing (prompt §10)
+            if node.isRecent && !node.isSelected && !node.isFocused && state.semanticLevel != .overview {
+                let pulseR = r + 4 + CGFloat(node.activityIntensity * 3)
+                let halo = Path(ellipseIn: CGRect(x: center.x - pulseR, y: center.y - pulseR, width: pulseR*2, height: pulseR*2))
+                context.stroke(halo, with: .color(node.color.opacity(0.18 * node.activityIntensity)), lineWidth: 1.1)
+                let inner = Path(ellipseIn: CGRect(x: center.x - r - 2, y: center.y - r - 2, width: (r+2)*2, height: (r+2)*2))
+                context.fill(inner, with: .color(node.color.opacity(0.07 * node.activityIntensity)))
             }
 
             // Main disc
@@ -73,7 +90,7 @@ struct CanvasGraphRenderer: GraphRenderer {
             // Subtle material highlight (top-left gloss)
             if r >= 12 {
                 let highlight = Path(ellipseIn: CGRect(x: center.x - r * 0.55, y: center.y - r * 0.65,
-                                                      width: r * 0.9, height: r * 0.6))
+                                                       width: r * 0.9, height: r * 0.6))
                 context.fill(highlight, with: .color(.white.opacity(0.16 * node.opacity)))
             }
             // Stroke
