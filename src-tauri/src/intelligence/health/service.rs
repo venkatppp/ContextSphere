@@ -20,8 +20,17 @@ impl HealthService {
     }
 
     /// Saves a workspace health assessment.
+    ///
+    /// `workspaces.id` (and therefore the FK target) stores UUIDs in
+    /// sqlx's BLOB encoding, so the model's string id is parsed back to
+    /// a `Uuid` before binding; binding the raw string would store TEXT
+    /// and fail the foreign key.
     pub async fn save_health(&self, health: &WorkspaceHealth) -> Result<(), DatabaseError> {
         let health_json = serde_json::to_string(health)?;
+        let workspace_uuid = Uuid::parse_str(&health.workspace_id)
+            .map_err(|e| DatabaseError::InvalidInput(format!(
+                "workspace health has invalid workspace id `{}`: {e}",
+                health.workspace_id)))?;
 
         sqlx::query(
             r#"
@@ -29,7 +38,7 @@ impl HealthService {
             VALUES (?, ?, ?, ?)
             "#
         )
-        .bind(&health.workspace_id)
+        .bind(workspace_uuid)
         .bind(health.overall_score)
         .bind(&health_json)
         .bind(health.calculated_at)
@@ -44,7 +53,6 @@ impl HealthService {
         &self,
         workspace_id: Uuid,
     ) -> Result<Option<WorkspaceHealth>, DatabaseError> {
-        let workspace_id_str = workspace_id.to_string();
         let record = sqlx::query_as::<_, HealthRow>(
             r#"
             SELECT workspace_id, overall_score, factors_json, calculated_at
@@ -54,13 +62,13 @@ impl HealthService {
             LIMIT 1
             "#,
         )
-        .bind(&workspace_id_str)
+        .bind(workspace_id)
         .fetch_optional(&self.pool)
         .await?;
 
         if let Some(r) = record {
             let mut health: WorkspaceHealth = serde_json::from_str(&r.factors_json)?;
-            health.workspace_id = r.workspace_id;
+            health.workspace_id = r.workspace_id.to_string();
             health.overall_score = r.overall_score;
             Ok(Some(health))
         } else {
@@ -74,7 +82,6 @@ impl HealthService {
         workspace_id: Uuid,
         since: DateTime<Utc>,
     ) -> Result<Vec<WorkspaceHealth>, DatabaseError> {
-        let workspace_id_str = workspace_id.to_string();
         let records = sqlx::query_as::<_, HealthRow>(
             r#"
             SELECT workspace_id, overall_score, factors_json, calculated_at
@@ -83,7 +90,7 @@ impl HealthService {
             ORDER BY calculated_at ASC
             "#,
         )
-        .bind(&workspace_id_str)
+        .bind(workspace_id)
         .bind(since)
         .fetch_all(&self.pool)
         .await?;
@@ -91,7 +98,7 @@ impl HealthService {
         let mut history = Vec::new();
         for r in records {
             let mut health: WorkspaceHealth = serde_json::from_str(&r.factors_json)?;
-            health.workspace_id = r.workspace_id;
+            health.workspace_id = r.workspace_id.to_string();
             health.overall_score = r.overall_score;
             history.push(health);
         }
@@ -105,7 +112,6 @@ impl HealthService {
         workspace_id: Uuid,
         current_score: f64,
     ) -> Result<Option<f64>, DatabaseError> {
-        let workspace_id_str = workspace_id.to_string();
         let record = sqlx::query_as::<_, (f64,)>(
             r#"
             SELECT overall_score
@@ -115,7 +121,7 @@ impl HealthService {
             LIMIT 1 OFFSET 1
             "#,
         )
-        .bind(&workspace_id_str)
+        .bind(workspace_id)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -140,10 +146,11 @@ impl HealthService {
     }
 }
 
-/// Row type for deserializing health records.
+/// Row type for deserializing health records. `workspace_id` is a Uuid
+/// so sqlx decodes the BLOB representation used by `workspaces.id`.
 #[derive(sqlx::FromRow)]
 struct HealthRow {
-    workspace_id: String,
+    workspace_id: Uuid,
     overall_score: f64,
     factors_json: String,
     #[allow(dead_code)]
