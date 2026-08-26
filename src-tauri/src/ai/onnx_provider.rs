@@ -201,6 +201,26 @@ impl EmbeddingProvider for ONNXEmbeddingProvider {
     }
 }
 
+#[async_trait::async_trait]
+impl crate::copilot::memory::vector::provider::VectorProvider for ONNXEmbeddingProvider {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, crate::errors::DatabaseError> {
+        self.generate_embedding(text).await
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, crate::errors::DatabaseError> {
+        let owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
+        self.generate_embeddings_batch(&owned).await
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dimensions
+    }
+
+    fn name(&self) -> &str {
+        &self.model_id
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

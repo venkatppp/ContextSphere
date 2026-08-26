@@ -361,14 +361,19 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             let ai_settings = ai::AISettings::with_models_dir(models_dir);
             let model_manager = ai::ModelManager::new(ai_settings);
 
-            // Initialize with LocalEmbeddingProvider as fallback
-            let embedding_provider: Arc<dyn semantic::EmbeddingProvider> =
-                Arc::new(semantic::LocalEmbeddingProvider::default());
+            // Shared local embedding provider — the single local semantic
+            // representation for memory, search, graph and the Context Field.
+            // Starts as deterministic n-gram fallback; swapped to ONNX when
+            // all-MiniLM is loaded. No second vector DB, no external service.
+            let shared_provider = std::sync::Arc::new(crate::ai::SharedProvider::new(
+                std::sync::Arc::new(copilot::memory::vector::LocalVectorProvider::default()),
+            ));
 
             let ai_state = commands::ai::AIState {
                 manager: model_manager,
                 reranker: parking_lot::RwLock::new(None),
                 embedding_provider: parking_lot::RwLock::new(None),
+                shared_provider: shared_provider.clone(),
             };
 
             // --- Semantic Intelligence Layer (Phase 6A) ---
@@ -380,7 +385,7 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
 
             let semantic_engine = semantic::SemanticMemoryEngine::new(
                 semantic_repository.clone(),
-                embedding_provider.clone(),
+                shared_provider.clone() as Arc<dyn semantic::EmbeddingProvider>,
             );
             let semantic_search = semantic::SemanticSearchEngine::new(
                 semantic_engine.clone(),
@@ -463,7 +468,7 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             startup_profiler.stage_end();
 
             // --- Proactive AI Engine (Phase 7B) ---
-            let proactive_engine = Arc::new(copilot::ProactiveEngine::new(
+            let mut proactive_engine = copilot::ProactiveEngine::new(
                 Arc::new(timeline_engine.clone()),
                 Arc::new(session_engine.clone()),
                 Arc::new(predictive_engine.clone()),
@@ -471,7 +476,13 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                 Arc::new(recommendation_engine.clone()),
                 Arc::new(context_memory_engine.clone()),
                 Arc::new(reasoning_engine.clone()),
-            ));
+            );
+            // Forward queued notifications to the frontend as
+            // `proactive:notification` (native macOS notifications).
+            proactive_engine.set_event_emitter(
+                Arc::new(app_handle.clone()) as Arc<dyn app_events::AppEventEmitter>
+            );
+            let proactive_engine = Arc::new(proactive_engine);
 
             // --- Execution Memory & Learning (RC-6 M1 + M2) ---
             // The memory system uses its own vector provider (the local
@@ -481,7 +492,7 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             startup_profiler.stage_start("memory", "Execution memory engine");
             let memory_engine = Arc::new(copilot::MemoryEngine::new(
                 copilot::MemoryRepository::new(pool.clone()),
-                Arc::new(copilot::memory::vector::LocalVectorProvider::default()),
+                shared_provider.clone() as Arc<dyn copilot::memory::vector::provider::VectorProvider>,
             ));
 
             // RC-6 M2: warm the in-memory k-NN index from the durable
@@ -848,6 +859,49 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             app.manage(learning_repository);
             app.manage(learning_engine);
             app.manage(ai_state);
+            // Auto-load real ONNX model if already downloaded (no UI block, no auto-download)
+            {
+                let app_clone = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                    let ai_state = app_clone.state::<commands::ai::AIState>();
+                    let model_id = "all-minilm-l6-v2";
+                    if let Some(model) = ai_state.manager.get_model(model_id) {
+                        if model.status == crate::ai::models::ModelStatus::Downloaded {
+                            if let Some(path) = ai_state.manager.get_model_path(model_id) {
+                                let model_file = path.join("model.onnx");
+                                let tokenizer_file = path.join("tokenizer.json");
+                                if model_file.exists() && tokenizer_file.exists() {
+                                    match crate::ai::ONNXEmbeddingProvider::new(
+                                        model_id.to_string(),
+                                        model_file,
+                                        tokenizer_file,
+                                        model.metadata.dimensions,
+                                        model.metadata.max_sequence_length,
+                                        true,
+                                        10000,
+                                    ) {
+                                        Ok(provider) => {
+                                            let provider = std::sync::Arc::new(provider);
+                                            {
+                                                let mut guard = ai_state.embedding_provider.write();
+                                                *guard = Some(provider.clone());
+                                            }
+                                            ai_state.shared_provider.set_provider(
+                                                provider as std::sync::Arc<dyn copilot::memory::vector::provider::VectorProvider>
+                                            );
+                                            let _ = ai_state.manager.mark_loaded(model_id, model.metadata.file_size_bytes);
+                                            let _ = ai_state.manager.set_active_embedding_model(model_id.to_string());
+                                            tracing::info!(model_id, "auto-loaded ONNX embedding model on startup");
+                                        }
+                                        Err(e) => tracing::warn!(model_id, error = %e, "auto-load ONNX failed"),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
             app.manage(llm_repository);
             app.manage(llm_service);
             app.manage(tool_executor);
