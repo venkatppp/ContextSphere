@@ -4,12 +4,14 @@ use tauri::{Emitter, State};
 
 use crate::ai::models::{RerankRequest, RerankResult};
 use crate::ai::{AIDiagnostics, DownloadProgress, InferenceStats, ModelInfo};
+use crate::semantic::embeddings::EmbeddingProvider;
 
 /// AI state manager (to be added to lib.rs).
 pub struct AIState {
     pub manager: crate::ai::ModelManager,
-    pub reranker: Option<std::sync::Arc<crate::ai::Reranker>>,
-    pub embedding_provider: Option<std::sync::Arc<crate::ai::ONNXEmbeddingProvider>>,
+    pub reranker: parking_lot::RwLock<Option<std::sync::Arc<crate::ai::Reranker>>>,
+    pub embedding_provider:
+        parking_lot::RwLock<Option<std::sync::Arc<crate::ai::ONNXEmbeddingProvider>>>,
 }
 
 /// Lists all available AI models.
@@ -67,7 +69,7 @@ pub async fn load_model(model_id: String, state: State<'_, AIState>) -> Result<(
     // Load based on model type
     match model.metadata.model_type {
         crate::ai::models::ModelType::Embedding => {
-            let _provider = crate::ai::ONNXEmbeddingProvider::new(
+            let provider = crate::ai::ONNXEmbeddingProvider::new(
                 model_id.clone(),
                 model_file,
                 tokenizer_file,
@@ -78,8 +80,12 @@ pub async fn load_model(model_id: String, state: State<'_, AIState>) -> Result<(
             )
             .map_err(|e| e.to_string())?;
 
-            // TODO: Store provider in state
-            // For now, mark as loaded
+            let provider = std::sync::Arc::new(provider);
+            {
+                let mut guard = state.embedding_provider.write();
+                *guard = Some(provider);
+            }
+
             state
                 .manager
                 .mark_loaded(&model_id, model.metadata.file_size_bytes)
@@ -91,7 +97,7 @@ pub async fn load_model(model_id: String, state: State<'_, AIState>) -> Result<(
                 .map_err(|e| e.to_string())?;
         }
         crate::ai::models::ModelType::Reranker => {
-            let _reranker = crate::ai::Reranker::new(
+            let reranker = crate::ai::Reranker::new(
                 model_id.clone(),
                 model_file,
                 tokenizer_file,
@@ -100,6 +106,12 @@ pub async fn load_model(model_id: String, state: State<'_, AIState>) -> Result<(
                 1000, // cache_size
             )
             .map_err(|e| e.to_string())?;
+
+            let reranker = std::sync::Arc::new(reranker);
+            {
+                let mut guard = state.reranker.write();
+                *guard = Some(reranker);
+            }
 
             state
                 .manager
@@ -119,6 +131,19 @@ pub async fn load_model(model_id: String, state: State<'_, AIState>) -> Result<(
 /// Unloads a model from memory.
 #[tauri::command]
 pub async fn unload_model(model_id: String, state: State<'_, AIState>) -> Result<(), String> {
+    // Clear provider if it matches the unloaded model
+    {
+        let active = state.manager.active_embedding_model();
+        if active.as_deref() == Some(&model_id) {
+            let mut guard = state.embedding_provider.write();
+            *guard = None;
+        }
+        let active_r = state.manager.active_reranker_model();
+        if active_r.as_deref() == Some(&model_id) {
+            let mut guard = state.reranker.write();
+            *guard = None;
+        }
+    }
     state
         .manager
         .mark_unloaded(&model_id)
@@ -158,13 +183,19 @@ pub async fn get_inference_statistics(
     let mut stats = Vec::new();
 
     // Get embedding provider stats
-    if let Some(provider) = &state.embedding_provider {
-        stats.push(provider.get_stats());
+    {
+        let guard = state.embedding_provider.read();
+        if let Some(provider) = guard.as_ref() {
+            stats.push(provider.get_stats());
+        }
     }
 
     // Get reranker stats
-    if let Some(reranker) = &state.reranker {
-        stats.push(reranker.get_stats());
+    {
+        let guard = state.reranker.read();
+        if let Some(reranker) = guard.as_ref() {
+            stats.push(reranker.get_stats());
+        }
     }
 
     Ok(stats)
@@ -190,10 +221,94 @@ pub async fn rerank_documents(
     request: RerankRequest,
     state: State<'_, AIState>,
 ) -> Result<Vec<RerankResult>, String> {
-    let reranker = state
-        .reranker
-        .as_ref()
-        .ok_or_else(|| "No reranker model loaded".to_string())?;
+    let reranker = {
+        let guard = state.reranker.read();
+        guard
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "No reranker model loaded".to_string())?
+    };
 
     reranker.rerank(request).await.map_err(|e| e.to_string())
+}
+
+/// Graph AI vector search using the real ONNX embedding provider.
+/// Reuses the existing `graph_vector_search` ranking logic but with genuine
+/// local embeddings (all-MiniLM-L6-v2, 384-d, cosine 0…1) instead of the
+/// hash fallback. Returns empty when no ONNX model is loaded — caller
+/// should fall back to `graph_vector_search` (hash) or `graph_ranked_search`.
+///
+/// Small API extension, no new DB, no new vector store, no external service.
+/// One RPC per focus/search change, top-K 20, cached on the frontend.
+#[tauri::command]
+pub async fn graph_ai_vector_search(
+    query: String,
+    limit: Option<u32>,
+    graph_engine: State<'_, crate::graph::GraphEngine>,
+    ai_state: State<'_, AIState>,
+) -> Result<Vec<crate::models::kg_opt::RankedSearchHit>, String> {
+    let provider = {
+        let guard = ai_state.embedding_provider.read();
+        guard.as_ref().cloned()
+    };
+    let Some(provider) = provider else {
+        return Ok(Vec::new());
+    };
+
+    let query_vec = provider
+        .embed(&query)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Fetch candidates via the graph engine (all 6 types, top 250 as in KgOptService)
+    let candidates = graph_engine
+        .graph_nodes(
+            vec![
+                crate::models::kg::GraphNodeType::Workspace,
+                crate::models::kg::GraphNodeType::File,
+                crate::models::kg::GraphNodeType::PlannerReport,
+                crate::models::kg::GraphNodeType::Execution,
+                crate::models::kg::GraphNodeType::MemoryRecord,
+                crate::models::kg::GraphNodeType::AutonomousSession,
+            ],
+            None,
+            Some(250),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut scored: Vec<crate::models::kg_opt::RankedSearchHit> = Vec::new();
+    for node in candidates {
+        let title_vec = provider
+            .embed(&node.title)
+            .await
+            .map_err(|e| e.to_string())?;
+        let sim = cosine_cosine(&query_vec, &title_vec);
+        if sim >= 0.20 {
+            scored.push(crate::models::kg_opt::RankedSearchHit {
+                node,
+                score: (sim * 100.0).round() / 100.0,
+                method: "ai_vector".to_string(),
+                reason: format!("AI semantic similarity {:.0}%", sim * 100.0),
+            });
+        }
+    }
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit.unwrap_or(20) as usize);
+    Ok(scored)
+}
+
+fn cosine_cosine(a: &[f32], b: &[f32]) -> f64 {
+    let mut dot = 0f64;
+    let mut na = 0f64;
+    let mut nb = 0f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += *x as f64 * *y as f64;
+        na += *x as f64 * *x as f64;
+        nb += *y as f64 * *y as f64;
+    }
+    if na <= 0.0 || nb <= 0.0 {
+        return 0.0;
+    }
+    (dot / (na.sqrt() * nb.sqrt())).clamp(0.0, 1.0)
 }
