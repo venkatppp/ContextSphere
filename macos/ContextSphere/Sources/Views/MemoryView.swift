@@ -641,7 +641,7 @@ struct MemoryView: View {
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "contextsphere-memory.json"
         panel.message = "Choose where to save the memory store export."
-        guard panel.runModal() == .ok, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
             if await viewModel.exportToFile(at: url) {
                 viewModel.transferNotice = "Exported to \(url.lastPathComponent)"
@@ -655,7 +655,7 @@ struct MemoryView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Choose a ContextSphere memory export."
-        guard panel.runModal() == .ok, let url = panel.urls.first else { return }
+        guard panel.runModal() == .OK, let url = panel.urls.first else { return }
         viewModel.transferNotice = nil
         Task { await viewModel.importFromFile(at: url) }
     }
