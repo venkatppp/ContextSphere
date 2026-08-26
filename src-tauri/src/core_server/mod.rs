@@ -245,7 +245,7 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
         }
 
         // ----------------------------------------------------------- timeline
-        "list_workspace_timeline" => rpc_state!(app, params, crate::timeline::TimelineEngine, crate::commands::timeline::list_workspace_timeline, ("workspace_id": uuid::Uuid, "limit": Option<i64>)),
+        "list_workspace_timeline" => rpc_state!(app, params, crate::timeline::TimelineEngine, crate::commands::timeline::list_workspace_timeline, ("workspace_id": uuid::Uuid, "limit": Option<i64>, "offset": Option<i64>)),
         "get_recent_activity" => rpc_state!(app, params, crate::timeline::TimelineEngine, crate::commands::timeline::get_recent_activity, ("workspace_id": uuid::Uuid)),
 
         // ------------------------------------------------------------ watcher

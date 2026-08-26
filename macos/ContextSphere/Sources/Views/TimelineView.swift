@@ -6,6 +6,7 @@ import AppKit
 /// and event type, with live updates from `timeline:event_added`.
 struct TimelineView: View {
     @ObservedObject var viewModel: TimelineViewModel
+    @FocusState private var focusedEventID: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -25,6 +26,51 @@ struct TimelineView: View {
             }
         }
         .task { await viewModel.initialLoadIfNeeded() }
+        .background {
+            Button("") { moveFocus(by: 1) }
+                .keyboardShortcut(.downArrow, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+            Button("") { moveFocus(by: -1) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+            Button("") { activateFocusedRow() }
+                .keyboardShortcut(.return, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+            Button("") { focusedEventID = nil }
+                .keyboardShortcut(.escape, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Moves row focus by one entry in the flattened visible feed.
+    private func moveFocus(by direction: Int) {
+        let flat = viewModel.groups.flatMap(\.events)
+        guard !flat.isEmpty else { return }
+        guard let current = focusedEventID,
+            let index = flat.firstIndex(where: { $0.id == current }) else {
+            focusedEventID = flat[0].id
+            return
+        }
+        let next = max(0, min(flat.count - 1, index + direction))
+        focusedEventID = flat[next].id
+    }
+
+    /// Return on a focused row acts like clicking a file-backed event.
+    private func activateFocusedRow() {
+        guard let id = focusedEventID,
+            let event = viewModel.groups.flatMap(\.events).first(where: { $0.id == id }),
+            let path = primaryPath(of: event) else { return }
+        openFile(at: path)
+    }
+
+    private func primaryPath(of event: TimelineEvent) -> String? {
+        event.metadata?.string("path")
+            ?? event.metadata?.string("to")
+            ?? event.metadata?.string("from")
     }
 
     // MARK: - Header
@@ -176,6 +222,7 @@ struct TimelineView: View {
 
     private var eventList: some View {
         VStack(alignment: .leading, spacing: 0) {
+            sessionsStrip
             if let lastError = viewModel.lastError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -203,10 +250,13 @@ struct TimelineView: View {
                             workspaceName: viewModel.workspaceName(for: event),
                             isLast: groupIndex == viewModel.groups.count - 1
                                 && eventIndex == group.events.count - 1,
+                            isFocused: focusedEventID == event.id,
                             onOpen: { path in
                                 openFile(at: path)
                             }
                         )
+                        .focusable()
+                        .focused($focusedEventID, equals: event.id)
                     }
                 }
                 if viewModel.hasMore {
@@ -224,6 +274,68 @@ struct TimelineView: View {
                 }
             }
         }
+    }
+
+    /// Recent work sessions (core SessionEngine) as filter chips.
+    @ViewBuilder
+    private var sessionsStrip: some View {
+        if !viewModel.sessions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.sessions) { session in
+                            sessionChip(session)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                if viewModel.selectedSessionID != nil {
+                    Button("Show all activity") { viewModel.clearSessionSelection() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .accessibilityLabel("Clear session filter")
+                }
+            }
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func sessionChip(_ session: WorkspaceSession) -> some View {
+        let isSelected = viewModel.selectedSessionID == session.id
+        let start = session.startedAt.isoDate ?? .distantPast
+        return Button {
+            viewModel.selectSession(session.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(start.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Label(Self.durationText(session.durationSeconds), systemImage: "clock")
+                    Label("\(session.eventCount)", systemImage: "list.bullet")
+                    Label("\(session.fileCount) files", systemImage: "doc")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.55)) : AnyShapeStyle(.quaternary),
+                                  lineWidth: isSelected ? 1 : 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Filter the feed to this work session")
+        .accessibilityLabel("Session \(start.formatted(date: .abbreviated, time: .shortened)), \(session.eventCount) events, \(session.fileCount) files")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private static func durationText(_ seconds: Int) -> String {
+        seconds >= 3600 ? "\(seconds / 3600)h \(seconds % 3600 / 60)m" : "\(seconds / 60)m"
     }
 
     private func groupHeader(_ group: TimelineViewModel.DayGroup) -> some View {
@@ -257,6 +369,7 @@ struct TimelineEventRow: View {
     let event: TimelineEvent
     let workspaceName: String?
     let isLast: Bool
+    var isFocused: Bool = false
     var onOpen: ((String) -> Void)? = nil
 
     private var primaryPath: String? {
@@ -330,7 +443,10 @@ struct TimelineEventRow: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 0.5)
+                    .strokeBorder(isFocused
+                        ? AnyShapeStyle(Color.accentColor.opacity(0.5))
+                        : AnyShapeStyle(.separator),
+                        lineWidth: isFocused ? 1 : 0.5)
             )
         }
         .contentShape(Rectangle())

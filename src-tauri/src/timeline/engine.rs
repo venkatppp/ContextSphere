@@ -68,8 +68,11 @@ impl TimelineEngine {
         &self,
         workspace_id: Uuid,
         limit: Option<i64>,
+        offset: Option<i64>,
     ) -> Result<Vec<TimelineEvent>, DatabaseError> {
-        self.service.list_recent_events(workspace_id, limit).await
+        self.service
+            .list_recent_events(workspace_id, limit, offset)
+            .await
     }
 }
 
@@ -112,7 +115,7 @@ mod tests {
             .await
             .expect("record should succeed");
 
-        let events = engine.recent_events(workspace_id, None).await.unwrap();
+        let events = engine.recent_events(workspace_id, None, None).await.unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(
             events[0].event_type,

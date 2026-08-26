@@ -256,7 +256,7 @@ impl ProactiveEngine {
         // Get recent timeline
         let timeline = self
             .timeline_engine
-            .recent_events(workspace_id, Some(20))
+            .recent_events(workspace_id, Some(20), None)
             .await?;
 
         let recent_timeline: Vec<TimelineSummary> = timeline

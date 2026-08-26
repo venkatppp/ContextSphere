@@ -126,7 +126,7 @@ impl ConversationManager {
     ) -> Result<ContextSnapshot, DatabaseError> {
         // Get recent timeline events
         let recent_events = if let Some(ws_id) = workspace_id {
-            self.timeline_engine.recent_events(ws_id, Some(20)).await?
+            self.timeline_engine.recent_events(ws_id, Some(20), None).await?
         } else {
             Vec::new()
         };
@@ -170,7 +170,7 @@ impl ConversationManager {
 
         // Add recent activity
         let recent_events = if let Some(ws_id) = workspace_id {
-            self.timeline_engine.recent_events(ws_id, Some(10)).await?
+            self.timeline_engine.recent_events(ws_id, Some(10), None).await?
         } else {
             Vec::new()
         };

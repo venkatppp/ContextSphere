@@ -43,6 +43,10 @@ final class GraphViewModel: ObservableObject {
 
     private static let subgraphDepth = 2
     private static let searchLimit: UInt32 = 20
+    /// Whole-graph render budget: nodes fetched for the unfiltered view.
+    /// Layout, hit testing and Canvas all stay O(caps), never O(store).
+    private static let wholeGraphNodeCap: UInt32 = 400
+    private static let wholeGraphEdgeCap: UInt32 = 1_200
 
     @Published private(set) var state: LoadState = .idle
     @Published private(set) var nodes: [KgNode] = []
@@ -59,6 +63,10 @@ final class GraphViewModel: ObservableObject {
     /// global/clustered view.
     @Published var contextFocusID: String?
     @Published var isUsingFixture = false
+    /// Whole-graph loads are bounded; when the store exceeds the caps the
+    /// status bar says so instead of silently dropping data.
+    @Published private(set) var isTruncated = false
+    @Published private(set) var totalNodeCount = 0
     /// Last layout pass duration in ms (for the debug overlay / benchmarks).
     @Published private(set) var lastLayoutDurationMs: Double = 0
 
@@ -200,6 +208,9 @@ final class GraphViewModel: ObservableObject {
         return workspaces.first { $0.id == id }?.name
     }
 
+    /// Constant-time node lookup by id (hit testing, focus, search merge).
+    func node(for id: String) -> KgNode? { registry[id] }
+
     /// Relationships incident to a node (for the inspector).
     func relationships(for nodeID: String) -> [(KgNode, KgEdge)] {
         edges.compactMap { edge in
@@ -271,6 +282,7 @@ final class GraphViewModel: ObservableObject {
                 } else {
                     try await loadWholeGraph()
                 }
+                isUsingFixture = false
                 state = .loaded
                 relayout(anchorID: workspaceNodeID)
             } catch {
@@ -317,16 +329,44 @@ final class GraphViewModel: ObservableObject {
         }
     }
 
+    /// Loads the unfiltered view through the backend's paged APIs so the
+    /// query itself stays bounded (`get_graph` with no workspace would
+    /// return the entire store). Truncation is surfaced, never hidden.
     private func loadWholeGraph() async throws {
         registry.removeAll()
         edgeSet.removeAll()
-        let view: GraphView = try await CoreBridge.shared.request(
-            "get_graph", as: GraphView.self)
-        for legacyNode in view.nodes {
-            registry[legacyNode.id] = legacyNode.toKgNode()
-        }
-        for legacyEdge in view.edges {
-            mergeEdge(legacyEdge.toKgEdge())
+
+        let nodePage: GraphNodePage = try await CoreBridge.shared.request(
+            "graph_nodes_page",
+            params: ["limit": Self.wholeGraphNodeCap],
+            as: GraphNodePage.self)
+        let edgePage: GraphEdgePage = try await CoreBridge.shared.request(
+            "graph_edges_page",
+            params: ["limit": Self.wholeGraphEdgeCap],
+            as: GraphEdgePage.self)
+        totalNodeCount = nodePage.total
+        isTruncated = nodePage.hasMore || edgePage.hasMore || nodePage.nodes.count < nodePage.total
+
+        if nodePage.nodes.isEmpty {
+            // Empty KG (nothing synced yet): fall back to the legacy
+            // projection so first-run users still see their workspaces.
+            let view: GraphView = try await CoreBridge.shared.request(
+                "get_graph", as: GraphView.self)
+            for legacyNode in view.nodes {
+                registry[legacyNode.id] = legacyNode.toKgNode()
+            }
+            for legacyEdge in view.edges {
+                mergeEdge(legacyEdge.toKgEdge())
+            }
+            isTruncated = false
+            totalNodeCount = registry.count
+        } else {
+            for kgNode in nodePage.nodes {
+                registry[kgNode.id] = kgNode
+            }
+            for kgEdge in edgePage.edges {
+                mergeEdge(kgEdge)
+            }
         }
         nodes = registry.values.sorted {
             ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)

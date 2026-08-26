@@ -53,6 +53,18 @@ struct SearchView: View {
                 .keyboardShortcut(.escape)
                 .hidden()
                 .accessibilityHidden(true)
+            Button("") { moveSelection(by: 1) }
+                .keyboardShortcut(.downArrow, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+            Button("") { moveSelection(by: -1) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+            Button("") { activateSelected() }
+                .keyboardShortcut(.defaultAction)
+                .hidden()
+                .accessibilityHidden(true)
             Button("") { searchFieldFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
@@ -346,28 +358,67 @@ struct SearchView: View {
                         result: result,
                         workspaceName: viewModel.workspaceName(for: result),
                         isSelected: viewModel.selectedResultID == result.id,
-                        action: { activate(result) })
+                        filePath: viewModel.filePath(for: result),
+                        action: { activate(result) },
+                        onOpenFile: {
+                            viewModel.selectedResultID = result.id
+                            Task { await viewModel.openFile(result) }
+                        },
+                        onRevealInFinder: {
+                            viewModel.selectedResultID = result.id
+                            viewModel.revealInFinder(result)
+                        })
                     .focusable()
                     .focused($focusedRowID, equals: result.id)
                     .onChange(of: focusedRowID) { _, newID in
-                        viewModel.selectedResultID = newID
+                        if let newID { viewModel.selectedResultID = newID }
                     }
                 }
             }
         }
     }
 
-    /// Select the result; workspace results also switch the daemon's
-    /// active workspace before revealing it in the Workspaces section.
+    /// Select the result and act on it: workspaces switch the daemon's
+    /// active workspace before revealing it in the Workspaces section;
+    /// file hits open directly (native first, core fallback second).
     private func activate(_ result: SearchResult) {
         viewModel.selectedResultID = result.id
-        guard result.entityType == .workspace else { return }
-        let workspaceId = result.workspaceId
-        Task {
-            if await viewModel.switchToWorkspace(workspaceId) {
-                onRevealWorkspace(workspaceId)
+        if result.entityType == .workspace {
+            let workspaceId = result.workspaceId
+            Task {
+                if await viewModel.switchToWorkspace(workspaceId) {
+                    onRevealWorkspace(workspaceId)
+                }
             }
+            return
         }
+        guard viewModel.filePath(for: result) != nil else { return }
+        Task { await viewModel.openFile(result) }
+    }
+
+    /// Arrow-key navigation over the visible results.
+    private func moveSelection(by direction: Int) {
+        guard !viewModel.results.isEmpty else { return }
+        let ids = viewModel.results.map(\.id)
+        let current = focusedRowID ?? viewModel.selectedResultID
+        guard let current, let index = ids.firstIndex(of: current) else {
+            applySelection(ids[0])
+            return
+        }
+        applySelection(ids[max(0, min(ids.count - 1, index + direction))])
+    }
+
+    private func applySelection(_ id: String) {
+        viewModel.selectedResultID = id
+        focusedRowID = id
+    }
+
+    /// Return on a selected result activates it (workspace switch or
+    /// file open). No-ops while the query field has focus so Return
+    /// keeps submitting the search there.
+    private func activateSelected() {
+        guard !searchFieldFocused, let result = viewModel.selectedResult else { return }
+        activate(result)
     }
 
     // MARK: - Keyboard actions
@@ -400,7 +451,10 @@ struct SearchResultRow: View {
     let result: SearchResult
     let workspaceName: String?
     let isSelected: Bool
+    let filePath: String?
     let action: () -> Void
+    var onOpenFile: (() -> Void)? = nil
+    var onRevealInFinder: (() -> Void)? = nil
 
     var body: some View {
         Button(action: action) {
@@ -420,6 +474,21 @@ struct SearchResultRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if let workspaceName {
                         workspaceCaption(workspaceName)
+                    }
+                    if let filePath {
+                        Text(filePath)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(filePath)
+                    }
+                }
+                Spacer(minLength: 8)
+                if filePath != nil {
+                    HStack(spacing: 4) {
+                        rowActionButton("arrow.up.forward.app", "Open") { onOpenFile?() }
+                        rowActionButton("folder", "Reveal in Finder") { onRevealInFinder?() }
                     }
                 }
             }
@@ -443,6 +512,15 @@ struct SearchResultRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            if filePath != nil {
+                Button("Open") { onOpenFile?() }
+                Button("Reveal in Finder") { onRevealInFinder?() }
+                Divider()
+                Button("Copy Path") {
+                    copyToPasteboard(filePath ?? "")
+                }
+                Divider()
+            }
             Button("Copy Name") {
                 copyToPasteboard(result.title)
             }
@@ -454,7 +532,23 @@ struct SearchResultRow: View {
         .accessibilityLabel(accessibilityText)
         .accessibilityHint(result.entityType == .workspace
                            ? "Opens the Workspaces section"
-                           : "Selects the result; press Command-C to copy")
+                           : filePath != nil
+                             ? "Opens the file; press Return to open, Control-click for more actions"
+                             : "Selects the result; press Command-C to copy")
+    }
+
+    private func rowActionButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(label)
+        .accessibilityLabel("\(label) \(result.title)")
     }
 
     private var titleLine: some View {

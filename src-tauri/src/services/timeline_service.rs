@@ -88,10 +88,11 @@ impl TimelineService {
         &self,
         workspace_id: Uuid,
         limit: Option<i64>,
+        offset: Option<i64>,
     ) -> Result<Vec<TimelineEvent>, DatabaseError> {
         let clamped_limit = limit.filter(|&l| l > 0).map(|l| l.min(MAX_LIST_LIMIT));
         self.timeline_repository
-            .list_by_workspace(workspace_id, clamped_limit)
+            .list_by_workspace_paged(workspace_id, clamped_limit, offset)
             .await
     }
 
@@ -160,7 +161,7 @@ mod tests {
             .unwrap();
 
         let events = service
-            .list_recent_events(workspace_id, None)
+            .list_recent_events(workspace_id, None, None)
             .await
             .unwrap();
         assert_eq!(events.len(), 2);
@@ -180,7 +181,7 @@ mod tests {
         // Requesting far more than MAX_LIST_LIMIT must not error — it's
         // silently clamped — and must still return the 3 rows that exist.
         let events = service
-            .list_recent_events(workspace_id, Some(1_000_000))
+            .list_recent_events(workspace_id, Some(1_000_000), None)
             .await
             .unwrap();
         assert_eq!(events.len(), 3);
@@ -197,7 +198,7 @@ mod tests {
         // A zero/negative limit falls back to the repository's default
         // page size rather than returning zero rows.
         let events = service
-            .list_recent_events(workspace_id, Some(0))
+            .list_recent_events(workspace_id, Some(0), None)
             .await
             .unwrap();
         assert_eq!(events.len(), 1);

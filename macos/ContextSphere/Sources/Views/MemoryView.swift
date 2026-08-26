@@ -132,6 +132,8 @@ struct MemoryView: View {
             overview
             learnedContext
             patterns
+            duplicatesSection
+            dataSection
             healthSection
         }
     }
@@ -399,6 +401,265 @@ struct MemoryView: View {
         }
     }
 
+    // MARK: - Duplicates
+
+    @State private var confirmMerge = false
+
+    private var duplicatesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionHeader(title: "Duplicates",
+                              subtitle: viewModel.duplicateGroups.isEmpty
+                                  ? nil : "\(viewModel.duplicateGroups.count) group\(viewModel.duplicateGroups.count == 1 ? "" : "s")",
+                              symbol: "square.on.square")
+                Spacer()
+                if !viewModel.duplicateGroups.isEmpty {
+                    if viewModel.mergeRunning {
+                        ProgressView().controlSize(.small)
+                    }
+                    Button("Merge identical…") { confirmMerge = true }
+                        .buttonStyle(.bordered)
+                        .disabled(viewModel.mergeRunning)
+                        .help("Keep the best record of each duplicate group and remove the rest")
+                        .accessibilityLabel("Merge duplicate memories")
+                }
+            }
+            if let merge = viewModel.mergeResult {
+                Label("Merged \(merge.recordsMerged) duplicates in \(merge.groupsMerged) groups",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Merged \(merge.recordsMerged) duplicates in \(merge.groupsMerged) groups")
+            }
+            if viewModel.duplicatesLoading && viewModel.duplicateGroups.isEmpty {
+                ProgressView().controlSize(.small)
+            } else if viewModel.duplicateGroups.isEmpty {
+                Text("No identical memories — every remembered run is unique.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(viewModel.duplicateGroups, id: \.goalFingerprint) { group in
+                        DuplicateGroupCard(group: group,
+                                           workspaceName: viewModel.workspaceName(for: group.records.first?.workspaceId))
+                    }
+                }
+            }
+        }
+        .alert("Merge identical memories?", isPresented: $confirmMerge) {
+            Button("Merge", role: .destructive) {
+                Task { await viewModel.mergeDuplicates() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let count = viewModel.duplicateGroups.reduce(0) { $0 + $1.duplicateIDs.count }
+            Text("The best record of each group is kept; \(count) duplicate cop\(count == 1 ? "y" : "ies") are removed. Merges are recorded in each memory's lineage. This cannot be undone.")
+        }
+    }
+
+    // MARK: - Snapshots & transfer
+
+    @State private var showSnapshotField = false
+    @State private var newSnapshotLabel = ""
+    @State private var confirmRestoreSnapshotID: String?
+
+    private var dataSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Snapshots & transfer",
+                          symbol: "externaldrive.badge.timemachine")
+            HStack(alignment: .top, spacing: 20) {
+                snapshotsPanel
+                transferPanel
+            }
+        }
+    }
+
+    private var snapshotsPanel: some View {
+        ContentCard(cornerRadius: Theme.cornerRegular) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Snapshots", systemImage: "camera.on.rectangle")
+                    .font(.callout.weight(.semibold))
+                if showSnapshotField {
+                    HStack(spacing: 8) {
+                        TextField("Label (optional)", text: $newSnapshotLabel)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Snapshot label")
+                            .onSubmit { createSnapshotFromField() }
+                        Button("Create") { createSnapshotFromField() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(viewModel.snapshotRunning)
+                        Button("Cancel") { showSnapshotField = false }
+                            .controlSize(.small)
+                    }
+                } else {
+                    Button {
+                        newSnapshotLabel = ""
+                        showSnapshotField = true
+                    } label: {
+                        if viewModel.snapshotRunning {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("New snapshot", systemImage: "plus")
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(viewModel.snapshotRunning || viewModel.stats?.totalRecords == 0)
+                    .help("Capture the whole memory store under a label")
+                    .accessibilityLabel("Create memory snapshot")
+                }
+                if let notice = viewModel.snapshotNotice {
+                    Text(notice).font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel(notice)
+                }
+                if viewModel.snapshotsLoading && viewModel.snapshots.isEmpty {
+                    ProgressView().controlSize(.small)
+                } else if viewModel.snapshots.isEmpty {
+                    Text("No snapshots yet — capture one before risky cleanups.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.snapshots.prefix(5)) { snapshot in
+                        snapshotRow(snapshot)
+                    }
+                    if viewModel.snapshots.count > 5 {
+                        Text("\(viewModel.snapshots.count - 5) older snapshot\(viewModel.snapshots.count - 5 == 1 ? "" : "s") kept by the core")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                if let restore = viewModel.restoreResult {
+                    Text("Restored \(restore.recordsRestored) records · \(restore.snapshotsKept) snapshots kept")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .accessibilityLabel("Restore finished: \(restore.recordsRestored) records restored")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .alert(item: Binding(
+            get: { confirmRestoreSnapshotID.map { PendingRestore(id: $0) } },
+            set: { confirmRestoreSnapshotID = $0?.id })) { pending in
+            restoreAlert(for: pending.id)
+        }
+    }
+
+    private func createSnapshotFromField() {
+        let label = newSnapshotLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        showSnapshotField = false
+        Task { await viewModel.createSnapshot(label: label.isEmpty ? nil : label) }
+    }
+
+    private struct PendingRestore: Identifiable { let id: String }
+
+    private func restoreAlert(for id: String) -> Alert {
+        Alert(
+            title: Text("Restore this snapshot?"),
+            message: Text("The store is rebuilt from the snapshot's records; anything learned since is dropped. The vector index is rebuilt automatically."),
+            primaryButton: .destructive(Text("Restore")) {
+                Task { await viewModel.restoreSnapshot(id) }
+            },
+            secondaryButton: .cancel())
+    }
+
+    private func snapshotRow(_ snapshot: MemorySnapshot) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "camera")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(snapshot.label)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                Text("\(snapshot.recordCount) records · \(snapshot.createdAt.relativeTime)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Button("Restore") { confirmRestoreSnapshotID = snapshot.id }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(viewModel.snapshotRunning)
+                .help("Rebuild the memory store from this snapshot")
+                .accessibilityLabel("Restore snapshot \(snapshot.label)")
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var transferPanel: some View {
+        ContentCard(cornerRadius: Theme.cornerRegular) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Export & import", systemImage: "arrow.up.doc")
+                    .font(.callout.weight(.semibold))
+                Text("Move the whole store between machines as portable JSON.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button {
+                        exportMemoryStore()
+                    } label: {
+                        if viewModel.importExportRunning {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Export…", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(viewModel.importExportRunning || viewModel.stats?.totalRecords == 0)
+                    .help("Save the whole memory store as JSON")
+                    .accessibilityLabel("Export memory store")
+
+                    Button {
+                        importMemoryStore()
+                    } label: {
+                        Label("Import…", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(viewModel.importExportRunning)
+                    .help("Import an exported memory file (ids already present are skipped)")
+                    .accessibilityLabel("Import memory store")
+                }
+                if let imported = viewModel.importResult {
+                    Text("Imported \(imported.imported), skipped \(imported.skipped) existing")
+                        .font(.caption)
+                        .foregroundStyle(imported.imported > 0 ? Color.green : Color.secondary)
+                        .accessibilityLabel("Import finished: \(imported.imported) imported, \(imported.skipped) skipped")
+                }
+                if let transfer = viewModel.transferNotice {
+                    Text(transfer).font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel(transfer)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func exportMemoryStore() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "contextsphere-memory.json"
+        panel.message = "Choose where to save the memory store export."
+        guard panel.runModal() == .ok, let url = panel.url else { return }
+        Task {
+            if await viewModel.exportToFile(at: url) {
+                viewModel.transferNotice = "Exported to \(url.lastPathComponent)"
+            }
+        }
+    }
+
+    private func importMemoryStore() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose a ContextSphere memory export."
+        guard panel.runModal() == .ok, let url = panel.urls.first else { return }
+        viewModel.transferNotice = nil
+        Task { await viewModel.importFromFile(at: url) }
+    }
+
     // MARK: - Health & data
 
     private var healthSection: some View {
@@ -505,6 +766,25 @@ struct MemoryView: View {
                     Text("Removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
                         .font(.caption).foregroundStyle(.secondary)
                         .accessibilityLabel("Cleanup result: removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
+                }
+                Divider()
+                Button {
+                    Task { await viewModel.compressOversized() }
+                } label: {
+                    if viewModel.compressRunning {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Compress oversized", systemImage: "doc.zipper")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.compressRunning || viewModel.stats?.totalRecords == 0)
+                .help("Shrink very long reasoning histories into compact summaries (originals are archived)")
+                .accessibilityLabel("Compress oversized memories")
+                if let compress = viewModel.compressResult {
+                    Text("Compressed \(compress.compressed) of \(compress.examined) examined")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Compression finished: \(compress.compressed) of \(compress.examined)")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -754,5 +1034,69 @@ private struct FailurePatternRow: View {
         if pattern.severity > 0.7 { return .red }
         if pattern.severity > 0.4 { return .orange }
         return .yellow
+    }
+}
+
+// MARK: - Duplicate group card
+
+/// One identical-memory group: the reason it is considered duplicate, its
+/// members, and the record a merge would keep.
+private struct DuplicateGroupCard: View {
+    let group: MemoryDuplicateGroup
+    let workspaceName: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(group.records.first?.goal ?? group.goalFingerprint)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text("\(group.records.count) copies · \(group.duplicateIDs.count) removed by merge")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(group.reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            ForEach(group.records, id: \.id) { record in
+                HStack(spacing: 6) {
+                    Image(systemName: record.id == group.keepId ? "star.fill" : "doc")
+                        .font(.caption2)
+                        .foregroundStyle(record.id == group.keepId ? Color.yellow : Color.secondary)
+                        .accessibilityHidden(true)
+                    Text(record.status.title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let workspaceName {
+                        Text("· \(workspaceName)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text(record.createdAt.relativeTime)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    if record.id == group.keepId {
+                        Text("kept")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(record.status.title) copy from \(record.createdAt.relativeTime)\(record.id == group.keepId ? ", kept after merge" : "")")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.quaternary, lineWidth: 0.5)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Duplicate group: \(group.reason)")
     }
 }

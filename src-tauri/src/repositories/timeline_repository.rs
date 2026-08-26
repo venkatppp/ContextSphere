@@ -96,12 +96,25 @@ impl TimelineRepository {
         workspace_id: Uuid,
         limit: Option<i64>,
     ) -> Result<Vec<TimelineEvent>, DatabaseError> {
+        self.list_by_workspace_paged(workspace_id, limit, None).await
+    }
+
+    /// Offset-based page over [`Self::list_by_workspace`]: `offset`
+    /// skips that many newer events so the Timeline UI can page past the
+    /// single-request cap. Negative offsets are treated as 0.
+    pub async fn list_by_workspace_paged(
+        &self,
+        workspace_id: Uuid,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> Result<Vec<TimelineEvent>, DatabaseError> {
         let rows: Vec<TimelineEventRow> = sqlx::query_as(&format!(
             "SELECT {SELECT_COLUMNS} FROM timeline_events
-             WHERE workspace_id = ? ORDER BY occurred_at DESC LIMIT ?"
+             WHERE workspace_id = ? ORDER BY occurred_at DESC LIMIT ? OFFSET ?"
         ))
         .bind(workspace_id)
         .bind(limit.unwrap_or(DEFAULT_LIST_LIMIT))
+        .bind(offset.unwrap_or(0).max(0))
         .fetch_all(&self.pool)
         .await?;
 

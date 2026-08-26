@@ -426,7 +426,7 @@ impl ToolExecutor {
             .and_then(|v| v.as_u64())
             .map(|l| l as i64);
         let events = if let Some(ws_id) = workspace_id {
-            self.timeline_engine.recent_events(ws_id, limit).await?
+            self.timeline_engine.recent_events(ws_id, limit, None).await?
         } else {
             Vec::new()
         };
@@ -445,7 +445,7 @@ impl ToolExecutor {
             .ok_or_else(|| DatabaseError::InvalidInput("Missing query".to_string()))?;
         let workspace_id = optional_uuid(arguments, "workspace_id")?.or(context_workspace_id);
         let events = if let Some(ws_id) = workspace_id {
-            self.timeline_engine.recent_events(ws_id, Some(100)).await?
+            self.timeline_engine.recent_events(ws_id, Some(100), None).await?
         } else {
             Vec::new()
         };
