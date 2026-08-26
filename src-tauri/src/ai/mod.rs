@@ -11,6 +11,7 @@ pub mod models;
 pub mod onnx_provider;
 pub mod reranker;
 pub mod settings;
+pub mod shared_provider;
 pub mod tokenizer;
 pub mod workers;
 
@@ -25,5 +26,6 @@ pub use models::{
 pub use onnx_provider::ONNXEmbeddingProvider;
 pub use reranker::Reranker;
 pub use settings::AISettings;
+pub use shared_provider::SharedProvider;
 pub use tokenizer::BertTokenizer;
 pub use workers::EmbeddingWorker;

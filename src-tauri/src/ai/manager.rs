@@ -14,6 +14,7 @@ use crate::ai::settings::AISettings;
 use crate::errors::DatabaseError;
 
 /// Manages AI model lifecycle.
+#[derive(Clone)]
 pub struct ModelManager {
     settings: Arc<RwLock<AISettings>>,
     models: Arc<RwLock<HashMap<String, ModelInfo>>>,
@@ -54,6 +55,7 @@ impl ModelManager {
     fn default_models() -> Vec<ModelMetadata> {
         vec![
             // all-MiniLM-L6-v2: Popular lightweight embedding model
+            // Actual ONNX artifact is ~90 MB (90_405_214 bytes); previous 23 MB was for quantized int8.
             ModelMetadata {
                 id: "all-minilm-l6-v2".to_string(),
                 name: "all-MiniLM-L6-v2".to_string(),
@@ -61,7 +63,7 @@ impl ModelManager {
                 version: "1.0.0".to_string(),
                 dimensions: 384,
                 max_sequence_length: 256,
-                file_size_bytes: 23_000_000, // ~23MB
+                file_size_bytes: 90_405_214, // ~86 MB actual ONNX
                 download_url: "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx".to_string(),
                 tokenizer_url: Some("https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json".to_string()),
                 description: "Fast and efficient embedding model, 384 dimensions".to_string(),
