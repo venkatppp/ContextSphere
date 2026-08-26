@@ -70,7 +70,8 @@ pub async fn dispatch_admin(
                 app.state::<WorkspaceHealthEngine>(),
                 app.state::<IntelligenceEmitter>(),
             )
-            .await;
+            .await
+            .map_err(|e| RpcError::message(e))?;
             serde_json::to_value(r).map_err(|e| RpcError::message(e.to_string()))?
         }
         "get_latest_workspace_health" => rpc_state_tail!(app, params, WorkspaceHealthEngine, crate::commands::intelligence::get_latest_workspace_health, ("workspace_id": String)),

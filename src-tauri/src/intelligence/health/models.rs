@@ -5,17 +5,21 @@ use serde::{Deserialize, Serialize};
 
 /// A workspace health score with component metrics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceHealth {
     /// Workspace ID this health assessment belongs to.
+    #[serde(rename = "workspaceId", alias = "workspace_id")]
     pub workspace_id: String,
 
     /// Overall health score (0.0 - 1.0, where 1.0 is healthiest).
+    #[serde(rename = "overallScore", alias = "overall_score")]
     pub overall_score: f64,
 
     /// Individual health factors contributing to the overall score.
     pub factors: Vec<HealthFactor>,
 
     /// When this health assessment was calculated.
+    #[serde(rename = "calculatedAt", alias = "calculated_at")]
     pub calculated_at: DateTime<Utc>,
 
     /// Trend compared to previous assessment (positive = improving).
@@ -24,6 +28,7 @@ pub struct WorkspaceHealth {
 
 /// A single health factor contributing to overall workspace health.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthFactor {
     /// Factor identifier (e.g., "activity_level", "organization").
     pub id: String,
@@ -46,6 +51,7 @@ pub struct HealthFactor {
 
 /// A granular metric used to calculate a health factor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthMetric {
     /// Metric identifier.
     pub id: String,
@@ -57,6 +63,7 @@ pub struct HealthMetric {
     pub value: f64,
 
     /// Expected/ideal value for comparison.
+    #[serde(rename = "idealValue", alias = "ideal_value")]
     pub ideal_value: Option<f64>,
 
     /// Unit of measurement (e.g., "days", "files", "percent").
