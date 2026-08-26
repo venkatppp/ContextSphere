@@ -99,8 +99,8 @@ struct DashboardView: View {
         }
         .sheet(isPresented: Binding(get: { explanation != nil },
                                     set: { if !$0 { explanation = nil } })) {
-            if let explanation {
-                ExplanationSheet(explanation: explanation) { explanation = nil }
+            if let current = explanation {
+                ExplanationSheet(explanation: current) { explanation = nil }
             }
         }
     }
@@ -797,12 +797,6 @@ struct DashboardView: View {
     /// Fetches `explain_recommendation` for one recommendation. Failures
     /// surface inline next to the row (never silently).
     private func loadExplanation(for recommendation: Recommendation) async {
-        guard let workspace = workspaces.first(where: { $0.id == recommendation.workspaceId })
-            ?? currentWorkspace else {
-            explainError = "No workspace context available for this recommendation."
-            explainingId = recommendation.id
-            return
-        }
         explainingId = recommendation.id
         explainError = nil
         do {
@@ -961,7 +955,7 @@ struct ExplanationSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 440, minHeight: 220)
+        .frame(width: 440, alignment: .leading)
     }
 }
 
