@@ -168,6 +168,7 @@ pub async fn switch_workspace(
     context_memory_engine: State<'_, ContextMemoryEngine>,
     file_repository: State<'_, FileRepository>,
     runtime_workers: State<'_, Arc<RuntimeWorkers>>,
+    proactive_engine: State<'_, std::sync::Arc<crate::copilot::ProactiveEngine>>,
     id: Uuid,
 ) -> Result<(), DatabaseError> {
     // Create auto snapshot before switching
@@ -176,7 +177,21 @@ pub async fn switch_workspace(
 
     let _ = context_memory_engine.auto_snapshot(id, active_files).await;
 
+    // Notify the proactive engine so it can react to the context switch
+    // (emits `proactive:notification` when the detector has something).
+    let previous_workspace = service.get_active_workspace().await.ok().flatten();
+
     service.switch_workspace(id).await?;
+
+    if let Err(error) = proactive_engine
+        .on_workspace_switched(
+            previous_workspace.map(|w| w.id).unwrap_or(id),
+            id,
+        )
+        .await
+    {
+        tracing::warn!(error = %error, "proactive workspace-switch hook failed");
+    }
 
     // Update runtime workers with new active workspace
     runtime_workers.set_active_workspace(Some(id)).await;

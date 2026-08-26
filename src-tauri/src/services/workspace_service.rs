@@ -34,6 +34,11 @@ impl WorkspaceService {
 
     /// Lists every active workspace, most recently active first — the
     /// dashboard's "Active workspaces" grid (blueprint §3.2).
+    /// Returns the single most recently active workspace, if any.
+    pub async fn get_active_workspace(&self) -> Result<Option<Workspace>, DatabaseError> {
+        self.workspace_repository.get_active_workspace().await
+    }
+
     pub async fn list_active_workspaces(&self) -> Result<Vec<Workspace>, DatabaseError> {
         self.workspace_repository.list_active_workspaces().await
     }
