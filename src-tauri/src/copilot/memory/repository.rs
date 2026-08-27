@@ -82,7 +82,7 @@ impl MemoryRepository {
         .bind(record.id.to_string())
         .bind(record.kind.to_string())
         .bind(record.source_id.to_string())
-        .bind(record.workspace_id.map(|id| id.to_string()))
+        .bind(record.workspace_id)
         .bind(&record.goal)
         .bind(record.status.to_string())
         .bind(plan)
@@ -106,7 +106,19 @@ impl MemoryRepository {
         .bind(record.version as i64)
         .bind(record.parent_id.map(|id| id.to_string()))
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                record_id = %record.id,
+                workspace_id = ?record.workspace_id,
+                parent_id = ?record.parent_id,
+                kind = %record.kind,
+                source_id = %record.source_id,
+                "failed to upsert execution_memory"
+            );
+            e
+        })?;
 
         Ok(())
     }
@@ -184,19 +196,21 @@ impl MemoryRepository {
     ) -> Result<Vec<ExecutionMemoryRecord>, DatabaseError> {
         let mut sql = String::from("SELECT * FROM execution_memory WHERE 1 = 1");
         let mut conditions = Vec::new();
-        let mut bind_values: Vec<String> = Vec::new();
+        let mut bind_kinds: Vec<String> = Vec::new();
+        let mut bind_status: Vec<String> = Vec::new();
+        let mut bind_workspace: Option<Uuid> = None;
 
         if let Some(kind) = kind {
             conditions.push("kind = ?".to_string());
-            bind_values.push(kind.to_string());
+            bind_kinds.push(kind.to_string());
         }
         if let Some(status) = status {
             conditions.push("status = ?".to_string());
-            bind_values.push(status.to_string());
+            bind_status.push(status.to_string());
         }
         if let Some(workspace_id) = workspace_id {
             conditions.push("workspace_id = ?".to_string());
-            bind_values.push(workspace_id.to_string());
+            bind_workspace = Some(workspace_id);
         }
         if !conditions.is_empty() {
             sql.push_str(&format!(" AND {}", conditions.join(" AND ")));
@@ -204,8 +218,14 @@ impl MemoryRepository {
         sql.push_str(" ORDER BY created_at DESC LIMIT ?");
 
         let mut query = sqlx::query(&sql);
-        for value in bind_values {
+        for value in bind_kinds {
             query = query.bind(value);
+        }
+        for value in bind_status {
+            query = query.bind(value);
+        }
+        if let Some(ws) = bind_workspace {
+            query = query.bind(ws);
         }
         query = query.bind(limit as i64);
 
@@ -422,11 +442,25 @@ impl MemoryRepository {
             kind: self.parse_kind(&row.get::<String, _>("kind"))?,
             source_id: Uuid::parse_str(&row.get::<String, _>("source_id"))
                 .map_err(|e| DatabaseError::IoError(e.to_string()))?,
-            workspace_id: row
-                .get::<Option<String>, _>("workspace_id")
-                .map(|s| Uuid::parse_str(&s))
-                .transpose()
-                .map_err(|e| DatabaseError::IoError(e.to_string()))?,
+            workspace_id: {
+                let raw: Option<String> = row.try_get("workspace_id").ok().flatten();
+                raw.and_then(|s| Uuid::parse_str(&s).ok())
+                    .or_else(|| {
+                        let raw: Option<Vec<u8>> = row.try_get("workspace_id").ok().flatten();
+                        raw.and_then(|b| {
+                            if b.len() == 16 {
+                                let s = format!(
+                                    "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                                    b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                                    b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+                                );
+                                Uuid::parse_str(&s).ok()
+                            } else {
+                                None
+                            }
+                        })
+                    })
+            },
             goal: row.get("goal"),
             status: self.parse_status(&row.get::<String, _>("status"))?,
             plan: row
@@ -464,11 +498,25 @@ impl MemoryRepository {
                 .map(|s| parse_rfc3339(&s))
                 .transpose()?,
             version: row.get::<i64, _>("version").max(1) as u64,
-            parent_id: row
-                .get::<Option<String>, _>("parent_id")
-                .map(|s| Uuid::parse_str(&s))
-                .transpose()
-                .map_err(|e| DatabaseError::IoError(e.to_string()))?,
+            parent_id: {
+                let raw: Option<String> = row.try_get("parent_id").ok().flatten();
+                raw.and_then(|s| Uuid::parse_str(&s).ok())
+                    .or_else(|| {
+                        let raw: Option<Vec<u8>> = row.try_get("parent_id").ok().flatten();
+                        raw.and_then(|b| {
+                            if b.len() == 16 {
+                                let s = format!(
+                                    "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                                    b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                                    b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+                                );
+                                Uuid::parse_str(&s).ok()
+                            } else {
+                                None
+                            }
+                        })
+                    })
+            },
         })
     }
 
@@ -631,7 +679,7 @@ mod tests {
                 (id, name, description, status, health_score, root_path, last_active_at, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(ws.to_string())
+        .bind(ws)
         .bind("Memory Workspace")
         .bind::<Option<String>>(None)
         .bind(crate::models::workspace::WorkspaceStatus::Active.as_str())
