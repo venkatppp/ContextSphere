@@ -43,6 +43,12 @@ impl WorkspaceRepository {
     ///   might race — e.g. the Workspace Engine's detector — should check
     ///   [`WorkspaceRepository::find_by_root_path`] first, but this is
     ///   still enforced at the database level as the source of truth.
+    fn canonicalize_path(path: String) -> String {
+        std::fs::canonicalize(&path)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(path)
+    }
+
     pub async fn create(&self, input: CreateWorkspaceInput) -> Result<Workspace, DatabaseError> {
         let name = input.name.trim();
         if name.is_empty() {
@@ -51,7 +57,10 @@ impl WorkspaceRepository {
             ));
         }
         let description = input.description.filter(|d| !d.trim().is_empty());
-        let root_path = input.root_path.filter(|p| !p.trim().is_empty());
+        let root_path = input
+            .root_path
+            .filter(|p| !p.trim().is_empty())
+            .map(Self::canonicalize_path);
 
         let id = Uuid::new_v4();
         let now = Utc::now();
@@ -223,17 +232,27 @@ impl WorkspaceRepository {
     /// an indexed point lookup against the partial unique index from
     /// `migrations/0002_workspace_root_path.sql`, not a scan.
     ///
-    /// Callers are expected to pass an already-canonicalized path
-    /// (see [`crate::workspace::heuristics`]); this method does no path
-    /// normalization of its own; two different string spellings of the
-    /// same directory (e.g. a trailing slash) will not match.
+    /// The lookup canonicalizes `path` (e.g. `/tmp` → `/private/tmp` on
+    /// macOS) so callers passing either spelling match the same row.
     pub async fn find_by_root_path(&self, path: &str) -> Result<Option<Workspace>, DatabaseError> {
+        let canonical = Self::canonicalize_path(path.to_string());
         let row: Option<WorkspaceRow> = sqlx::query_as(&format!(
             "SELECT {SELECT_COLUMNS} FROM workspaces WHERE root_path = ?"
         ))
-        .bind(path)
+        .bind(&canonical)
         .fetch_optional(&self.pool)
         .await?;
+        // Fallback to original spelling for legacy rows created before
+        // canonicalization was enforced (e.g. manual `/tmp` workspaces).
+        if row.is_none() && canonical != path {
+            let row2: Option<WorkspaceRow> = sqlx::query_as(&format!(
+                "SELECT {SELECT_COLUMNS} FROM workspaces WHERE root_path = ?"
+            ))
+            .bind(path)
+            .fetch_optional(&self.pool)
+            .await?;
+            return row2.map(Workspace::try_from).transpose();
+        }
 
         row.map(Workspace::try_from).transpose()
     }
@@ -270,8 +289,9 @@ impl WorkspaceRepository {
     /// - [`DatabaseError::Constraint`] if `root_path` is already claimed
     ///   by another workspace.
     pub async fn set_root_path(&self, id: Uuid, root_path: &str) -> Result<Workspace, DatabaseError> {
+        let canonical = Self::canonicalize_path(root_path.to_string());
         let result = sqlx::query("UPDATE workspaces SET root_path = ?, updated_at = ? WHERE id = ?")
-            .bind(root_path)
+            .bind(&canonical)
             .bind(Utc::now())
             .bind(id)
             .execute(&self.pool)

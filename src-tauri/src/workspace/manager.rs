@@ -163,10 +163,11 @@ mod tests {
             .expect("resolve should succeed")
             .expect("a git repo root should be detected");
 
-        assert_eq!(
-            workspace.root_path.as_deref(),
-            Some(watch_root.path().to_string_lossy().as_ref())
-        );
+        let expected = std::fs::canonicalize(watch_root.path())
+            .unwrap_or_else(|_| watch_root.path().to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(workspace.root_path, Some(expected));
     }
 
     #[tokio::test]
@@ -210,10 +211,11 @@ mod tests {
             .expect("resolve should succeed")
             .expect("the watch root is an implicit workspace root");
 
-        assert_eq!(
-            workspace.root_path.as_deref(),
-            Some(watch_root.path().to_string_lossy().as_ref())
-        );
+        let expected = std::fs::canonicalize(watch_root.path())
+            .unwrap_or_else(|_| watch_root.path().to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(workspace.root_path, Some(expected));
     }
 
     #[tokio::test]
@@ -252,9 +254,10 @@ mod tests {
             workspace.id, manual.id,
             "the existing filesystem-less workspace must be adopted, not duplicated"
         );
-        assert_eq!(
-            workspace.root_path.as_deref(),
-            Some(watch_root.path().to_string_lossy().as_ref())
-        );
+        let expected = std::fs::canonicalize(watch_root.path())
+            .unwrap_or_else(|_| watch_root.path().to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(workspace.root_path, Some(expected));
     }
 }
