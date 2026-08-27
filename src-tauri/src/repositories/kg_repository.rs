@@ -814,18 +814,18 @@ impl KgRepository {
         node_type: GraphNodeType,
     ) -> Result<u64, DatabaseError> {
         let sql: String = match node_type {
-            GraphNodeType::Workspace => {
+            GraphNodeType::Workspace => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'workspace'
                  AND lower(hex(entity_id)) NOT IN
-                     (SELECT replace(lower(id), '-', '') FROM workspaces)"
-                    .to_string()
-            }
-            GraphNodeType::File => {
+                     (SELECT {} FROM workspaces)",
+                canon("id")
+            ),
+            GraphNodeType::File => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'file'
                  AND lower(hex(entity_id)) NOT IN
-                     (SELECT replace(lower(id), '-', '') FROM files)"
-                    .to_string()
-            }
+                     (SELECT {} FROM files)",
+                canon("id")
+            ),
             // Compare in the canonical 32-hex space so the KG's BLOB ids
             // line up with aggregates stored as dashed TEXT.
             GraphNodeType::PlannerReport => format!(
