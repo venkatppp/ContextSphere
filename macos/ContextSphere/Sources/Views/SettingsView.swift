@@ -352,7 +352,18 @@ struct SettingsView: View {
             } header: {
                 Text("Apply")
             } footer: {
-                Text("Saving persists the whole provider configuration through the core daemon.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Saving persists the whole provider configuration through the core daemon.")
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Text("Memory & Learning capture completed planner executions. Configure a provider to enable planning — file edits alone don’t create memories.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

@@ -45,7 +45,7 @@ struct DashboardView: View {
     }
 
     private var emptyWorkspaces: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 34))
                 .foregroundStyle(.tertiary)
@@ -56,10 +56,65 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
+            Button {
+                AppRouter.shared.newWorkspaceRequest = true
+                AppRouter.shared.selection = .workspaces
+            } label: {
+                Label("Create Workspace", systemImage: "plus.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .accessibilityLabel("Create your first workspace")
+
+            // First-run 3-step journey — calm, not glass, explains empty→populated without fake data
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How it works")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                HStack(alignment: .top, spacing: 12) {
+                    firstRunStep(number: "1", title: "Create", detail: "Pick a folder for your project.")
+                    firstRunStep(number: "2", title: "Work", detail: "Edit files — Timeline fills automatically.")
+                    firstRunStep(number: "3", title: "See", detail: "Graph, Dashboard & briefing light up.")
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.shield")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("Files are observed locally on this Mac and never uploaded. Watch paths are managed in Settings.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
+            .padding(14)
+            .frame(maxWidth: 380)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
-        .accessibilityElement(children: .combine)
+        .padding(.vertical, 32)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func firstRunStep(number: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(number)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color.accentColor))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.caption.weight(.semibold))
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     var body: some View {
