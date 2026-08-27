@@ -27,6 +27,22 @@ pub struct KgRepository {
     pool: SqlitePool,
 }
 
+/// Canonical 32-char lowercase hex for a uuid column that may be stored
+/// as BLOB(16) (`Uuid` binds: workspaces, files, graph tables) or dashed
+/// TEXT (`to_string()` binds: execution_memory, plan_executions,
+/// plan_execution_reports, copilot_*). `Uuid::parse_str` accepts the
+/// simple form, so reads go String -> parse.
+fn canon(col: &str) -> String {
+    format!(
+        "CASE typeof({col}) WHEN 'blob' THEN lower(hex({col})) ELSE replace(lower({col}), '-', '') END"
+    )
+}
+
+fn parse_canon_uuid(raw: String) -> Result<Uuid, DatabaseError> {
+    Uuid::parse_str(&raw)
+        .map_err(|e| DatabaseError::InvalidInput(format!("invalid uuid '{raw}': {e}")))
+}
+
 impl KgRepository {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
@@ -320,16 +336,19 @@ impl KgRepository {
     /// on the execution id it summarizes (the table's primary key), and
     /// its summary is the report body, truncated.
     pub async fn planner_report_sources(&self) -> Result<Vec<GraphSource>, DatabaseError> {
-        let rows: Vec<(Uuid, String, String)> =
-            sqlx::query_as("SELECT execution_id, report, created_at FROM plan_execution_reports")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows: Vec<(String, String, String)> = sqlx::query_as(&format!(
+            "SELECT {}, report, created_at FROM plan_execution_reports",
+            canon("execution_id")
+        ))
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows
             .into_iter()
-            .map(|(execution_id, report, created_at)| {
+            .map(|(raw_id, report, created_at)| {
+                let execution_id = parse_canon_uuid(raw_id)?;
                 let summary: String = report.chars().take(400).collect();
-                GraphSource {
+                Ok(GraphSource {
                     entity_id: execution_id,
                     title: format!("Planner Report {}", short(&execution_id)),
                     workspace_id: None,
@@ -338,22 +357,26 @@ impl KgRepository {
                         "execution_id": execution_id.to_string(),
                         "created_at": created_at,
                     }),
-                }
+                })
             })
-            .collect())
+            .collect::<Result<Vec<_>, DatabaseError>>()?)
     }
 
     /// Every plan execution as a graph source. The title is the plan
     /// goal (joined through `copilot_plans`), the workspace comes from
     /// the owning conversation.
     pub async fn execution_sources(&self) -> Result<Vec<GraphSource>, DatabaseError> {
-        let rows: Vec<(Uuid, Option<Uuid>, String, String, String, String)> = sqlx::query_as(
-            "SELECT pe.id, c.workspace_id,
-                    COALESCE(p.goal, 'Execution ' || substr(lower(hex(pe.id)), 1, 8)),
+        let id_key = canon("pe.id");
+        let ws_key = canon("c.workspace_id");
+        let rows: Vec<(String, Option<String>, String, String, String, String)> = sqlx::query_as(
+            &format!(
+                "SELECT {id_key}, {ws_key} AS workspace_id,
+                    COALESCE(p.goal, 'Execution ' || substr({id_key}, 1, 8)),
                     pe.status, pe.started_at, pe.completed_at
              FROM plan_executions pe
              LEFT JOIN copilot_conversations c ON c.id = pe.conversation_id
-             LEFT JOIN copilot_plans p ON p.id = pe.plan_id",
+             LEFT JOIN copilot_plans p ON p.id = pe.plan_id"
+            ),
         )
         .fetch_all(&self.pool)
         .await?;
@@ -361,52 +384,66 @@ impl KgRepository {
         Ok(rows
             .into_iter()
             .map(
-                |(id, workspace_id, title, status, started_at, completed_at)| GraphSource {
-                    entity_id: id,
-                    title,
-                    workspace_id,
-                    summary: Some(format!("Status: {status}")),
-                    metadata: serde_json::json!({
-                        "status": status,
-                        "started_at": started_at,
-                        "completed_at": completed_at,
-                    }),
+                |(raw_id, raw_workspace_id, title, status, started_at, completed_at)| {
+                    Ok(GraphSource {
+                        entity_id: parse_canon_uuid(raw_id)?,
+                        title,
+                        workspace_id: raw_workspace_id
+                            .map(parse_canon_uuid)
+                            .transpose()?,
+                        summary: Some(format!("Status: {status}")),
+                        metadata: serde_json::json!({
+                            "status": status,
+                            "started_at": started_at,
+                            "completed_at": completed_at,
+                        }),
+                    })
                 },
             )
-            .collect())
+            .collect::<Result<Vec<_>, DatabaseError>>()?)
     }
 
     /// Memory records as graph sources (execution + planner-report
     /// kinds; autonomous sessions have their own node type and are
     /// excluded here).
     pub async fn memory_record_sources(&self) -> Result<Vec<GraphSource>, DatabaseError> {
-        let rows: Vec<(Uuid, Option<Uuid>, String, String, String)> = sqlx::query_as(
-            "SELECT id, workspace_id, goal, kind, status
-             FROM execution_memory
-             WHERE kind != 'autonomous_session'",
+        let rows: Vec<(String, Option<String>, String, String, String)> = sqlx::query_as(
+            &format!(
+                "SELECT {} AS id_key, {} AS workspace_id, goal, kind, status
+                 FROM execution_memory
+                 WHERE kind != 'autonomous_session'",
+                canon("id"),
+                canon("workspace_id")
+            ),
         )
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows
             .into_iter()
-            .map(|(id, workspace_id, goal, kind, status)| GraphSource {
-                entity_id: id,
-                title: goal,
-                workspace_id,
-                summary: Some(format!("{kind} · {status}")),
-                metadata: serde_json::json!({ "kind": kind, "status": status }),
+            .map(|(raw_id, raw_workspace_id, goal, kind, status)| {
+                Ok(GraphSource {
+                    entity_id: parse_canon_uuid(raw_id)?,
+                    title: goal,
+                    workspace_id: raw_workspace_id.map(parse_canon_uuid).transpose()?,
+                    summary: Some(format!("{kind} · {status}")),
+                    metadata: serde_json::json!({ "kind": kind, "status": status }),
+                })
             })
-            .collect())
+            .collect::<Result<Vec<_>, DatabaseError>>()?)
     }
 
     /// Autonomous sessions as graph sources. The session node is keyed
     /// on the session id (the memory row's `source_id`).
     pub async fn autonomous_session_sources(&self) -> Result<Vec<GraphSource>, DatabaseError> {
-        let rows: Vec<(Uuid, Option<Uuid>, String, String, String)> = sqlx::query_as(
-            "SELECT source_id, workspace_id, goal, status, error
-             FROM execution_memory
-             WHERE kind = 'autonomous_session'",
+        let rows: Vec<(String, Option<String>, String, String, String)> = sqlx::query_as(
+            &format!(
+                "SELECT {} AS source_key, {} AS workspace_id, goal, status, error
+                 FROM execution_memory
+                 WHERE kind = 'autonomous_session'",
+                canon("source_id"),
+                canon("workspace_id")
+            ),
         )
         .fetch_all(&self.pool)
         .await?;
@@ -414,17 +451,19 @@ impl KgRepository {
         Ok(rows
             .into_iter()
             .map(
-                |(source_id, workspace_id, goal, status, error)| GraphSource {
-                    entity_id: source_id,
-                    title: format!("Session: {goal}"),
-                    workspace_id,
-                    summary: Some(error)
-                        .filter(|e| !e.is_empty())
-                        .or_else(|| Some(format!("Status: {status}"))),
-                    metadata: serde_json::json!({ "status": status }),
+                |(raw_source_id, raw_workspace_id, goal, status, error)| {
+                    Ok(GraphSource {
+                        entity_id: parse_canon_uuid(raw_source_id)?,
+                        title: format!("Session: {goal}"),
+                        workspace_id: raw_workspace_id.map(parse_canon_uuid).transpose()?,
+                        summary: Some(error)
+                            .filter(|e| !e.is_empty())
+                            .or_else(|| Some(format!("Status: {status}"))),
+                        metadata: serde_json::json!({ "status": status }),
+                    })
                 },
             )
-            .collect())
+            .collect::<Result<Vec<_>, DatabaseError>>()?)
     }
 
     // ------------------------------------------------------------------
@@ -441,60 +480,83 @@ impl KgRepository {
 
     /// `(execution_id, workspace_id)` pairs for `runs_in` edges.
     pub async fn execution_workspace_links(&self) -> Result<Vec<(Uuid, Uuid)>, DatabaseError> {
-        let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-            "SELECT pe.id, c.workspace_id
+        let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+            "SELECT {} AS id_key, {} AS ws_key
              FROM plan_executions pe
              JOIN copilot_conversations c ON c.id = pe.conversation_id
              WHERE c.workspace_id IS NOT NULL",
-        )
+            canon("pe.id"),
+            canon("c.workspace_id")
+        ))
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows)
+        rows.into_iter()
+            .map(|(raw_id, raw_ws)| Ok((parse_canon_uuid(raw_id)?, parse_canon_uuid(raw_ws)?)))
+            .collect()
     }
 
     /// Execution ids that have a planner report (`reports_on` edges —
     /// the report node and the execution node share the id).
     pub async fn planner_report_links(&self) -> Result<Vec<Uuid>, DatabaseError> {
-        let rows: Vec<(Uuid,)> = sqlx::query_as("SELECT execution_id FROM plan_execution_reports")
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        let rows: Vec<(String,)> = sqlx::query_as(&format!(
+            "SELECT {} FROM plan_execution_reports",
+            canon("execution_id")
+        ))
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(id,)| parse_canon_uuid(id))
+            .collect()
     }
 
     /// `(memory_id, execution_id)` pairs for `derived_from` edges
     /// (memory records learned from an engine execution).
     pub async fn memory_execution_links(&self) -> Result<Vec<(Uuid, Uuid)>, DatabaseError> {
-        let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-            "SELECT id, source_id FROM execution_memory
+        let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+            "SELECT {} AS id_key, {} AS source_key FROM execution_memory
              WHERE kind = 'execution' AND source_id IS NOT NULL",
-        )
+            canon("id"),
+            canon("source_id")
+        ))
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows)
+        rows.into_iter()
+            .map(|(raw_id, raw_source_id)| {
+                Ok((parse_canon_uuid(raw_id)?, parse_canon_uuid(raw_source_id)?))
+            })
+            .collect()
     }
 
     /// `(memory_id, workspace_id)` pairs for `runs_in` edges of memory
     /// records and autonomous sessions (both live in `execution_memory`).
     pub async fn memory_workspace_links(&self) -> Result<Vec<(Uuid, Uuid)>, DatabaseError> {
-        let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-            "SELECT id, workspace_id FROM execution_memory
+        let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+            "SELECT {} AS id_key, {} AS ws_key FROM execution_memory
              WHERE kind != 'autonomous_session' AND workspace_id IS NOT NULL",
-        )
+            canon("id"),
+            canon("workspace_id")
+        ))
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows)
+        rows.into_iter()
+            .map(|(raw_id, raw_ws)| Ok((parse_canon_uuid(raw_id)?, parse_canon_uuid(raw_ws)?)))
+            .collect()
     }
 
     /// `(session_id, workspace_id)` pairs for `runs_in` edges of
     /// autonomous sessions.
     pub async fn session_workspace_links(&self) -> Result<Vec<(Uuid, Uuid)>, DatabaseError> {
-        let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
-            "SELECT source_id, workspace_id FROM execution_memory
+        let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+            "SELECT {} AS source_key, {} AS ws_key FROM execution_memory
              WHERE kind = 'autonomous_session' AND workspace_id IS NOT NULL",
-        )
+            canon("source_id"),
+            canon("workspace_id")
+        ))
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows)
+        rows.into_iter()
+            .map(|(raw_id, raw_ws)| Ok((parse_canon_uuid(raw_id)?, parse_canon_uuid(raw_ws)?)))
+            .collect()
     }
 
     // ------------------------------------------------------------------
@@ -528,53 +590,69 @@ impl KgRepository {
         since: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<Uuid>, DatabaseError> {
         let since = since.to_rfc3339();
-        let rows: Vec<(Uuid,)> = match node_type {
+        // Every arm selects the canonical 32-hex form so both storage
+        // contracts (BLOB ids and dashed-TEXT ids) decode identically.
+        let rows: Vec<(String,)> = match node_type {
             GraphNodeType::Workspace => {
-                sqlx::query_as("SELECT id FROM workspaces WHERE updated_at > ?")
-                    .bind(&since)
-                    .fetch_all(&self.pool)
-                    .await?
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM workspaces WHERE updated_at > ?",
+                    canon("id")
+                ))
+                .bind(&since)
+                .fetch_all(&self.pool)
+                .await?
             }
             GraphNodeType::File => {
-                sqlx::query_as("SELECT id FROM files WHERE updated_at > ?")
-                    .bind(&since)
-                    .fetch_all(&self.pool)
-                    .await?
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM files WHERE updated_at > ?",
+                    canon("id")
+                ))
+                .bind(&since)
+                .fetch_all(&self.pool)
+                .await?
             }
             GraphNodeType::PlannerReport => {
-                sqlx::query_as(
-                    "SELECT execution_id FROM plan_execution_reports WHERE created_at > ?",
-                )
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM plan_execution_reports WHERE created_at > ?",
+                    canon("execution_id")
+                ))
                 .bind(&since)
                 .fetch_all(&self.pool)
                 .await?
             }
             GraphNodeType::Execution => {
-                sqlx::query_as("SELECT id FROM plan_executions WHERE updated_at > ?")
-                    .bind(&since)
-                    .fetch_all(&self.pool)
-                    .await?
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM plan_executions WHERE updated_at > ?",
+                    canon("id")
+                ))
+                .bind(&since)
+                .fetch_all(&self.pool)
+                .await?
             }
             GraphNodeType::MemoryRecord => {
-                sqlx::query_as(
-                    "SELECT id FROM execution_memory
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM execution_memory
                      WHERE kind != 'autonomous_session' AND updated_at > ?",
-                )
+                    canon("id")
+                ))
                 .bind(&since)
                 .fetch_all(&self.pool)
                 .await?
             }
             GraphNodeType::AutonomousSession => {
-                sqlx::query_as(
-                    "SELECT source_id FROM execution_memory
+                sqlx::query_as(&format!(
+                    "SELECT {} FROM execution_memory
                      WHERE kind = 'autonomous_session' AND updated_at > ?",
-                )
+                    canon("source_id")
+                ))
                 .bind(&since)
                 .fetch_all(&self.pool)
                 .await?
             }
         };
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        rows.into_iter()
+            .map(|(id,)| parse_canon_uuid(id))
+            .collect()
     }
 
     /// Structural links for one entity — the incremental analogue of the
@@ -623,16 +701,19 @@ impl KgRepository {
                 }
             }
             GraphNodeType::Execution => {
-                let workspace: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT c.workspace_id
+                let workspace: Option<(String,)> = sqlx::query_as(&format!(
+                    "SELECT {} AS ws_key
                      FROM plan_executions pe
                      JOIN copilot_conversations c ON c.id = pe.conversation_id
-                     WHERE pe.id = ? AND c.workspace_id IS NOT NULL",
-                )
-                .bind(entity_id)
+                     WHERE {} = ? AND c.workspace_id IS NOT NULL",
+                    canon("c.workspace_id"),
+                    canon("pe.id")
+                ))
+                .bind(entity_id.simple().to_string())
                 .fetch_optional(&self.pool)
                 .await?;
-                if let Some((workspace_id,)) = workspace {
+                if let Some((raw_workspace_id,)) = workspace {
+                    let workspace_id = parse_canon_uuid(raw_workspace_id)?;
                     links.push(StructuralLink {
                         source_type: GraphNodeType::Execution,
                         source_id: entity_id,
@@ -643,10 +724,12 @@ impl KgRepository {
                 }
             }
             GraphNodeType::PlannerReport => {
-                let report: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT execution_id FROM plan_execution_reports WHERE execution_id = ?",
-                )
-                .bind(entity_id)
+                let report: Option<(String,)> = sqlx::query_as(&format!(
+                    "SELECT {} FROM plan_execution_reports WHERE {} = ?",
+                    canon("execution_id"),
+                    canon("execution_id")
+                ))
+                .bind(entity_id.simple().to_string())
                 .fetch_optional(&self.pool)
                 .await?;
                 if report.is_some() {
@@ -660,14 +743,17 @@ impl KgRepository {
                 }
             }
             GraphNodeType::MemoryRecord => {
-                let workspace: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT workspace_id FROM execution_memory
-                     WHERE id = ? AND kind != 'autonomous_session' AND workspace_id IS NOT NULL",
-                )
-                .bind(entity_id)
+                let workspace: Option<(String,)> = sqlx::query_as(&format!(
+                    "SELECT {} AS ws_key FROM execution_memory
+                     WHERE {} = ? AND kind != 'autonomous_session' AND workspace_id IS NOT NULL",
+                    canon("workspace_id"),
+                    canon("id")
+                ))
+                .bind(entity_id.simple().to_string())
                 .fetch_optional(&self.pool)
                 .await?;
-                if let Some((workspace_id,)) = workspace {
+                if let Some((raw_workspace_id,)) = workspace {
+                    let workspace_id = parse_canon_uuid(raw_workspace_id)?;
                     links.push(StructuralLink {
                         source_type: GraphNodeType::MemoryRecord,
                         source_id: entity_id,
@@ -676,14 +762,17 @@ impl KgRepository {
                         relationship_type: GraphRelationshipType::RunsIn,
                     });
                 }
-                let execution: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT source_id FROM execution_memory
-                     WHERE id = ? AND kind = 'execution' AND source_id IS NOT NULL",
-                )
-                .bind(entity_id)
+                let execution: Option<(String,)> = sqlx::query_as(&format!(
+                    "SELECT {} AS source_key FROM execution_memory
+                     WHERE {} = ? AND kind = 'execution' AND source_id IS NOT NULL",
+                    canon("source_id"),
+                    canon("id")
+                ))
+                .bind(entity_id.simple().to_string())
                 .fetch_optional(&self.pool)
                 .await?;
-                if let Some((execution_id,)) = execution {
+                if let Some((raw_source_id,)) = execution {
+                    let execution_id = parse_canon_uuid(raw_source_id)?;
                     links.push(StructuralLink {
                         source_type: GraphNodeType::MemoryRecord,
                         source_id: entity_id,
@@ -694,14 +783,17 @@ impl KgRepository {
                 }
             }
             GraphNodeType::AutonomousSession => {
-                let workspace: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT workspace_id FROM execution_memory
-                     WHERE source_id = ? AND kind = 'autonomous_session' AND workspace_id IS NOT NULL",
-                )
-                .bind(entity_id)
+                let workspace: Option<(String,)> = sqlx::query_as(&format!(
+                    "SELECT {} AS ws_key FROM execution_memory
+                     WHERE {} = ? AND kind = 'autonomous_session' AND workspace_id IS NOT NULL",
+                    canon("workspace_id"),
+                    canon("source_id")
+                ))
+                .bind(entity_id.simple().to_string())
                 .fetch_optional(&self.pool)
                 .await?;
-                if let Some((workspace_id,)) = workspace {
+                if let Some((raw_workspace_id,)) = workspace {
+                    let workspace_id = parse_canon_uuid(raw_workspace_id)?;
                     links.push(StructuralLink {
                         source_type: GraphNodeType::AutonomousSession,
                         source_id: entity_id,
@@ -721,33 +813,47 @@ impl KgRepository {
         &self,
         node_type: GraphNodeType,
     ) -> Result<u64, DatabaseError> {
-        let sql = match node_type {
+        let sql: String = match node_type {
             GraphNodeType::Workspace => {
                 "DELETE FROM graph_nodes WHERE node_type = 'workspace'
-                 AND entity_id NOT IN (SELECT id FROM workspaces)"
+                 AND lower(hex(entity_id)) NOT IN
+                     (SELECT replace(lower(id), '-', '') FROM workspaces)"
+                    .to_string()
             }
             GraphNodeType::File => {
                 "DELETE FROM graph_nodes WHERE node_type = 'file'
-                 AND entity_id NOT IN (SELECT id FROM files)"
+                 AND lower(hex(entity_id)) NOT IN
+                     (SELECT replace(lower(id), '-', '') FROM files)"
+                    .to_string()
             }
-            GraphNodeType::PlannerReport => {
+            // Compare in the canonical 32-hex space so the KG's BLOB ids
+            // line up with aggregates stored as dashed TEXT.
+            GraphNodeType::PlannerReport => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'planner_report'
-                 AND entity_id NOT IN (SELECT execution_id FROM plan_execution_reports)"
-            }
-            GraphNodeType::Execution => {
+                 AND lower(hex(entity_id)) NOT IN
+                     (SELECT {} FROM plan_execution_reports)",
+                canon("execution_id")
+            ),
+            GraphNodeType::Execution => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'execution'
-                 AND entity_id NOT IN (SELECT id FROM plan_executions)"
-            }
-            GraphNodeType::MemoryRecord => {
+                 AND lower(hex(entity_id)) NOT IN
+                     (SELECT {} FROM plan_executions)",
+                canon("id")
+            ),
+            GraphNodeType::MemoryRecord => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'memory_record'
-                 AND entity_id NOT IN (SELECT id FROM execution_memory WHERE kind != 'autonomous_session')"
-            }
-            GraphNodeType::AutonomousSession => {
+                 AND lower(hex(entity_id)) NOT IN (
+                     SELECT {} FROM execution_memory WHERE kind != 'autonomous_session')",
+                canon("id")
+            ),
+            GraphNodeType::AutonomousSession => format!(
                 "DELETE FROM graph_nodes WHERE node_type = 'autonomous_session'
-                 AND entity_id NOT IN (SELECT source_id FROM execution_memory WHERE kind = 'autonomous_session')"
-            }
+                 AND lower(hex(entity_id)) NOT IN (
+                     SELECT {} FROM execution_memory WHERE kind = 'autonomous_session')",
+                canon("source_id")
+            ),
         };
-        let result = sqlx::query(sql).execute(&self.pool).await?;
+        let result = sqlx::query(&sql).execute(&self.pool).await?;
         Ok(result.rows_affected())
     }
 

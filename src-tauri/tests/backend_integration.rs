@@ -328,7 +328,7 @@ async fn workspace_lifecycle_matches_what_every_ipc_command_handler_calls() {
     // list_workspace_timeline / get_recent_activity underlying logic
     let events = stack
         .timeline_engine
-        .recent_events(workspace.id, Some(5))
+        .recent_events(workspace.id, Some(5), None)
         .await
         .unwrap();
     assert!(!events.is_empty());
