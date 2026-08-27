@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 
@@ -47,6 +47,7 @@ pub struct FileWatcher {
     timeline_engine: TimelineEngine,
     active: Arc<Mutex<HashMap<PathBuf, WatchHandle>>>,
     event_emitter: Arc<dyn AppEventEmitter>,
+    proactive_engine: Arc<RwLock<Option<Arc<crate::copilot::ProactiveEngine>>>>,
 }
 
 impl FileWatcher {
@@ -56,6 +57,7 @@ impl FileWatcher {
             timeline_engine,
             active: Arc::new(Mutex::new(HashMap::new())),
             event_emitter: Arc::new(NoopEmitter),
+            proactive_engine: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -68,6 +70,34 @@ impl FileWatcher {
     pub fn with_event_emitter(mut self, emitter: Arc<dyn AppEventEmitter>) -> Self {
         self.event_emitter = emitter;
         self
+    }
+
+    /// Attaches the proactive engine for real-time edit detection.
+    /// Wired in `lib.rs` after both engines are built; `None` in tests keeps behavior inert.
+    pub fn with_proactive_engine(
+        self,
+        proactive: Arc<crate::copilot::ProactiveEngine>,
+    ) -> Self {
+        // We cannot use async here (builder is sync), so we use blocking write via try_write.
+        // The lock is uncontended at startup, so this succeeds.
+        if let Ok(mut guard) = self.proactive_engine.try_write() {
+            *guard = Some(proactive);
+        } else {
+            // Fallback: spawn async set (should never happen at startup)
+            let proactive_clone = proactive.clone();
+            let slot = self.proactive_engine.clone();
+            tokio::spawn(async move {
+                let mut g = slot.write().await;
+                *g = Some(proactive_clone);
+            });
+        }
+        self
+    }
+
+    /// Async setter for late binding when the watcher is already shared (Arc).
+    pub async fn set_proactive_engine(&self, proactive: Arc<crate::copilot::ProactiveEngine>) {
+        let mut guard = self.proactive_engine.write().await;
+        *guard = Some(proactive);
     }
 
     /// Starts recursively watching `root` in the background and returns
@@ -158,6 +188,7 @@ impl FileWatcher {
         let workspace_manager = self.workspace_manager.clone();
         let timeline_engine = self.timeline_engine.clone();
         let event_emitter = self.event_emitter.clone();
+        let proactive_engine = self.proactive_engine.clone();
         let pipeline_root = root.clone();
         let pipeline_debouncer = debouncer;
         let pipeline_task = tokio::spawn(async move {
@@ -165,10 +196,13 @@ impl FileWatcher {
             loop {
                 ticker.tick().await;
                 for event in pipeline_debouncer.drain_ready().await {
+                    // Clone proactive handle for this event
+                    let proactive = proactive_engine.read().await.clone();
                     if let Err(err) = process_event(
                         &workspace_manager,
                         &timeline_engine,
                         event_emitter.as_ref(),
+                        proactive.as_ref(),
                         &pipeline_root,
                         event,
                     )
@@ -236,6 +270,7 @@ async fn process_event(
     workspace_manager: &WorkspaceManager,
     timeline_engine: &TimelineEngine,
     event_emitter: &dyn AppEventEmitter,
+    proactive_engine: Option<&Arc<crate::copilot::ProactiveEngine>>,
     watch_root: &Path,
     event: DebouncedEvent,
 ) -> Result<(), crate::errors::DatabaseError> {
@@ -281,6 +316,19 @@ async fn process_event(
         app_events::EVENT_WORKSPACE_UPDATED,
         &workspace,
     );
+
+    // Proactive hook: real event-driven trigger for repeated-edits and throttled checks
+    if let Some(proactive) = proactive_engine {
+        let ws_id = workspace.id;
+        let event_type = match event.kind {
+            DebouncedEventKind::Modified => "edit",
+            DebouncedEventKind::Created => "create",
+            DebouncedEventKind::Removed => "delete",
+        };
+        if let Err(err) = proactive.on_timeline_event(ws_id, event_type).await {
+            tracing::warn!(error = %err, workspace_id = %ws_id, "proactive on_timeline_event failed");
+        }
+    }
 
     Ok(())
 }
