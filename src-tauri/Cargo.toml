@@ -1,6 +1,6 @@
 [package]
 name = "chronodesk"
-version = "0.1.0"
+version = "1.0.0"
 description = "ChronoDesk — A Context-Aware Workspace Operating Layer"
 authors = ["ChronoDesk Team"]
 edition = "2021"
