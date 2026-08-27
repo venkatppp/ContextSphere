@@ -65,19 +65,55 @@ struct MaintenanceView: View {
         VStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.orange)
             Text("Maintenance unavailable").font(.title3.weight(.semibold))
-            Text(msg).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
-            Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderedProminent)
+            Text(humanMaintenanceError(msg)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380).textSelection(.enabled)
+            if humanMaintenanceError(msg) != msg {
+                Text(msg).font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 380).textSelection(.enabled)
+            }
+            HStack(spacing: 10) {
+                Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderedProminent).accessibilityLabel("Retry maintenance check")
+                Button("Create Backup") { Task { await viewModel.runBackup() } }.buttonStyle(.bordered).disabled(viewModel.isFetching)
+            }
         }.frame(maxWidth: .infinity).padding(32)
+    }
+
+    private func humanMaintenanceError(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower == "empty result" || lower.contains("empty result") {
+            return "The maintenance service returned no data. Retry to re-check database health."
+        }
+        if lower.contains("timed out") { return "The maintenance check timed out. Retry." }
+        if lower.contains("core daemon is not running") { return "Core daemon is not running. Reconnect via the status footer." }
+        return raw
     }
 
     private var loadedContent: some View {
         VStack(alignment: .leading, spacing: 20) {
             if let integ = viewModel.integrity { integrityCard(integ) }
-            if let pending = viewModel.pendingRestore { pendingCard(pending) }
+            if let pending = viewModel.pendingRestore {
+                pendingCard(pending)
+            } else {
+                // Valid empty: no pending restore is normal; show subtle hint, not an error.
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                    Text("No pending restore").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("A staged restore appears here and applies on next launch.").font(.caption2).foregroundStyle(.tertiary)
+                }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
             backupsCard
             if let rep = viewModel.lastOptimize { maintenanceResultCard(rep) }
             if let err = viewModel.lastError {
-                Text(err).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                    Text(err).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Spacer()
+                    Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderless).controlSize(.small)
+                }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityLabel("Maintenance warning: \(err)")
             }
         }
     }

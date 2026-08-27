@@ -122,15 +122,39 @@ struct LearningView: View {
                 .foregroundStyle(.tertiary)
             Text("ContextSphere is still getting to know you")
                 .font(.title3.weight(.semibold))
-            Text("As you accept or reject its recommendations and switch between workspaces, ContextSphere builds preferences and patterns — and shows them here.")
-                .font(.callout)
+            VStack(spacing: 8) {
+                Text("Learning appears after ContextSphere observes repeated behavior and your feedback on its recommendations.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Accept or reject recommendations (memory, graph context)", systemImage: "hand.thumbsup")
+                    Label("Switch workspaces — switching patterns become preferences", systemImage: "arrow.triangle.swap")
+                    Label("Open related files in sequence — sequential-file patterns", systemImage: "doc.on.doc")
+                    Label("Work at consistent times — time-of-day patterns emerge", systemImage: "clock")
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            Button("Refresh") {
-                Task { await viewModel.refresh() }
+                .frame(maxWidth: 420, alignment: .leading)
+                .padding(.top, 4)
+                Text("Each preference needs a few pieces of evidence before it is confident enough to show. Keep using workspaces normally — patterns will appear here.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
             }
-            .accessibilityLabel("Refresh learning activity")
+            HStack(spacing: 10) {
+                Button("Refresh") {
+                    Task { await viewModel.refresh() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityLabel("Refresh learning activity")
+                if let err = viewModel.lastError {
+                    Text(err).font(.caption2).foregroundStyle(.tertiary).lineLimit(2).frame(maxWidth: 200)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)

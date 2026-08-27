@@ -124,42 +124,85 @@ final class MemoryViewModel: ObservableObject {
 
     /// Reloads the whole screen from the backend. Individual RPC failures
     /// degrade gracefully: overview payloads are optional, so one failed
-    /// call never blanks the rest of the screen.
+    /// call never blanks the rest of the screen. Failures are not silently
+    /// swallowed — the most recent error is kept in `lastError` for debugging,
+    /// but a single overview failure never turns a valid empty result into "unavailable".
     func refresh() async {
-        if hits.isEmpty { state = .loading }
+        let wasEmpty = hits.isEmpty && stats == nil
+        if wasEmpty { state = .loading }
         isFetching = true
-        lastError = nil
+        // Keep previous lastError until we know the new outcome; clear only on success.
         defer { isFetching = false }
 
-        async let stats: MemoryStats? = try? CoreBridge.shared.request("memory_stats", as: MemoryStats.self)
-        async let health: LearningHealth? = try? CoreBridge.shared.request("memory_learning_health", as: LearningHealth.self)
-        async let aging: MemoryAgingSummary? = try? CoreBridge.shared.request("memory_aging_summary", as: MemoryAgingSummary.self)
-        async let index: VectorIndexStatus? = try? CoreBridge.shared.request("memory_index_status", as: VectorIndexStatus.self)
-        async let storage: MemoryStorageStats? = try? CoreBridge.shared.request("memory_storage_stats", as: MemoryStorageStats.self)
-        async let families: [WorkflowFamily]? = try? CoreBridge.shared.request("memory_workflow_families", as: [WorkflowFamily].self)
-        async let failures: [FailurePattern]? = try? CoreBridge.shared.request("memory_failure_patterns", as: [FailurePattern].self)
-        async let duplicates: [MemoryDuplicateGroup]? = try? CoreBridge.shared.request("memory_duplicate_groups", as: [MemoryDuplicateGroup].self)
-        async let snapshots: [MemorySnapshot]? = try? CoreBridge.shared.request("memory_snapshot_list", as: [MemorySnapshot].self)
+        // Each overview RPC is best-effort but failures are not silently swallowed.
+        // We capture per-RPC errors so `lastError` can surface degradation without blanking valid empty states.
+        async let statsTask: (MemoryStats?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_stats", as: MemoryStats.self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let healthTask: (LearningHealth?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_learning_health", as: LearningHealth.self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let agingTask: (MemoryAgingSummary?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_aging_summary", as: MemoryAgingSummary.self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let indexTask: (VectorIndexStatus?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_index_status", as: VectorIndexStatus.self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let storageTask: (MemoryStorageStats?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_storage_stats", as: MemoryStorageStats.self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let familiesTask: ([WorkflowFamily]?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_workflow_families", as: [WorkflowFamily].self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let failuresTask: ([FailurePattern]?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_failure_patterns", as: [FailurePattern].self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let duplicatesTask: ([MemoryDuplicateGroup]?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_duplicate_groups", as: [MemoryDuplicateGroup].self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
+        async let snapshotsTask: ([MemorySnapshot]?, String?) = {
+            do { return (try await CoreBridge.shared.request("memory_snapshot_list", as: [MemorySnapshot].self), nil) } catch { return (nil, error.localizedDescription) }
+        }()
 
-        let results = await (stats, health, aging, index, storage, families, failures, duplicates, snapshots)
-        self.stats = results.0 ?? self.stats
-        self.health = results.1 ?? self.health
-        self.aging = results.2 ?? self.aging
-        self.indexStatus = results.3 ?? self.indexStatus
-        self.storage = results.4 ?? self.storage
-        self.families = results.5 ?? self.families
-        self.failurePatterns = results.6 ?? self.failurePatterns
-        self.duplicateGroups = results.7 ?? self.duplicateGroups
-        self.snapshots = results.8 ?? self.snapshots
+        let (statsRes, healthRes, agingRes, indexRes, storageRes, familiesRes, failuresRes, duplicatesRes, snapshotsRes) = await (statsTask, healthTask, agingTask, indexTask, storageTask, familiesTask, failuresTask, duplicatesTask, snapshotsTask)
+        var overviewErrors: [String] = []
+        if let fresh = statsRes.0 { self.stats = fresh } else if let e = statsRes.1 { overviewErrors.append("stats: \(e)") }
+        if let fresh = healthRes.0 { self.health = fresh } else if let e = healthRes.1 { overviewErrors.append("learning health: \(e)") }
+        if let fresh = agingRes.0 { self.aging = fresh } else if let e = agingRes.1 { overviewErrors.append("aging: \(e)") }
+        if let fresh = indexRes.0 { self.indexStatus = fresh } else if let e = indexRes.1 { overviewErrors.append("index: \(e)") }
+        if let fresh = storageRes.0 { self.storage = fresh } else if let e = storageRes.1 { overviewErrors.append("storage: \(e)") }
+        if let fresh = familiesRes.0 { self.families = fresh } else if let e = familiesRes.1 { overviewErrors.append("families: \(e)") }
+        if let fresh = failuresRes.0 { self.failurePatterns = fresh } else if let e = failuresRes.1 { overviewErrors.append("failures: \(e)") }
+        if let fresh = duplicatesRes.0 { self.duplicateGroups = fresh } else if let e = duplicatesRes.1 { overviewErrors.append("duplicates: \(e)") }
+        if let fresh = snapshotsRes.0 { self.snapshots = fresh } else if let e = snapshotsRes.1 { overviewErrors.append("snapshots: \(e)") }
 
+        // The search is the authoritative signal for empty vs error vs populated.
+        // A successful empty array is NOT an error (valid empty state).
+        // A thrown error (transport/decode/timeout) is an error that Retry must re-run.
+        // Overview errors are kept but do not turn a valid empty into "unavailable" unless search also failed and we have no stats.
+        let overviewErrorCombined: String? = overviewErrors.isEmpty ? nil : overviewErrors.joined(separator: "; ")
         do {
             try await searchNow()
-            lastError = nil
+            lastError = overviewErrorCombined
             state = .loaded
         } catch {
-            lastError = error.localizedDescription
+            let msg = error.localizedDescription
+            let combined = [msg, overviewErrorCombined].compactMap { $0 }.joined(separator: " — ")
             if hits.isEmpty {
-                state = .failed(error.localizedDescription)
+                // No hits to show and search failed -> distinguish genuine empty (which would not throw)
+                // from failure. If stats indicates we should have data, surface as error; if stats says
+                // store is empty, still surface as loaded with error hint, not "unavailable".
+                if stats == nil {
+                    lastError = combined
+                    state = .failed(combined)
+                } else {
+                    lastError = combined
+                    state = .loaded
+                }
+            } else {
+                lastError = combined
+                // Keep existing hits visible; don't downgrade to failed when we have data.
+                if state != .loaded { state = .loaded }
             }
         }
     }

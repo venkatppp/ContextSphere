@@ -236,17 +236,60 @@ final class GraphViewModel: ObservableObject {
 
     func setWorkspaces(_ workspaces: [Workspace]) {
         self.workspaces = workspaces
+        let previous = selectedWorkspaceId
         if selectedWorkspaceId == nil
             || !workspaces.contains(where: { $0.id == selectedWorkspaceId }) {
             selectedWorkspaceId = workspaces.first(where: { $0.status == .active })?.id
                 ?? workspaces.first?.id
         }
+        // If workspace roster changed, clear stale focus/selection that no longer exists.
+        let changed = previous != selectedWorkspaceId
+        if changed {
+            clearStaleSelectionIfNeeded()
+            // Workspace context changed (e.g., active workspace switched externally or deleted) — reload graph
+            // to reflect new context rather than leaving stale nodes/edges visible.
+            if state != .idle {
+                loadGraph()
+            }
+        } else if let focus = contextFocusID, registry[focus] == nil, nodes.first(where: { $0.id == focus }) == nil {
+            // Workspace list unchanged but focused node may have been deleted elsewhere.
+            // Keep the focus ID until next load verifies it; layout will handle missing gracefully.
+        }
     }
 
     func selectWorkspace(_ id: String?) {
         guard id != selectedWorkspaceId else { return }
+        // Switching context must not leave stale focus/selection from previous workspace.
+        contextFocusID = nil
+        focusedNodeID = nil
+        selectedNodeID = nil
+        pendingFocus = nil
+        semanticScores = [:]
+        lastSemanticQuery = nil
+        semanticTask?.cancel()
         selectedWorkspaceId = id
         loadGraph()
+    }
+
+    /// Clears focus/selection that references nodes no longer in the registry
+    /// (deleted workspace/file). Called after workspace roster changes.
+    private func clearStaleSelectionIfNeeded() {
+        if let focused = contextFocusID, registry[focused] == nil && nodes.first(where: { $0.id == focused }) == nil {
+            contextFocusID = nil
+            focusedNodeID = nil
+        }
+        if let selected = selectedNodeID, registry[selected] == nil && nodes.first(where: { $0.id == selected }) == nil {
+            selectedNodeID = nil
+            showInspector = false
+        }
+        semanticScores = [:]
+        lastSemanticQuery = nil
+    }
+
+    /// Whether an error string indicates a missing KG node (stale/deleted ID).
+    private func isNotFoundError(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("was not found") || lower.contains("not found") || lower.contains("graph node with id")
     }
 
     // MARK: - Loading
@@ -261,14 +304,21 @@ final class GraphViewModel: ObservableObject {
     }
 
     func retry() {
+        // Genuine retry: cancel any in-flight work, clear stale errors, reload.
+        loadTask?.cancel()
+        searchTask?.cancel()
+        semanticTask?.cancel()
+        lastError = nil
+        searchError = nil
         loadGraph()
     }
 
     /// Loads the graph for the current workspace context:
     /// 1. `get_graph` (legacy node registry for the context).
     /// 2. `graph_subgraph` around the workspace node (the real RC-8
-    ///    relationships), merged and deduplicated.
-    /// With no workspace context, `get_graph` over the whole graph.
+    ///    relationships), merged and deduplicated — but a missing KG node
+    ///    must not fail the whole graph (stale/deleted IDs, unsynced workspace).
+    /// With no workspace context, uses paged KG APIs with legacy fallback.
     private func loadGraph() {
         loadTask?.cancel()
         loadTask = Task {
@@ -276,19 +326,49 @@ final class GraphViewModel: ObservableObject {
             lastError = nil
             searchResults = []
             searchQuery = ""
+            searchError = nil
             do {
                 if let workspaceID = selectedWorkspaceId {
                     try await loadWorkspaceGraph(workspaceID)
                 } else {
                     try await loadWholeGraph()
                 }
+                // Validate focus/selection still exist after load; stale IDs are cleared, not fatal.
+                if let focus = contextFocusID, registry[focus] == nil {
+                    contextFocusID = nil
+                    focusedNodeID = nil
+                }
+                if let sel = selectedNodeID, registry[sel] == nil {
+                    selectedNodeID = nil
+                    showInspector = false
+                }
                 isUsingFixture = false
                 state = .loaded
+                // Also clear lastError on success so stale "not found" doesn't linger.
+                lastError = nil
                 relayout(anchorID: workspaceNodeID)
             } catch {
                 guard !Task.isCancelled else { return }
-                lastError = error.localizedDescription
-                state = .failed(error.localizedDescription)
+                let msg = error.localizedDescription
+                // Distinguish genuine empty (handled as .loaded with 0 nodes) from transport/decode failures.
+                // If the error is "not found" for a workspace node, treat as empty graph for that workspace
+                // rather than a global failure — the legacy view already supplies nodes when available.
+                if isNotFoundError(msg), selectedWorkspaceId != nil {
+                    // Try legacy-only view as fallback: if we have any nodes from get_graph, show them.
+                    if !nodes.isEmpty {
+                        lastError = nil
+                        state = .loaded
+                        isUsingFixture = false
+                        if let focus = contextFocusID, registry[focus] == nil {
+                            contextFocusID = nil
+                            focusedNodeID = nil
+                        }
+                        relayout(anchorID: workspaceNodeID)
+                        return
+                    }
+                }
+                lastError = msg
+                state = .failed(msg)
             }
         }
     }
@@ -301,8 +381,10 @@ final class GraphViewModel: ObservableObject {
     private func loadWorkspaceGraph(_ workspaceID: String) async throws {
         registry.removeAll()
         edgeSet.removeAll()
+        edges.removeAll()
 
-        // 1. Legacy registry (`get_graph` — the graph_get_graph API).
+        // 1. Legacy registry (`get_graph`). This must succeed; it is the source of truth
+        //    for workspace/file aggregates even when the KG has not yet synced.
         let view: GraphView = try await CoreBridge.shared.request(
             "get_graph",
             params: ["workspace_id": workspaceID],
@@ -314,40 +396,101 @@ final class GraphViewModel: ObservableObject {
             mergeEdge(legacyEdge.toKgEdge())
         }
 
-        // 2. RC-8 subgraph around the workspace node (bounded by backend).
-        let subgraph: KgSubgraph = try await CoreBridge.shared.request(
-            "graph_subgraph",
-            params: [
-                "node_type": GraphNodeType.workspace.rawValue,
-                "entity_id": workspaceID,
-                "depth": Self.subgraphDepth,
-            ],
-            as: KgSubgraph.self)
-        mergeSubgraph(subgraph)
+        // 2. RC-8 subgraph around the workspace node — best-effort. A missing KG node
+        //    (workspace never synced, deleted, or pruned) must not crash the whole graph.
+        do {
+            let subgraph: KgSubgraph = try await CoreBridge.shared.request(
+                "graph_subgraph",
+                params: [
+                    "node_type": GraphNodeType.workspace.rawValue,
+                    "entity_id": workspaceID,
+                    "depth": Self.subgraphDepth,
+                ],
+                as: KgSubgraph.self)
+            mergeSubgraph(subgraph)
+        } catch {
+            let msg = error.localizedDescription
+            if isNotFoundError(msg) {
+                // KG workspace node missing — expected before first sync or after deletion.
+                // Keep legacy nodes/edges; do not surface as a user-visible error.
+                // Optionally trigger a background sync hint via lastError = nil.
+            } else {
+                // Non-not-found errors (transport/timeout) are surfaced subtly but do not
+                // blank the graph when legacy data is available.
+                lastError = msg
+            }
+        }
         nodes = registry.values.sorted {
             ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)
         }
+        edges = edges.sorted { $0.weight > $1.weight }
+        totalNodeCount = registry.count
+        isTruncated = false
     }
 
     /// Loads the unfiltered view through the backend's paged APIs so the
     /// query itself stays bounded (`get_graph` with no workspace would
     /// return the entire store). Truncation is surfaced, never hidden.
+    /// Paged requests are independent — a failure in one does not blank the other;
+    /// an empty KG falls back to the legacy projection.
     private func loadWholeGraph() async throws {
         registry.removeAll()
         edgeSet.removeAll()
+        edges.removeAll()
 
-        let nodePage: GraphNodePage = try await CoreBridge.shared.request(
-            "graph_nodes_page",
-            params: ["limit": Self.wholeGraphNodeCap],
-            as: GraphNodePage.self)
-        let edgePage: GraphEdgePage = try await CoreBridge.shared.request(
-            "graph_edges_page",
-            params: ["limit": Self.wholeGraphEdgeCap],
-            as: GraphEdgePage.self)
-        totalNodeCount = nodePage.total
-        isTruncated = nodePage.hasMore || edgePage.hasMore || nodePage.nodes.count < nodePage.total
+        var nodePage: GraphNodePage?
+        var edgePage: GraphEdgePage?
+        var nodeError: String?
+        var edgeError: String?
 
-        if nodePage.nodes.isEmpty {
+        do {
+            nodePage = try await CoreBridge.shared.request(
+                "graph_nodes_page",
+                params: ["limit": Self.wholeGraphNodeCap],
+                as: GraphNodePage.self)
+        } catch {
+            nodeError = error.localizedDescription
+        }
+        do {
+            edgePage = try await CoreBridge.shared.request(
+                "graph_edges_page",
+                params: ["limit": Self.wholeGraphEdgeCap],
+                as: GraphEdgePage.self)
+        } catch {
+            edgeError = error.localizedDescription
+        }
+
+        // If both paged calls failed, fall back to legacy or throw.
+        if nodePage == nil && edgePage == nil {
+            if let msg = nodeError ?? edgeError {
+                // If legacy fallback also fails, propagate the original error.
+                let view: GraphView = try await CoreBridge.shared.request(
+                    "get_graph", as: GraphView.self)
+                for legacyNode in view.nodes {
+                    registry[legacyNode.id] = legacyNode.toKgNode()
+                }
+                for legacyEdge in view.edges {
+                    mergeEdge(legacyEdge.toKgEdge())
+                }
+                totalNodeCount = registry.count
+                isTruncated = false
+                if registry.isEmpty {
+                    lastError = msg
+                }
+            } else {
+                // Should not happen: both nil but no error captured.
+                let view: GraphView = try await CoreBridge.shared.request(
+                    "get_graph", as: GraphView.self)
+                for legacyNode in view.nodes {
+                    registry[legacyNode.id] = legacyNode.toKgNode()
+                }
+                for legacyEdge in view.edges {
+                    mergeEdge(legacyEdge.toKgEdge())
+                }
+                totalNodeCount = registry.count
+                isTruncated = false
+            }
+        } else if let page = nodePage, page.nodes.isEmpty {
             // Empty KG (nothing synced yet): fall back to the legacy
             // projection so first-run users still see their workspaces.
             let view: GraphView = try await CoreBridge.shared.request(
@@ -360,17 +503,36 @@ final class GraphViewModel: ObservableObject {
             }
             isTruncated = false
             totalNodeCount = registry.count
+            if let msg = edgeError { lastError = msg }
         } else {
-            for kgNode in nodePage.nodes {
-                registry[kgNode.id] = kgNode
+            if let page = nodePage {
+                totalNodeCount = page.total
+                // Consistency check: total vs returned count + hasMore must align.
+                isTruncated = page.hasMore || (edgePage?.hasMore ?? false)
+                for kgNode in page.nodes {
+                    registry[kgNode.id] = kgNode
+                }
             }
-            for kgEdge in edgePage.edges {
-                mergeEdge(kgEdge)
+            if let page = edgePage {
+                if nodePage == nil {
+                    totalNodeCount = registry.count
+                    isTruncated = page.hasMore
+                }
+                for kgEdge in page.edges {
+                    mergeEdge(kgEdge)
+                }
+            }
+            // Surface non-fatal paged errors as subtle lastError, not a full failure.
+            if let msg = nodeError ?? edgeError, !registry.isEmpty {
+                lastError = msg
+            } else if let msg = nodeError ?? edgeError, registry.isEmpty {
+                throw NSError(domain: "Graph", code: -1, userInfo: [NSLocalizedDescriptionKey: msg])
             }
         }
         nodes = registry.values.sorted {
             ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)
         }
+        edges = edges.sorted { $0.weight > $1.weight }
     }
 
     // MARK: - Expansion
@@ -384,6 +546,13 @@ final class GraphViewModel: ObservableObject {
 
     func expand(_ node: KgNode) {
         guard !isExpanding else { return }
+        // Stale ID check before RPC: if node no longer in registry, clear selection.
+        guard registry[node.id] != nil else {
+            lastError = "That item no longer exists — it may have been deleted."
+            if selectedNodeID == node.id { selectedNodeID = nil; showInspector = false }
+            if contextFocusID == node.id { contextFocusID = nil; focusedNodeID = nil }
+            return
+        }
         isExpanding = true
         let anchorID = node.id
         Task {
@@ -402,10 +571,25 @@ final class GraphViewModel: ObservableObject {
                 nodes = registry.values.sorted {
                     ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)
                 }
+                edges = edges.sorted { $0.weight > $1.weight }
                 lastError = nil
                 relayout(anchorID: anchorID, incremental: true)
             } catch {
-                lastError = error.localizedDescription
+                let msg = error.localizedDescription
+                if isNotFoundError(msg) {
+                    // Stale/deleted node: prune it and clear focus if needed, don't fail whole graph.
+                    registry.removeValue(forKey: node.id)
+                    nodes = registry.values.filter { registry[$0.id] != nil }.sorted {
+                        ($0.workspaceId ?? "", $0.title) < ($1.workspaceId ?? "", $1.title)
+                    }
+                    edges.removeAll { $0.sourceID == node.id || $0.targetID == node.id }
+                    edgeSet = Set(edges.map(\.id))
+                    if contextFocusID == node.id { contextFocusID = nil; focusedNodeID = nil }
+                    if selectedNodeID == node.id { selectedNodeID = nil; showInspector = false }
+                    lastError = "That item is no longer available — it may have been deleted or not yet synced."
+                } else {
+                    lastError = msg
+                }
             }
         }
     }
@@ -463,6 +647,11 @@ final class GraphViewModel: ObservableObject {
         contextFocusID = nil
         relayout(anchorID: workspaceNodeID, incremental: false, focusID: nil)
         fetchSemanticForFocus(nil)
+    }
+
+    /// Clears a transient inline warning (stale subgraph/edge) without reloading.
+    func clearTransientError() {
+        lastError = nil
     }
 
     func toggleContextFocus(_ id: String) {

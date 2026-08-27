@@ -187,9 +187,11 @@ struct GraphNodePage: Decodable {
     let total: Int
     let hasMore: Bool
 
+    // Rust NodePage uses #[serde(rename_all = "camelCase")] -> "hasMore"
+    // `offset`/`limit` are ignored (extra keys are skipped by JSONDecoder).
     enum CodingKeys: String, CodingKey {
         case nodes, total
-        case hasMore = "has_more"
+        case hasMore = "hasMore"
     }
 }
 
@@ -201,7 +203,7 @@ struct GraphEdgePage: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case edges, total
-        case hasMore = "has_more"
+        case hasMore = "hasMore"
     }
 }
 
