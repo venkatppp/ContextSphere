@@ -214,7 +214,7 @@ impl Planner {
             }
         }
 
-        let workflow = workflow_plan(&tool_names);
+        let workflow = workflow_plan(&tool_names, goal);
         if workflow.is_empty() {
             return Err(PlannerError::NoToolsAvailable);
         }
@@ -245,6 +245,24 @@ impl Planner {
 
         let total_minutes: i32 = tasks.iter().map(|t| t.estimated_minutes).sum();
 
+        // Honest deterministic reasoning: list matched keywords and tools so UI
+        // never pretends the output is semantic reasoning.
+        let matched_keywords = goal_keywords(goal);
+        let reasoning = if matched_keywords.is_empty() {
+            format!(
+                "Deterministic plan (generic goal): {} steps from tool registry [{}]; no keyword filtering applied. Traceable via tool availability, not LLM.",
+                tasks.len(),
+                tool_names.join(", ")
+            )
+        } else {
+            format!(
+                "Deterministic plan: goal keywords {:?} matched {} steps from registry [{}]; steps are dependency-ordered and tool-bound.",
+                matched_keywords,
+                tasks.len(),
+                tool_names.join(", ")
+            )
+        };
+
         Ok(ExecutionPlan {
             id: Uuid::new_v4(),
             workspace_id,
@@ -257,9 +275,8 @@ impl Planner {
                 "Plan steps resolved".to_string(),
                 "Action executed".to_string(),
             ],
-            confidence: 0.8,
-            reasoning: "Deterministic dependency-aware plan built from the tool registry"
-                .to_string(),
+            confidence: if matched_keywords.is_empty() { 0.65 } else { 0.78 },
+            reasoning,
             status: PlanApprovalStatus::Pending,
             created_at: Utc::now(),
         })
@@ -613,49 +630,143 @@ fn bind_plan_arguments(
     workspace_id.map(|_| serde_json::json!({ "workspace_id": "{{workspace.id}}" }))
 }
 
+/// Extracts honest keyword tags from a goal for deterministic branching.
+/// No semantic reasoning -- simple substring match, fully traceable.
+fn goal_keywords(goal: &str) -> Vec<String> {
+    let g = goal.to_lowercase();
+    let mut keywords = Vec::new();
+    let checks = [
+        ("workspace", "workspace"),
+        ("list", "list"),
+        ("timeline", "timeline"),
+        ("recent", "recent"),
+        ("activity", "activity"),
+        ("search", "search"),
+        ("find", "find"),
+        ("session", "session"),
+        ("focus", "focus"),
+        ("resume", "resume"),
+        ("continue", "continue"),
+        ("switch", "switch"),
+    ];
+    for (needle, tag) in checks {
+        if g.contains(needle) {
+            keywords.push(tag.to_string());
+        }
+    }
+    keywords
+}
+
 /// A deterministic, dependency-aware list of steps built from the tools
 /// actually available. Each step leads into the next; a `resume_workspace`
 /// action is appended as the gated, conditional tail step.
-fn workflow_plan(available: &[String]) -> Vec<(String, String)> {
+///
+/// Goal semantics are intentionally shallow and honest: substring keyword
+/// matching only, no LLM reasoning. Branching is traceable via `goal_keywords`.
+fn workflow_plan(available: &[String], goal: &str) -> Vec<(String, String)> {
     let has = |name: &str| available.iter().any(|n| n == name);
+    let g = goal.to_lowercase();
+    let wants_workspace =
+        g.contains("workspace") || g.contains("list") || g.contains("project") || g.contains("show work");
+    let wants_timeline = g.contains("timeline")
+        || g.contains("recent")
+        || g.contains("activity")
+        || g.contains("change")
+        || g.contains("edit")
+        || g.contains("file")
+        || g.contains("history");
+    let wants_search =
+        g.contains("search") || g.contains("find") || g.contains("look for") || g.contains("query");
+    let wants_session = g.contains("session")
+        || g.contains("focus")
+        || g.contains("context")
+        || g.contains("where was")
+        || g.contains("what was");
+    let wants_resume = g.contains("resume")
+        || g.contains("continue")
+        || g.contains("switch")
+        || g.contains("open")
+        || g.contains("return");
+    let generic = !wants_workspace && !wants_timeline && !wants_search && !wants_session && !wants_resume;
+
     let mut steps: Vec<(String, String)> = Vec::new();
 
-    if has("list_workspaces") {
-        steps.push((
-            "list_workspaces".to_string(),
-            "List active workspaces".to_string(),
-        ));
-    } else if has("get_active_workspace") {
-        steps.push((
-            "get_active_workspace".to_string(),
-            "Get the active workspace".to_string(),
-        ));
+    // Workspace discovery -- include if generic or explicitly requested
+    if generic || wants_workspace {
+        if has("list_workspaces") {
+            steps.push((
+                "list_workspaces".to_string(),
+                "List active workspaces".to_string(),
+            ));
+        } else if has("get_active_workspace") {
+            steps.push((
+                "get_active_workspace".to_string(),
+                "Get the active workspace".to_string(),
+            ));
+        }
+    } else if has("get_active_workspace") && (wants_session || wants_resume) {
+        // Even when workspace not explicitly requested, session/resume needs active context
+        if !steps.iter().any(|(n, _)| n == "list_workspaces") {
+            steps.push((
+                "get_active_workspace".to_string(),
+                "Get the active workspace".to_string(),
+            ));
+        }
     }
 
-    if has("get_recent_events") {
-        steps.push((
-            "get_recent_events".to_string(),
-            "Gather recent workspace activity".to_string(),
-        ));
-    } else if has("search_timeline") {
-        steps.push((
-            "search_timeline".to_string(),
-            "Search the workspace timeline".to_string(),
-        ));
+    // Timeline / search -- prefer search_timeline when search is intended
+    if generic || wants_timeline || wants_search {
+        if wants_search && has("search_timeline") {
+            steps.push((
+                "search_timeline".to_string(),
+                "Search the workspace timeline".to_string(),
+            ));
+        } else if has("get_recent_events") {
+            steps.push((
+                "get_recent_events".to_string(),
+                "Gather recent workspace activity".to_string(),
+            ));
+        } else if has("search_timeline") {
+            steps.push((
+                "search_timeline".to_string(),
+                "Search the workspace timeline".to_string(),
+            ));
+        }
     }
 
-    if has("get_session_summary") {
+    if (generic || wants_session || wants_timeline) && has("get_session_summary") {
         steps.push((
             "get_session_summary".to_string(),
             "Summarize the current session".to_string(),
         ));
     }
 
-    if has("resume_workspace") {
+    if (generic || wants_resume) && has("resume_workspace") {
         steps.push((
             "resume_workspace".to_string(),
             "Resume focused work".to_string(),
         ));
+    }
+
+    // Ensure at least one step if filtering left us empty but tools exist (fallback to generic)
+    if steps.is_empty() && !available.is_empty() {
+        // Fallback to original generic chain
+        if has("list_workspaces") {
+            steps.push(("list_workspaces".to_string(), "List active workspaces".to_string()));
+        } else if has("get_active_workspace") {
+            steps.push(("get_active_workspace".to_string(), "Get the active workspace".to_string()));
+        }
+        if has("get_recent_events") {
+            steps.push(("get_recent_events".to_string(), "Gather recent workspace activity".to_string()));
+        } else if has("search_timeline") {
+            steps.push(("search_timeline".to_string(), "Search the workspace timeline".to_string()));
+        }
+        if has("get_session_summary") {
+            steps.push(("get_session_summary".to_string(), "Summarize the current session".to_string()));
+        }
+        if has("resume_workspace") {
+            steps.push(("resume_workspace".to_string(), "Resume focused work".to_string()));
+        }
     }
 
     steps

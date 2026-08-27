@@ -468,6 +468,8 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             startup_profiler.stage_end();
 
             // --- Proactive AI Engine (Phase 7B) ---
+            // PRODUCT TRUST: real detectors (long focus, repeated edits, idle, etc.)
+            // are event-driven via FileWatcher + workspace switch. No fake intelligence.
             let mut proactive_engine = copilot::ProactiveEngine::new(
                 Arc::new(timeline_engine.clone()),
                 Arc::new(session_engine.clone()),
@@ -684,12 +686,18 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             );
             startup_profiler.stage_end();
 
+            // Wire deterministic planner into proactive engine so
+            // `copilot_generate_plan` delegates to real Planner::plan()
+            // instead of the former hardcoded template.
+            tauri::async_runtime::block_on(proactive_engine.set_planner(planner.clone()));
+
             // --- File Watcher, wired to a real AppEventEmitter (the AppHandle) ---
             startup_profiler.stage_start("watcher", "File watcher & path restore");
             let file_watcher = FileWatcher::new(workspace_manager, timeline_engine.clone())
                 .with_event_emitter(
                     Arc::new(app_handle.clone()) as Arc<dyn app_events::AppEventEmitter>
-                );
+                )
+                .with_proactive_engine(proactive_engine.clone());
 
             // Restore watch paths persisted from a previous launch before
             // the window is shown, so watching resumes exactly where the
@@ -698,6 +706,32 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                 &file_watcher,
                 &settings_repository,
             ))?;
+
+            // Minimal periodic proactive check for time-based detectors (idle, long focus).
+            // File edits already trigger check_proactive_opportunities via FileWatcher (throttled 5m).
+            // This loop covers the idle case where no file events occur.
+            {
+                let proactive = proactive_engine.clone();
+                let ws_service = workspace_service.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(900));
+                    loop {
+                        interval.tick().await;
+                        match ws_service.get_active_workspace().await {
+                            Ok(Some(active)) => {
+                                if let Err(e) =
+                                    proactive.check_proactive_opportunities(active.id).await
+                                {
+                                    tracing::warn!(error = %e, "periodic proactive check failed");
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => tracing::warn!(error = %e, "periodic proactive active workspace lookup failed"),
+                        }
+                    }
+                });
+            }
+
             startup_profiler.stage_end();
 
             // --- RC-10 M1: Performance & Profiling Engine ---
