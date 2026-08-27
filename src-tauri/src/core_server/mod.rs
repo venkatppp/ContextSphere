@@ -295,7 +295,7 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
             serde_json::to_value(r).map_err(|e| RpcError::message(e.to_string()))?
         },
 
-        // --------------------------------------------------------------- graph
+        // --------------------------------------------------------------- graph + copilot
         _ => {
             match dispatch_admin::dispatch_admin(app, method, params).await {
                 Ok(result) => result,
@@ -303,7 +303,15 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
                     match dispatch_memory::dispatch_memory(app, method, params).await {
                         Ok(result) => result,
                         Err(memory_error) if memory_error.message == unknown_method(method) => {
-                            dispatch_graph::dispatch_graph(app, method, params).await?
+                            match dispatch_copilot::dispatch_copilot(app, method, params).await {
+                                Ok(result) => result,
+                                Err(copilot_error)
+                                    if copilot_error.message == unknown_method(method) =>
+                                {
+                                    dispatch_graph::dispatch_graph(app, method, params).await?
+                                }
+                                Err(copilot_error) => return Err(copilot_error),
+                            }
                         }
                         Err(memory_error) => return Err(memory_error),
                     }
