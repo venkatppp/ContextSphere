@@ -163,6 +163,26 @@ struct CreateWorkspaceSheet: View {
             let params: [String: Any] = ["input": input]
             let ws: Workspace = try await CoreBridge.shared.request(
                 "create_workspace", params: params, as: Workspace.self)
+            // Honest first-run: if a folder was chosen, watch it immediately so Timeline/Graph
+            // begin filling without an extra Settings step. Best-effort; creation still succeeds.
+            if !trimmedRoot.isEmpty {
+                do {
+                    try await CoreBridge.shared.call("add_watch_path", params: ["path": trimmedRoot])
+                } catch {
+                    let msg = error.localizedDescription
+                    // AlreadyWatching is not an error for the user — the folder is already observed.
+                    if msg.contains("AlreadyWatching") || msg.contains("already watching") {
+                        // Silently succeed; no warning needed.
+                    } else {
+                        // Non-fatal: workspace is created; watch can be added later in Settings.
+                        self.error = "Workspace created, but could not watch \(trimmedRoot): \(msg). Add it in Settings → Watched Paths."
+                        onCreated?(ws)
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        dismiss()
+                        return
+                    }
+                }
+            }
             onCreated?(ws)
             dismiss()
         } catch {
