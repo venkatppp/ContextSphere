@@ -103,7 +103,7 @@ struct MemoryView: View {
     }
 
     /// Encouraging first-run state: the backend simply has nothing to
-    /// show yet, not an error.
+    /// show yet, not an error. Explains exactly what the system observes.
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "brain.head.profile")
@@ -111,15 +111,48 @@ struct MemoryView: View {
                 .foregroundStyle(.tertiary)
             Text("ContextSphere hasn't learned enough yet")
                 .font(.title3.weight(.semibold))
-            Text("Memories form as the core plans and completes work in your workspaces. Successful runs become workflows ContextSphere can reuse, and it learns from your feedback.")
-                .font(.callout)
+            VStack(spacing: 8) {
+                Text("Memories form when ContextSphere plans and completes work in your workspaces. Each successful run can be reused as a workflow.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Create or open a workspace and work with files", systemImage: "folder")
+                    Label("Run a planned execution via the planner (or autonomous session)", systemImage: "sparkles")
+                    Label("Complete or accept a run — it becomes a memory", systemImage: "checkmark.circle")
+                    Label("Give feedback on recommendations to improve learning", systemImage: "hand.thumbsup")
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            Button("Refresh") {
-                Task { await viewModel.refresh() }
+                .frame(maxWidth: 420, alignment: .leading)
+                .padding(.top, 4)
+                Text("Tip: filter by workspace above — a non-matching filter can also look empty. Clear filters or refresh.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
             }
-            .accessibilityLabel("Refresh memory")
+            HStack(spacing: 10) {
+                Button("Refresh") {
+                    Task { await viewModel.refresh() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityLabel("Refresh memory")
+                if viewModel.lastError != nil {
+                    Button("Show error") {
+                        // Last error is shown inline below; this just retries.
+                        Task { await viewModel.refresh() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            if let err = viewModel.lastError {
+                Text(err).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420).textSelection(.enabled)
+                    .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)

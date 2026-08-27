@@ -35,28 +35,48 @@ final class LearningViewModel: ObservableObject {
     func refresh() async {
         if insights == nil { state = .loading }
         isFetching = true
-        lastError = nil
         defer { isFetching = false }
 
-        do {
-            async let insights: LearningInsights = CoreBridge.shared.request(
-                "get_learning_insights", as: LearningInsights.self)
-            async let preferences: [UserPreference] = CoreBridge.shared.request(
-                "get_user_preferences", as: [UserPreference].self)
-            async let patterns: [BehavioralPattern] = CoreBridge.shared.request(
-                "get_behavioral_patterns", as: [BehavioralPattern].self)
-            let (loadedInsights, loadedPreferences, loadedPatterns) =
-                try await (insights, preferences, patterns)
+        // Each RPC is independent — a failure in preferences or patterns must not
+        // turn a valid insights payload into "unavailable". Conversely, a failed
+        // insights fetch with no cached data is a genuine error that Retry must re-run.
+        async let insightsResult: LearningInsights? = try? CoreBridge.shared.request(
+            "get_learning_insights", as: LearningInsights.self)
+        async let preferencesResult: [UserPreference]? = try? CoreBridge.shared.request(
+            "get_user_preferences", as: [UserPreference].self)
+        async let patternsResult: [BehavioralPattern]? = try? CoreBridge.shared.request(
+            "get_behavioral_patterns", as: [BehavioralPattern].self)
+
+        let (loadedInsights, loadedPreferences, loadedPatterns) = await (insightsResult, preferencesResult, patternsResult)
+
+        var hadError = false
+        if let loadedInsights {
             self.insights = loadedInsights
-            self.preferences = loadedPreferences
-            self.patterns = loadedPatterns
+        } else if self.insights == nil {
+            hadError = true
+        }
+        if let loadedPreferences { self.preferences = loadedPreferences }
+        if let loadedPatterns { self.patterns = loadedPatterns }
+
+        if hadError {
+            // Genuine failure: no insights at all and the fetch failed.
+            // Try one strong synchronous fetch to capture the error message for the UI.
+            do {
+                let strong: LearningInsights = try await CoreBridge.shared.request("get_learning_insights", as: LearningInsights.self)
+                self.insights = strong
+                self.preferences = (try? await CoreBridge.shared.request("get_user_preferences", as: [UserPreference].self)) ?? self.preferences
+                self.patterns = (try? await CoreBridge.shared.request("get_behavioral_patterns", as: [BehavioralPattern].self)) ?? self.patterns
+                lastError = nil
+                state = .loaded
+            } catch {
+                let msg = error.localizedDescription
+                lastError = msg
+                state = .failed(msg)
+                return
+            }
+        } else {
             lastError = nil
             state = .loaded
-        } catch {
-            lastError = error.localizedDescription
-            if insights == nil {
-                state = .failed(error.localizedDescription)
-            }
         }
     }
 }

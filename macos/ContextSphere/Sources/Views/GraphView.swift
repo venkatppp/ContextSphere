@@ -364,9 +364,14 @@ struct GraphScreen: View {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle").font(.system(size: 32)).foregroundStyle(.orange)
                 Text("Graph unavailable").font(.title3.weight(.semibold))
-                Text(m).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+                Text(humanGraphError(m)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+                if humanGraphError(m) != m {
+                    Text(m).font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 420).textSelection(.enabled)
+                }
                 HStack(spacing: 10) {
                     Button("Retry") { viewModel.retry() }.buttonStyle(.borderedProminent).controlSize(.small)
+                        .accessibilityLabel("Retry loading graph")
+                    Button("Refresh") { viewModel.refresh() }.buttonStyle(.bordered).controlSize(.small)
 #if DEBUG
                     Button("Load Demo") { viewModel.loadFixture() }.buttonStyle(.bordered).controlSize(.small)
 #endif
@@ -374,18 +379,47 @@ struct GraphScreen: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.background.opacity(0.45))
         case .loaded:
             if viewModel.nodes.isEmpty {
+                VStack(spacing: 10) {
 #if DEBUG
-                EmptyStateView(title: "No graph data yet",
-                               message: "ContextSphere builds the graph from your workspaces and files. Use the demo fixture to explore the Context Field.",
-                               symbol: "point.3.connected.trianglepath.dotted")
-                    .background(.background.opacity(0.3))
+                    EmptyStateView(title: "No graph data yet",
+                                   message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and open files; the knowledge graph syncs automatically. Use the demo fixture to explore the Context Field.",
+                                   symbol: "point.3.connected.trianglepath.dotted")
 #else
-                EmptyStateView(title: "No graph data yet",
-                               message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and files to see the context field’s relationships unfold.",
-                               symbol: "point.3.connected.trianglepath.dotted")
-                    .background(.background.opacity(0.3))
+                    EmptyStateView(title: "No graph data yet",
+                                   message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and files to see the context field’s relationships unfold. Edits, opens and commits sync into the graph automatically.",
+                                   symbol: "point.3.connected.trianglepath.dotted")
 #endif
+                    if let hint = viewModel.lastError {
+                        Text(hint).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+                    }
+                    Button("Retry") { viewModel.retry() }.buttonStyle(.bordered).controlSize(.small)
+                        .accessibilityLabel("Retry loading graph")
+                }.background(.background.opacity(0.3))
+            } else if let hint = viewModel.lastError {
+                // Subtle inline warning when graph is shown but a subgraph/edge was stale.
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle").foregroundStyle(.secondary)
+                        Text(hint).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Button("Dismiss") { viewModel.clearTransientError() }.buttonStyle(.borderless).controlSize(.small)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 56)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
+    }
+
+    private func humanGraphError(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("graph node with id") && lower.contains("was not found") {
+            return "That item is no longer available. It may have been deleted or not yet synced. Retry to reload the current graph."
+        }
+        if lower.contains("not found") { return "Some graph data could not be found. The rest of the graph is shown. Retry to refresh." }
+        if lower.contains("timed out") { return "The graph request timed out. Try Retry." }
+        if lower.contains("core daemon is not running") { return "Core daemon is not running. Use Retry or the Core status footer to reconnect." }
+        return raw
     }
 }
