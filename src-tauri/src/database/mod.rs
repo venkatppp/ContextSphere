@@ -58,6 +58,23 @@ async fn apply_pending_restore(db_path: &Path) -> Result<bool, DatabaseError> {
         return Ok(false);
     }
 
+    // Validate staged file is a real SQLite database before swapping.
+    // A truncated copy (power loss during stage) would corrupt the live DB.
+    let header = tokio::fs::read(&marker)
+        .await
+        .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+    const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
+    if header.len() < SQLITE_HEADER.len() || header[0..SQLITE_HEADER.len()] != SQLITE_HEADER[..] {
+        tracing::error!(path = %marker.display(), "staged restore has invalid SQLite header — discarding marker");
+        let _ = tokio::fs::remove_file(&marker).await;
+        return Ok(false);
+    }
+    if header.len() < 512 {
+        tracing::error!(path = %marker.display(), "staged restore too small — discarding");
+        let _ = tokio::fs::remove_file(&marker).await;
+        return Ok(false);
+    }
+
     let stamp = Utc::now().format("%Y%m%dT%H%M%S%.6fZ");
     let safety = db_path.with_file_name(format!("{PRE_RESTORE_BACKUP_PREFIX}{stamp}.db"));
     tokio::fs::copy(db_path, &safety)

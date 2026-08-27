@@ -69,9 +69,9 @@ struct SearchView: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
                 .accessibilityHidden(true)
-            Button("") { copySelectedResult() }
+            Button("") { if !searchFieldFocused { copySelectedResult() } }
                 .keyboardShortcut("c", modifiers: .command)
-                .disabled(viewModel.selectedResult == nil)
+                .disabled(searchFieldFocused || viewModel.selectedResult == nil)
                 .hidden()
                 .accessibilityHidden(true)
         }

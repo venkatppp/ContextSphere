@@ -9,6 +9,8 @@ import SwiftUI
 struct GraphScreen: View {
     @ObservedObject var viewModel: GraphViewModel
     @StateObject private var camera = GraphCamera()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var hoveredNodeID: String?
     @State private var canvasSize: CGSize = .zero
@@ -48,8 +50,8 @@ struct GraphScreen: View {
                     .allowsHitTesting(false)
             }
         }
-        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: viewModel.positions)
-        .animation(.easeOut(duration: 0.25), value: viewModel.showInspector)
+        .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85), value: viewModel.positions)
+        .animation(reduceMotion ? .none : .easeOut(duration: 0.25), value: viewModel.showInspector)
         .task { viewModel.initialLoadIfNeeded() }
         .onAppear { camera.setViewport(canvasSize) }
         .onChange(of: viewModel.layoutGeneration) { _, _ in needsFit = true }
@@ -171,11 +173,15 @@ struct GraphScreen: View {
 
     private func applyFit() {
         needsFit = false
-        camera.fit(positions: viewModel.positions, padding: 0.85, animated: true)
+        camera.fit(positions: viewModel.positions, padding: 0.85, animated: !reduceMotion)
     }
 
     private func zoom(by factor: CGFloat) {
-        withAnimation(.easeOut(duration: 0.15)) { camera.zoom(by: factor) }
+        if reduceMotion {
+            camera.zoom(by: factor)
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) { camera.zoom(by: factor) }
+        }
     }
 
     private func focusOnRequestedNode() {
@@ -184,7 +190,7 @@ struct GraphScreen: View {
             viewModel.consumeFocusRequest()
             return
         }
-        camera.focus(on: pos, zoom: max(camera.zoom, 1.3), animated: true)
+        camera.focus(on: pos, zoom: max(camera.zoom, 1.3), animated: !reduceMotion)
         viewModel.consumeFocusRequest()
     }
 
@@ -271,15 +277,17 @@ struct GraphScreen: View {
                 Picker("Relationship density", selection: $viewModel.edgeDensity) {
                     ForEach(GraphViewModel.EdgeDensity.allCases) { d in Text(d.title).tag(d) }
                 }
+#if DEBUG
                 Divider()
                 Button("Load demo fixture") { viewModel.loadFixture() }
                 Button("Clear demo") { viewModel.refresh() }
                 if viewModel.isUsingFixture {
                     Text("Using demo data").font(.caption2).foregroundStyle(.tertiary)
                 }
+#endif
             } label: {
                 Image(systemName: "line.3.horizontal.decrease.circle").frame(width: 26, height: 26)
-            }.menuStyle(.borderlessButton).fixedSize().help("Density & demo").accessibilityLabel("Density")
+            }.menuStyle(.borderlessButton).fixedSize().help("Density & demo").accessibilityLabel("Graph options")
             glassControlButton(viewModel.showInspector ? "sidebar.right.fill" : "sidebar.right",
                                help: viewModel.showInspector ? "Hide inspector" : "Show inspector") {
                 viewModel.showInspector.toggle()
@@ -343,6 +351,8 @@ struct GraphScreen: View {
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(.regularMaterial.opacity(0.7), in: Capsule())
         .opacity(viewModel.nodes.isEmpty ? 0 : 1)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder private var stateOverlay: some View {
@@ -357,15 +367,24 @@ struct GraphScreen: View {
                 Text(m).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
                 HStack(spacing: 10) {
                     Button("Retry") { viewModel.retry() }.buttonStyle(.borderedProminent).controlSize(.small)
+#if DEBUG
                     Button("Load Demo") { viewModel.loadFixture() }.buttonStyle(.bordered).controlSize(.small)
+#endif
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.background.opacity(0.45))
         case .loaded:
             if viewModel.nodes.isEmpty {
+#if DEBUG
                 EmptyStateView(title: "No graph data yet",
                                message: "ContextSphere builds the graph from your workspaces and files. Use the demo fixture to explore the Context Field.",
                                symbol: "point.3.connected.trianglepath.dotted")
                     .background(.background.opacity(0.3))
+#else
+                EmptyStateView(title: "No graph data yet",
+                               message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and files to see the context field’s relationships unfold.",
+                               symbol: "point.3.connected.trianglepath.dotted")
+                    .background(.background.opacity(0.3))
+#endif
             }
         }
     }

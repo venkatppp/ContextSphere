@@ -1,10 +1,8 @@
-//! System-level commands.
+//! System-level commands (RC headless `contextsphere_core` JSON-RPC).
 //!
-//! These exist in Phase 1 purely to prove the IPC path between the React
-//! frontend and the Rust backend works end-to-end, before any real engine
-//! (workspace detection, timeline, etc.) exists to expose. Later phases
-//! add commands here that simply delegate to the relevant engine module —
-//! command handlers should stay thin and never contain business logic.
+//! Thin IPC handlers that delegate to engine modules — they never contain
+//! business logic themselves. The native macOS frontend reaches these
+//! through `CoreBridge` over stdin/stdout JSON-RPC, not a WebView.
 
 use std::process::Command as ProcessCommand;
 

@@ -151,7 +151,7 @@ pub fn write_response(app: &AppHandle, response: &Value) -> std::io::Result<()> 
 pub fn forward_event(app: &AppHandle, event: &str, payload: &Value) {
     let notification = serde_json::json!({ "event": event, "payload": payload });
     if let Err(error) = write_response(app, &notification) {
-        eprintln!("core-server: failed to forward event {event}: {error}");
+        tracing::warn!(event = %event, error = %error, "core-server: failed to forward event");
     }
 }
 

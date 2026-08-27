@@ -128,6 +128,7 @@ struct WorkspacesView: View {
             Image(systemName: "plus")
         }
         .help("Create a new workspace")
+        .accessibilityLabel("Create new workspace")
     }
 
     private var workspacesContent: some View {
