@@ -140,11 +140,14 @@ struct CreateWorkspaceSheet: View {
         working = true
         defer { working = false }
         do {
-            let params: [String: Any] = [
+            let trimmedRoot = rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let input: [String: Any] = [
                 "name": trimmedName,
-                "rootPath": rootPath.trimmingCharacters(in: .whitespaces).isEmpty ? NSNull() : rootPath,
-                "description": description.trimmingCharacters(in: .whitespaces).isEmpty ? NSNull() : description,
+                "rootPath": trimmedRoot.isEmpty ? NSNull() : trimmedRoot,
+                "description": trimmedDesc.isEmpty ? NSNull() : trimmedDesc,
             ]
+            let params: [String: Any] = ["input": input]
             let ws: Workspace = try await CoreBridge.shared.request(
                 "create_workspace", params: params, as: Workspace.self)
             onCreated?(ws)
