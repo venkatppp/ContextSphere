@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ChronoDesk",
+  "productName": "ContextSphere",
   "version": "0.1.0",
-  "identifier": "com.chronodesk.app",
+  "identifier": "com.contextsphere.app",
   "build": {
     "frontendDist": "../frontend/dist"
   },

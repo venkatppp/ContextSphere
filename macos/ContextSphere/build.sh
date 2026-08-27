@@ -80,7 +80,11 @@ swiftc \
 echo "==> Assembling bundle"
 cp Resources/Info.plist "$APP_DIR/Contents/Info.plist"
 cp "$CORE_BIN" "$APP_DIR/Contents/MacOS/contextsphere_core"
-codesign --force --sign - "$APP_DIR"
+if [ -f Resources/ContextSphere.entitlements ]; then
+  codesign --force --options runtime --entitlements Resources/ContextSphere.entitlements --sign - "$APP_DIR"
+else
+  codesign --force --options runtime --sign - "$APP_DIR"
+fi
 
 echo "==> Done: $APP_DIR"
 echo "    Launch with: open $APP_DIR"

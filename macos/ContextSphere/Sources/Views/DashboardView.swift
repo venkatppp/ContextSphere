@@ -488,7 +488,11 @@ struct DashboardView: View {
         let url = URL(fileURLWithPath: path)
         if NSWorkspace.shared.open(url) { return }
         Task {
-            try? await CoreBridge.shared.call("open_file", params: ["path": path])
+            do {
+                try await CoreBridge.shared.call("open_file", params: ["path": path])
+            } catch {
+                await MainActor.run { actionError = "Could not open \( (path as NSString).lastPathComponent ): \(error.localizedDescription)" }
+            }
         }
     }
 

@@ -325,7 +325,11 @@ final class CoreBridge: ObservableObject {
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer.subdata(in: buffer.startIndex..<newline)
             buffer.removeSubrange(buffer.startIndex...newline)
-            guard let obj = try? JSONDecoder().decode(RpcIncoming.self, from: line) else { continue }
+            guard let obj = try? JSONDecoder().decode(RpcIncoming.self, from: line) else {
+                let preview = String(data: line.prefix(120), encoding: .utf8) ?? "<binary>"
+                lastError = "malformed daemon line dropped: \(preview)"
+                continue
+            }
             switch obj {
             case .response(let id, let result, let error):
                 if let cont = pending.removeValue(forKey: id) {
@@ -333,11 +337,19 @@ final class CoreBridge: ObservableObject {
                     if let error {
                         cont.resume(throwing: CoreError.rpc(error.message))
                     } else {
-                        cont.resume(returning: try? result?.toData())
+                        do {
+                            cont.resume(returning: try result?.toData())
+                        } catch {
+                            cont.resume(throwing: CoreError.decode(error.localizedDescription))
+                        }
                     }
                 }
             case .notification(let event, let payload):
-                onEvent?(event, try? payload?.toData())
+                do {
+                    onEvent?(event, try payload?.toData())
+                } catch {
+                    lastError = "event \(event) payload serialization failed: \(error.localizedDescription)"
+                }
             }
         }
     }
