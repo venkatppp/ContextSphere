@@ -73,15 +73,16 @@ struct CreateWorkspaceSheet: View {
                         .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .path)
                         .onSubmit { focusedField = .description }
-                        .help("Absolute path to the directory this workspace represents")
+                        .help("Absolute path to the directory this workspace represents. It will be watched automatically.")
                         .accessibilityLabel("Workspace root path")
                     Button("Browse…") { choosePath() }
                         .help("Choose a folder")
                         .accessibilityLabel("Browse for workspace folder")
                 }
-                Text("Leave empty to create a workspace without a directory.")
+                Text("If you choose a folder, ContextSphere will watch it locally and Timeline/Graph will fill as you edit files. Leave empty for a placeholder workspace.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -99,6 +100,18 @@ struct CreateWorkspaceSheet: View {
                     .focused($focusedField, equals: .description)
                     .accessibilityLabel("Workspace description")
             }
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text("Your files stay on this Mac. ContextSphere observes locally and never uploads. You can change watch paths anytime in Settings.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Privacy: Files stay on this Mac and are never uploaded")
         }
     }
 
