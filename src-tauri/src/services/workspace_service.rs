@@ -98,14 +98,29 @@ impl WorkspaceService {
         self.workspace_repository.set_root_path(id, root_path).await
     }
 
+    /// Canonicalizes a workspace root path so `/tmp` vs `/private/tmp` on
+    /// macOS (and any symlink) do not create duplicate workspaces for the
+    /// same directory. Mirrors the canonicalization the watcher pipeline
+    /// already does via `std::fs::canonicalize` before `find_by_root_path`.
+    fn canonicalize_root_path(path: String) -> String {
+        std::fs::canonicalize(&path)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(path)
+    }
+
     /// Creates a workspace and records its creation as the first entry in
     /// its own timeline, so the Timeline screen's history (blueprint §10)
     /// starts on day one instead of on whatever the first *file* event
     /// happens to be.
     pub async fn create_workspace(
         &self,
-        input: CreateWorkspaceInput,
+        mut input: CreateWorkspaceInput,
     ) -> Result<Workspace, DatabaseError> {
+        if let Some(root) = input.root_path.take() {
+            if !root.trim().is_empty() {
+                input.root_path = Some(Self::canonicalize_root_path(root));
+            }
+        }
         let workspace = self.workspace_repository.create(input).await?;
 
         self.timeline_repository
