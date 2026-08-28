@@ -131,7 +131,6 @@ extension Notification.Name {
 struct AppShell: View {
     @StateObject private var router = AppRouter.shared
     @ObservedObject private var bridge = CoreBridge.shared
-    @Environment(\.csPalette) private var palette
     @State private var workspaces: [Workspace] = []
     @State private var loaded = false
     @State private var loadFailed: String?

@@ -489,9 +489,8 @@ struct TimelineEventRow: View {
     }
 
     private var rowBackgroundStyle: AnyShapeStyle {
-        if isHovered || isFocused {
-            return AnyShapeStyle(Color.cs(CSColor.surface))
-        }
+        if isFocused { return AnyShapeStyle(Color.cs(CSColor.surface)) }
+        if isHovered && isFileEvent { return AnyShapeStyle(Color.cs(CSColor.surface)) }
         return AnyShapeStyle(Color.clear)
     }
 
@@ -502,7 +501,7 @@ struct TimelineEventRow: View {
 
     private var rowBorderColor: Color {
         if isFocused { return Color.accentColor.opacity(0.5) }
-        if isHovered { return Color.cs(CSColor.border) }
+        if isHovered && isFileEvent { return Color.cs(CSColor.border) }
         return Color.clear
     }
 
