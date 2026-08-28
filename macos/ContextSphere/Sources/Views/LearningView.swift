@@ -31,7 +31,8 @@ struct LearningView: View {
     private var header: some View {
         ScreenHeader("Learning",
                      subtitle: subtitle,
-                     symbol: "graduationcap") {
+                     symbol: "graduationcap",
+                     eyebrow: "Intelligence") {
             refreshButton
         }
     }
@@ -52,9 +53,10 @@ struct LearningView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
             }
         }
-        .disabled(viewModel.isFetching)
+        .buttonStyle(.borderless)
         .help("Refresh learning activity")
         .accessibilityLabel("Refresh learning activity")
     }
@@ -95,69 +97,27 @@ struct LearningView: View {
     }
 
     private func errorState(_ message: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(.orange)
-            Text("Learning unavailable").font(.title3.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Button("Retry") {
-                Task { await viewModel.refresh() }
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Retry loading learning activity")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "Learning unavailable",
+            message: message,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { Task { await viewModel.refresh() } })
+        )
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "graduationcap")
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
-            Text("ContextSphere is still getting to know you")
-                .font(.title3.weight(.semibold))
-            VStack(spacing: 8) {
-                Text("Learning appears after ContextSphere observes repeated behavior and your feedback on its recommendations.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 480)
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Accept or reject recommendations (memory, graph context)", systemImage: "hand.thumbsup")
-                    Label("Switch workspaces — switching patterns become preferences", systemImage: "arrow.triangle.swap")
-                    Label("Open related files in sequence — sequential-file patterns", systemImage: "doc.on.doc")
-                    Label("Work at consistent times — time-of-day patterns emerge", systemImage: "clock")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420, alignment: .leading)
-                .padding(.top, 4)
-                Text("Each preference needs a few pieces of evidence before it is confident enough to show. Keep using workspaces normally — patterns will appear here.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            }
-            HStack(spacing: 10) {
-                Button("Refresh") {
-                    Task { await viewModel.refresh() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .accessibilityLabel("Refresh learning activity")
-                if let err = viewModel.lastError {
-                    Text(err).font(.caption2).foregroundStyle(.tertiary).lineLimit(2).frame(maxWidth: 200)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "ContextSphere is still getting to know you",
+            message: "Learning appears after ContextSphere observes repeated behavior and your feedback on its recommendations.",
+            symbol: "graduationcap",
+            primaryAction: ("Refresh", { Task { await viewModel.refresh() } }),
+            details: [
+                ("hand.thumbsup", "Accept or reject recommendations"),
+                ("arrow.triangle.swap", "Switch workspaces — patterns become preferences"),
+                ("doc.on.doc", "Open related files in sequence — sequential-file patterns"),
+                ("clock", "Work at consistent times — time-of-day patterns emerge"),
+            ]
+        )
     }
 
     // MARK: - Loaded content
@@ -246,61 +206,53 @@ struct LearningView: View {
     // MARK: - Confidence trends
 
     private func confidenceTrendsSection(_ trends: [ConfidenceTrend]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Confidence over time",
-                          subtitle: "Average confidence per day",
-                          symbol: "waveform.path.ecg.rectangle")
-            ConfidenceTrendChart(trends: trends)
-                .frame(height: 160)
-                .accessibilityLabel("Confidence over time. Orange dots mark days with confidence adjustments.")
+        ContentCard {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Confidence over time",
+                              subtitle: "Average confidence per day",
+                              symbol: "waveform.path.ecg.rectangle")
+                ConfidenceTrendChart(trends: trends)
+                    .frame(height: 160)
+                    .accessibilityLabel("Confidence over time. Orange dots mark days with confidence adjustments.")
+            }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     // MARK: - Accuracy by category
 
     private func accuracySection(_ accuracy: RecommendationAccuracy) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Accuracy by category", symbol: "list.bullet.rectangle")
-            if accuracy.categoryAccuracy.isEmpty {
-                Text("No category-level feedback yet.")
-                    .font(.callout).foregroundStyle(.secondary)
-            } else {
-                LazyVStack(spacing: 6) {
-                    ForEach(accuracy.categoryAccuracy, id: \.category) { category in
-                        HStack(spacing: 8) {
-                            Text(category.category)
-                                .font(.callout)
-                                .frame(width: 200, alignment: .leading)
-                                .lineLimit(1)
-                            ProgressView(value: category.accuracy)
-                                .accessibilityLabel("Accuracy for \(category.category)")
-                            Text(category.accuracy.percentString)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                                .frame(width: 42, alignment: .trailing)
-                                .accessibilityLabel("\(category.accuracy.percentString) accuracy")
-                            Text("\(category.accepted) / \(category.total)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                                .frame(width: 56, alignment: .trailing)
-                                .accessibilityLabel("\(category.accepted) accepted of \(category.total)")
+        ContentCard {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Accuracy by category", symbol: "list.bullet.rectangle")
+                if accuracy.categoryAccuracy.isEmpty {
+                    Text("No category-level feedback yet.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    LazyVStack(spacing: 6) {
+                        ForEach(accuracy.categoryAccuracy, id: \.category) { category in
+                            HStack(spacing: 8) {
+                                Text(category.category)
+                                    .font(.callout)
+                                    .frame(width: 200, alignment: .leading)
+                                    .lineLimit(1)
+                                ProgressView(value: category.accuracy)
+                                    .accessibilityLabel("Accuracy for \(category.category)")
+                                Text(category.accuracy.percentString)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 42, alignment: .trailing)
+                                    .accessibilityLabel("\(category.accuracy.percentString) accuracy")
+                                Text("\(category.accepted) / \(category.total)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                                    .frame(width: 56, alignment: .trailing)
+                                    .accessibilityLabel("\(category.accepted) accepted of \(category.total)")
+                            }
                         }
                     }
                 }
             }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
     }
 
     // MARK: - Learned preferences

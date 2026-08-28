@@ -7,14 +7,14 @@ import AppKit
 /// - "What changed?"           → recent context (activity + open files)
 /// - "Is everything healthy?"  → compact system health strip
 ///
-/// The information layer uses calm native material. Glass is reserved for
-/// the hero chrome and interactive controls only.
+/// Hierarchy: hero → briefing → intelligence + recent → system health.
+/// The information layer uses calm native material. Glass is reserved
+/// for the hero chrome and interactive controls only.
 struct DashboardView: View {
     let workspaces: [Workspace]
     let onRevealWorkspace: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var activity: [TimelineEvent] = []
     @State private var health: RuntimeHealth?
     @State private var predictions: PredictionsSummary?
@@ -23,16 +23,12 @@ struct DashboardView: View {
     @State private var lastSession: SessionSummary?
     @State private var briefing: DailyBriefing?
     @State private var loading = true
-    /// Per-load failures, one entry per panel that could not refresh.
     @State private var loadErrors: [String] = []
-    /// Failure of the most recent explicit action (e.g. switching workspaces).
     @State private var actionError: String?
     @State private var isSwitching = false
-    /// Explanation for a recommendation ("Why…" flow).
     @State private var explanation: ExplainablePrediction?
     @State private var explainingId: String?
     @State private var explainError: String?
-    /// Debounce task for live `prediction/recommendation:updated` nudges.
     @State private var intelligenceRefreshTask: Task<Void, Never>?
 
     init(workspaces: [Workspace], onRevealWorkspace: @escaping (String) -> Void = { _ in }) {
@@ -44,83 +40,11 @@ struct DashboardView: View {
         workspaces.first { $0.status == .active } ?? workspaces.first
     }
 
-    private var emptyWorkspaces: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 34))
-                .foregroundStyle(.tertiary)
-            Text("Create your first workspace")
-                .font(.title3.weight(.semibold))
-            Text("ContextSphere learns from the work you do inside a workspace. Create one and it will begin tracking context here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Button {
-                AppRouter.shared.newWorkspaceRequest = true
-                AppRouter.shared.selection = .workspaces
-            } label: {
-                Label("Create Workspace", systemImage: "plus.circle.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .accessibilityLabel("Create your first workspace")
-
-            // First-run 3-step journey — calm, not glass, explains empty→populated without fake data
-            VStack(alignment: .leading, spacing: 10) {
-                Text("How it works")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.4)
-                HStack(alignment: .top, spacing: 12) {
-                    firstRunStep(number: "1", title: "Create", detail: "Pick a folder for your project.")
-                    firstRunStep(number: "2", title: "Work", detail: "Edit files — Timeline fills automatically.")
-                    firstRunStep(number: "3", title: "See", detail: "Graph, Dashboard & briefing light up.")
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.shield")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("Files are observed locally on this Mac and never uploaded. Watch paths are managed in Settings.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 2)
-            }
-            .padding(14)
-            .frame(maxWidth: 380)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func firstRunStep(number: String, title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(number)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 20, height: 20)
-                .background(Circle().fill(Color.accentColor))
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.caption.weight(.semibold))
-            Text(detail)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // MARK: - Body
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                header
+            VStack(alignment: .leading, spacing: 18) {
                 if !loadErrors.isEmpty {
                     loadErrorBanner
                 }
@@ -134,16 +58,12 @@ struct DashboardView: View {
                 }
             }
             .frame(maxWidth: Theme.contentMaxWidth)
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollEdgeEffectStyle(.soft, for: .vertical)
-        .task(id: workspaces.first?.id) {
-            await load()
-        }
-        // Live intelligence nudges (`prediction:updated`,
-        // `recommendation:updated`, `workflow:changed`): refresh the
-        // forward-looking panels, debounced so event storms coalesce.
+        .task(id: workspaces.first?.id) { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .intelligenceDidChange)) { _ in
             intelligenceRefreshTask?.cancel()
             intelligenceRefreshTask = Task {
@@ -160,161 +80,181 @@ struct DashboardView: View {
         }
     }
 
-    /// Aggregated failures from the parallel dashboard loads. Every entry
-    /// is retryable via the banner's Retry action.
-    private var loadErrorBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(loadErrors, id: \.self) { message in
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("Dashboard data failed to load: \(message)")
+    // MARK: - Empty state
+
+    private var emptyWorkspaces: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.tertiary)
+            VStack(spacing: 6) {
+                Text("Create your first workspace")
+                    .font(.title2.weight(.semibold))
+                Text("ContextSphere learns from the work you do inside a workspace. Create one and it will begin tracking context here.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
             }
-            HStack(spacing: 10) {
-                Button("Retry") { Task { await load() } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                Button("Dismiss") { loadErrors = [] }
-                    .buttonStyle(.link)
-                    .font(.caption)
+            Button {
+                AppRouter.shared.newWorkspaceRequest = true
+                AppRouter.shared.selection = .workspaces
+            } label: {
+                Label("Create Workspace", systemImage: "plus.circle.fill")
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .accessibilityLabel("Create your first workspace")
+
+            // First-run 3-step journey — calm, not glass, explains empty→populated without fake data
+            VStack(alignment: .leading, spacing: 12) {
+                Text("How it works")
+                    .font(.csEyebrow())
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                HStack(alignment: .top, spacing: 12) {
+                    firstRunStep(number: "1", title: "Create", detail: "Pick a folder for your project.")
+                    firstRunStep(number: "2", title: "Work", detail: "Edit files — Timeline fills automatically.")
+                    firstRunStep(number: "3", title: "See", detail: "Graph, Dashboard & briefing light up.")
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.shield")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("Files are observed locally on this Mac and never uploaded. Watch paths are managed in Settings.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
+            .padding(16)
+            .frame(maxWidth: 460)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
+                    .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+            )
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(Color.orange.opacity(0.4), lineWidth: 0.5))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
         .accessibilityElement(children: .contain)
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 10) {
-                    Image(systemName: "scope")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.tint)
-                        .accessibilityHidden(true)
-                    Text("ContextSphere")
-                        .font(.system(size: 28, weight: .semibold))
-                        .tracking(-0.4)
-                        .accessibilityLabel("ContextSphere")
-                }
-                if let workspace = currentWorkspace {
-                    HStack(spacing: 6) {
-                        Image(systemName: "folder.fill")
-                            .foregroundStyle(.tint)
-                            .font(.caption)
-                        Text(workspace.name)
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.primary)
-                    }
-                }
-            }
-            Spacer()
-            refreshControl
+    private func firstRunStep(number: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(number)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.accentColor))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.caption.weight(.semibold))
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 8)
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var refreshControl: some View {
-        Button {
-            Task { await load() }
-        } label: {
-            if loading {
-                ProgressView().controlSize(.small)
-            } else {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-        }
-        .buttonStyle(.plain)
-        .help("Refresh dashboard data")
-        .accessibilityLabel("Refresh dashboard")
+    // MARK: - Load error banner
+
+    private var loadErrorBanner: some View {
+        StatusBanner(
+            message: "\(loadErrors.count) panel\(loadErrors.count == 1 ? "" : "s") couldn't load",
+            style: .warning,
+            detail: loadErrors.joined(separator: "\n"),
+            primaryAction: ("Retry", { Task { await load() } }),
+            secondaryAction: ("Dismiss", { loadErrors = [] })
+        )
     }
 
     // MARK: - Hero
 
     private var hero: some View {
-        GlassSection(tint: .indigo, interactive: true) {
+        HeroCard {
             if let workspace = currentWorkspace {
-                HStack(alignment: .top, spacing: 20) {
-                    workspaceIdentity(workspace)
-                    Spacer(minLength: 24)
-                    healthGauge(workspace)
-                    VStack(alignment: .trailing, spacing: 10) {
-                        StatusBadge(status: workspace.status)
-                        Text("Active \(workspace.lastActiveAt.relativeTime)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button {
-                            Task { await switchToWorkspace(id: workspace.id, name: workspace.name) }
-                        } label: {
-                            Label(isSwitching ? "Switching…" : "Resume",
-                                  systemImage: "arrow.uturn.forward.circle")
-                        }
-                        .buttonStyle(.glassProminent)
-                        .tint(.indigo)
-                        .disabled(isSwitching)
-                        .accessibilityHint("Makes this the active workspace and restores its context")
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 18) {
+                        workspaceIdentity(workspace)
+                        Spacer(minLength: 16)
+                        healthGauge(workspace)
+                        actionColumn(workspace)
                     }
-                }
-
-                if let actionError {
-                    Label(actionError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("Action failed: \(actionError)")
-                }
-
-                if let resume, !resume.unfinishedWork.isEmpty {
-                    Divider().opacity(0.5)
-                    unfinishedWorkList(resume.unfinishedWork)
-                } else if let session = lastSession,
-                          session.workspaceId != currentWorkspace?.id {
-                    Divider().opacity(0.5)
-                    lastSessionRow(session)
+                    if let actionError {
+                        StatusBanner(message: "Action failed", style: .error, detail: actionError)
+                    }
+                    if let resume, !resume.unfinishedWork.isEmpty {
+                        Hairline()
+                        unfinishedWorkList(resume.unfinishedWork)
+                    } else if let session = lastSession,
+                              session.workspaceId != currentWorkspace?.id {
+                        Hairline()
+                        lastSessionRow(session)
+                    }
                 }
             }
         }
         .animation(Theme.spring(reduceMotion), value: resume?.unfinishedWork.count)
+        .accessibilityElement(children: .contain)
     }
 
     private func workspaceIdentity(_ workspace: Workspace) -> some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.accentColor.opacity(0.14))
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.tint)
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 40, height: 40)
             .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(workspace.name)
-                    .font(.title2.weight(.bold))
-                    .lineLimit(1)
-                if let path = workspace.rootPath {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(workspace.name)
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                    if workspace.status == .active {
+                        CSStatusBadge(text: "Active", kind: .success)
+                    }
+                }
+                if let path = workspace.rootPath, !path.isEmpty {
                     Text(path)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                }
-                if let description = workspace.description, !description.isEmpty {
+                } else if let description = workspace.description, !description.isEmpty {
                     Text(description)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 if let openFiles = resume?.openFiles, !openFiles.isEmpty {
-                    openFilesLine(openFiles)
+                    HStack(spacing: 6) {
+                        Text("Open")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                        ForEach(openFiles.prefix(3), id: \.self) { file in
+                            HStack(spacing: 3) {
+                                Image(systemName: "doc")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text((file as NSString).lastPathComponent)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .help(file)
+                        }
+                    }
+                    .padding(.top, 2)
                 }
             }
         }
@@ -322,33 +262,25 @@ struct DashboardView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func openFilesLine(_ files: [String]) -> some View {
-        HStack(spacing: 6) {
-            Text("Open:")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            ForEach(files.prefix(3), id: \.self) { file in
-                Label((file as NSString).lastPathComponent, systemImage: "doc")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help(file)
-            }
-        }
-        .padding(.top, 4)
-    }
-
     private func healthGauge(_ workspace: Workspace) -> some View {
-        VStack(spacing: 6) {
-            Gauge(value: workspace.healthScore, in: 0...100) {
-                Text("Health")
-            } currentValueLabel: {
-                Text("\(Int(workspace.healthScore))%")
-                    .font(.system(size: 20, weight: .bold).monospacedDigit())
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 6)
+                Circle()
+                    .trim(from: 0, to: max(0.02, workspace.healthScore / 100))
+                    .stroke(healthColor(workspace.healthScore), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(Theme.spring(reduceMotion), value: workspace.healthScore)
+                VStack(spacing: 0) {
+                    Text("\(Int(workspace.healthScore))")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
+                    Text("Health")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .gaugeStyle(.accessoryCircular)
-            .tint(healthColor(workspace.healthScore))
-            .frame(width: 74, height: 74)
+            .frame(width: 64, height: 64)
             .accessibilityLabel("Workspace health \(Int(workspace.healthScore)) percent")
         }
     }
@@ -359,10 +291,44 @@ struct DashboardView: View {
         return .red
     }
 
+    private func actionColumn(_ workspace: Workspace) -> some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Button {
+                Task { await switchToWorkspace(id: workspace.id, name: workspace.name) }
+            } label: {
+                HStack(spacing: 6) {
+                    if isSwitching {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    Text(isSwitching ? "Switching…" : "Resume")
+                }
+                .frame(minWidth: 100)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .disabled(isSwitching)
+            .accessibilityHint("Makes this the active workspace and restores its context")
+
+            Text("Active \(workspace.lastActiveAt.relativeTime)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
     private func unfinishedWorkList(_ items: [UnfinishedWork]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Unfinished work", systemImage: "tray.full")
-                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 6) {
+                Image(systemName: "tray.full")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("Unfinished work")
+                    .font(.csEyebrow())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
             ForEach(items.prefix(4)) { item in
                 HStack(alignment: .top, spacing: 8) {
                     Circle()
@@ -389,13 +355,76 @@ struct DashboardView: View {
                 .accessibilityLabel("\(item.description), \(item.confidence.percentString) confidence")
             }
         }
-        .padding(.top, 4)
+    }
+
+    // MARK: - Daily briefing
+
+    private var briefingCard: some View {
+        ContentCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Daily Briefing",
+                              subtitle: briefing?.greeting,
+                              symbol: "sun.max")
+                if let briefing {
+                    HStack(spacing: 10) {
+                        briefingStat(briefing.summary.durationSeconds >= 3600
+                                     ? "\(briefing.summary.durationSeconds / 3600) h active"
+                                     : "\(max(briefing.summary.durationSeconds / 60, 0)) min active",
+                                     symbol: "clock")
+                        briefingStat("\(briefing.summary.sessionCount) sessions",
+                                     symbol: "rectangle.stack")
+                        if let lang = briefing.primaryLanguage ?? briefing.summary.primaryLanguage {
+                            briefingStat(lang, symbol: "chevron.left.forwardslash.chevron.right")
+                        }
+                    }
+                    if !briefing.insights.isEmpty {
+                        Hairline()
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(briefing.insights.prefix(3).enumerated()),
+                                    id: \.offset) { _, insight in
+                                Label(insight, systemImage: "sparkle")
+                                    .font(.callout)
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                    if !briefing.suggestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(briefing.suggestions.prefix(2).enumerated()),
+                                    id: \.offset) { _, suggestion in
+                                Label(suggestion, systemImage: "lightbulb")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } else if !loadErrors.contains(where: { $0.hasPrefix("Daily briefing") }) {
+                    Text("Your day at a glance will appear here once there is some activity.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func briefingStat(_ text: String, symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.caption.weight(.medium))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary.opacity(0.3), in: Capsule(style: .continuous))
     }
 
     // MARK: - Intelligence + Recent context
 
     private var intelligenceRow: some View {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .top, spacing: 16) {
             intelligencePanel
                 .frame(maxWidth: .infinity)
             recentContextPanel
@@ -427,7 +456,7 @@ struct DashboardView: View {
                 }
 
                 if !recommendations.isEmpty {
-                    Divider().opacity(0.5)
+                    Hairline()
                     recommendationsBlock
                 }
             }
@@ -442,8 +471,10 @@ struct DashboardView: View {
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Next workspace")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
                 Text(prediction.workspaceName)
                     .font(.callout.weight(.semibold))
                 Text(prediction.reason)
@@ -461,7 +492,7 @@ struct DashboardView: View {
 
     private func sessionContinuationBlock(_ continuation: SessionContinuationPrediction) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "play.circle.fill")
+            Image(systemName: continuation.willContinue ? "play.circle.fill" : "pause.circle.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(continuation.willContinue ? .green : .secondary)
                 .frame(width: 20)
@@ -484,10 +515,12 @@ struct DashboardView: View {
     }
 
     private func nextFilesBlock(_ files: [FilePrediction]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("Likely files")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
             ForEach(files) { file in
                 Button {
                     openPredictedFile(file.filePath)
@@ -509,6 +542,7 @@ struct DashboardView: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
+                    .padding(.vertical, 3)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -546,82 +580,24 @@ struct DashboardView: View {
             do {
                 try await CoreBridge.shared.call("open_file", params: ["path": path])
             } catch {
-                await MainActor.run { actionError = "Could not open \( (path as NSString).lastPathComponent ): \(error.localizedDescription)" }
+                await MainActor.run { actionError = "Could not open \((path as NSString).lastPathComponent): \(error.localizedDescription)" }
             }
         }
-    }
-
-    // MARK: - Daily briefing
-
-    /// Today's briefing from the analytics engine: greeting, activity
-    /// summary, insights and suggestions. Content uses regular material;
-    /// glass stays reserved for interactive controls.
-    private var briefingCard: some View {
-        ContentCard {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Daily Briefing",
-                              subtitle: briefing?.greeting,
-                              symbol: "sun.max")
-                if let briefing {
-                    HStack(spacing: 14) {
-                        briefingStat(briefing.summary.durationSeconds >= 3600
-                                     ? "\(briefing.summary.durationSeconds / 3600) h active"
-                                     : "\(max(briefing.summary.durationSeconds / 60, 0)) min active",
-                                     symbol: "clock")
-                        briefingStat("\(briefing.summary.sessionCount) sessions",
-                                     symbol: "rectangle.stack")
-                        if let lang = briefing.primaryLanguage ?? briefing.summary.primaryLanguage {
-                            briefingStat(lang, symbol: "chevron.left.forwardslash.chevron.right")
-                        }
-                    }
-                    if !briefing.insights.isEmpty {
-                        Divider().opacity(0.5)
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(briefing.insights.prefix(3).enumerated()),
-                                    id: \.offset) { _, insight in
-                                Label(insight, systemImage: "sparkle")
-                                    .font(.callout)
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                    }
-                    if !briefing.suggestions.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(Array(briefing.suggestions.prefix(2).enumerated()),
-                                    id: \.offset) { _, suggestion in
-                                Label(suggestion, systemImage: "lightbulb")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                } else if !loadErrors.contains(where: { $0.hasPrefix("Daily briefing") }) {
-                    Text("Your day at a glance will appear here once there is some activity.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func briefingStat(_ text: String, symbol: String) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
     }
 
     private var recommendationsBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recommended")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.5)
             ForEach(recommendations.prefix(3)) { recommendation in
                 HStack(alignment: .top, spacing: 8) {
                     Button {
                         onRevealWorkspace(recommendation.workspaceId)
                     } label: {
-                        HStack(alignment: .top, spacing: 8) {
+                        HStack(alignment: .top, spacing: 10) {
                             PriorityPill(priority: recommendation.priority)
                                 .padding(.top, 2)
                             VStack(alignment: .leading, spacing: 2) {
@@ -635,7 +611,7 @@ struct DashboardView: View {
                                     .multilineTextAlignment(.leading)
                             }
                         }
-                        .padding(8)
+                        .padding(.vertical, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
@@ -669,7 +645,7 @@ struct DashboardView: View {
 
     private var recentContextPanel: some View {
         ContentCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Recent Context",
                               subtitle: "What changed?",
                               symbol: "clock.arrow.circlepath")
@@ -683,14 +659,14 @@ struct DashboardView: View {
                         ForEach(Array(activity.prefix(6).enumerated()), id: \.element.id) { index, event in
                             DashboardActivityRow(event: event)
                             if index < min(activity.count, 6) - 1 {
-                                Divider().opacity(0.5)
+                                Hairline()
                             }
                         }
                     }
                 }
 
                 if let resume, !resume.openFiles.isEmpty {
-                    Divider().opacity(0.5)
+                    Hairline()
                     Label("\(resume.openFiles.count) files open",
                           systemImage: "doc.on.doc")
                         .font(.caption)
@@ -730,7 +706,7 @@ struct DashboardView: View {
                         Spacer()
                         if let version = CoreBridge.shared.backendVersion {
                             Text("v\(version)")
-                                .font(.caption)
+                                .font(.caption.monospacedDigit())
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -774,8 +750,6 @@ struct DashboardView: View {
         briefing = brief
     }
 
-    /// Failures from individual panel loads land here so they can be
-    /// surfaced (and retried) instead of silently blanking a panel.
     private func recordLoadError(_ panel: String, _ error: Error) {
         loadErrors.append("\(panel): \(error.localizedDescription)")
     }
@@ -837,9 +811,6 @@ struct DashboardView: View {
         }
     }
 
-    /// The most recent working session across all workspaces
-    /// (`get_smart_resume_session`); drives the "resume last session"
-    /// fallback when there is no unfinished work in the current workspace.
     private func loadLastSession() async -> SessionSummary? {
         do {
             return try await CoreBridge.shared.request(
@@ -851,10 +822,6 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Recommendation explanations
-
-    /// Fetches `explain_recommendation` for one recommendation. Failures
-    /// surface inline next to the row (never silently).
     private func loadExplanation(for recommendation: Recommendation) async {
         explainingId = recommendation.id
         explainError = nil
@@ -874,8 +841,6 @@ struct DashboardView: View {
         explainingId = nil
     }
 
-    /// Refreshes only the forward-looking panels after a live
-    /// intelligence event.
     private func refreshIntelligence() async {
         loadErrors.removeAll { $0.hasPrefix("Predictions")
             || $0.hasPrefix("Recommendations")
@@ -901,9 +866,6 @@ struct DashboardView: View {
 
     // MARK: - Workspace switching
 
-    /// Real resume: makes the workspace active in the daemon (context
-    /// tracking, sessions, and timeline follow), then lets the refreshed
-    /// workspace list drive the hero update.
     private func switchToWorkspace(id: String, name: String) async {
         isSwitching = true
         defer { isSwitching = false }
@@ -975,7 +937,7 @@ struct ExplanationSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !explanation.supportingEvidence.isEmpty {
-                Divider().opacity(0.5)
+                Hairline()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Supporting evidence")
                         .font(.caption.weight(.semibold))
@@ -1071,8 +1033,10 @@ struct HealthFact: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
                 Text(value)
                     .font(.callout.weight(.medium))
                     .monospacedDigit()

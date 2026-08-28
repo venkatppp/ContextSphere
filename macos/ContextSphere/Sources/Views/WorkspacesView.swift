@@ -31,66 +31,70 @@ struct WorkspacesView: View {
     }
 
     var body: some View {
-        AnyView(
-            workspacesContent
-                .background(ContentBackdrop())
-                .toolbar {
-                    ToolbarItem { newWorkspaceToolbarButton }
-                }
-                .onChange(of: selected) { _, newValue in
-                    guard let newValue else {
-                        detail = nil
-                        detailError = nil
-                        isLoadingDetail = false
-                        return
+        workspacesContent
+            .background(ContentBackdrop())
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { showCreate = true }) {
+                        Label("New Workspace", systemImage: "plus")
                     }
-                    Task { await loadDetail(newValue) }
+                    .help("Create a new workspace")
+                    .accessibilityLabel("Create new workspace")
                 }
-                .onChange(of: router.newWorkspaceRequest) { _, requested in
-                    guard requested else { return }
-                    router.newWorkspaceRequest = false
-                    showCreate = true
+            }
+            .onChange(of: selected) { _, newValue in
+                guard let newValue else {
+                    detail = nil
+                    detailError = nil
+                    isLoadingDetail = false
+                    return
                 }
-                .onChange(of: router.revealWorkspaceRequest) { _, requestedID in
-                    handleReveal(requestedID)
-                }
-                .sheet(isPresented: $showCreate) {
-                    CreateWorkspaceSheet(onCreated: { workspace in
-                        selected = workspace
-                        triggerReload()
-                    })
-                }
-        .sheet(isPresented: $showEdit) {
-            if let detail {
-                EditWorkspaceSheet(workspace: detail, onSaved: { updated in
-                    self.detail = updated
-                    selected = updated
+                Task { await loadDetail(newValue) }
+            }
+            .onChange(of: router.newWorkspaceRequest) { _, requested in
+                guard requested else { return }
+                router.newWorkspaceRequest = false
+                showCreate = true
+            }
+            .onChange(of: router.revealWorkspaceRequest) { _, requestedID in
+                handleReveal(requestedID)
+            }
+            .sheet(isPresented: $showCreate) {
+                CreateWorkspaceSheet(onCreated: { workspace in
+                    selected = workspace
                     triggerReload()
                 })
             }
-        }
-                .confirmationDialog("Delete workspace?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                    Button("Delete", role: .destructive) {
-                        Task { await deleteSelected() }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    if let detail {
-                        Text("“\(detail.name)” and its timeline will be removed from ContextSphere. Files on disk are not deleted.")
-                    }
+            .sheet(isPresented: $showEdit) {
+                if let detail {
+                    EditWorkspaceSheet(workspace: detail, onSaved: { updated in
+                        self.detail = updated
+                        selected = updated
+                        triggerReload()
+                    })
                 }
-        .confirmationDialog(archiveTitle, isPresented: $showArchiveConfirm, titleVisibility: .visible) {
-            Button(archiveActionTitle) {
-                Task { await toggleArchive() }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(archiveMessage)
-        }
-        )
+            .confirmationDialog("Delete workspace?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    Task { await deleteSelected() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let detail {
+                    Text("“\(detail.name)” and its timeline will be removed from ContextSphere. Files on disk are not deleted.")
+                }
+            }
+            .confirmationDialog(archiveTitle, isPresented: $showArchiveConfirm, titleVisibility: .visible) {
+                Button(archiveActionTitle) {
+                    Task { await toggleArchive() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(archiveMessage)
+            }
     }
 
-    // MARK: Header
+    // MARK: - Header
 
     private var header: some View {
         ScreenHeader(
@@ -98,24 +102,27 @@ struct WorkspacesView: View {
             subtitle: workspaces.isEmpty
                 ? "Organize your work into contexts ContextSphere can understand."
                 : "\(activeWorkspaces.count) active · \(archivedWorkspaces.count) archived",
-            symbol: "folder"
+            symbol: "folder",
+            eyebrow: "Workspace"
         ) {
-            if !workspaces.isEmpty {
-                Text("\(workspaces.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.quaternary.opacity(0.4), in: Capsule())
-                    .accessibilityLabel("\(workspaces.count) workspaces")
+            HStack(spacing: 8) {
+                if !workspaces.isEmpty {
+                    Text("\(workspaces.count)")
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.quaternary.opacity(0.4), in: Capsule(style: .continuous))
+                        .accessibilityLabel("\(workspaces.count) workspaces")
+                }
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(.quaternary.opacity(0.6), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous)
+                .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
         )
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -123,30 +130,22 @@ struct WorkspacesView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var newWorkspaceToolbarButton: some View {
-        Button(action: { showCreate = true }) {
-            Image(systemName: "plus")
-        }
-        .help("Create a new workspace")
-        .accessibilityLabel("Create new workspace")
-    }
-
     private var workspacesContent: some View {
         VStack(spacing: 0) {
             header
             HSplitView {
                 masterList
-                    .frame(minWidth: 260, idealWidth: 320)
+                    .frame(minWidth: 280, idealWidth: 320)
                 detailPane
-                    .frame(minWidth: 380)
+                    .frame(minWidth: 400)
             }
         }
     }
 
-    // MARK: Master
+    // MARK: - Master
 
     private var masterList: some View {
-        Group {
+        VStack(spacing: 0) {
             if workspaces.isEmpty {
                 masterEmpty
             } else {
@@ -156,13 +155,14 @@ struct WorkspacesView: View {
                             ForEach(activeWorkspaces) { workspace in
                                 WorkspaceListRow(workspace: workspace, isSelected: selected?.id == workspace.id)
                                     .tag(workspace)
-                                    .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                                    .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
+                                    .listRowSeparator(.hidden)
                                     .contextMenu { rowContextMenu(for: workspace) }
                             }
                         } header: {
-                            Label("Active", systemImage: "folder.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            SectionHeader(title: "Active", symbol: "folder.fill")
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 4)
                         }
                     }
                     if !archivedWorkspaces.isEmpty {
@@ -170,13 +170,14 @@ struct WorkspacesView: View {
                             ForEach(archivedWorkspaces) { workspace in
                                 WorkspaceListRow(workspace: workspace, isSelected: selected?.id == workspace.id)
                                     .tag(workspace)
-                                    .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                                    .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
+                                    .listRowSeparator(.hidden)
                                     .contextMenu { rowContextMenu(for: workspace) }
                             }
                         } header: {
-                            Label("Archived", systemImage: "archivebox")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            SectionHeader(title: "Archived", symbol: "archivebox")
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 4)
                         }
                     }
                 }
@@ -186,7 +187,7 @@ struct WorkspacesView: View {
         }
         .background(.regularMaterial)
         .overlay(
-            Rectangle().fill(.separator).frame(width: 1),
+            Rectangle().fill(.separator.opacity(0.6)).frame(width: 1),
             alignment: .trailing
         )
     }
@@ -241,7 +242,7 @@ struct WorkspacesView: View {
     private var masterEmpty: some View {
         VStack(spacing: 12) {
             Image(systemName: "folder.badge.plus")
-                .font(.system(size: 28))
+                .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("No workspaces yet")
                 .font(.headline)
@@ -264,7 +265,7 @@ struct WorkspacesView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: Detail
+    // MARK: - Detail
 
     @ViewBuilder
     private var detailPane: some View {
@@ -285,13 +286,15 @@ struct WorkspacesView: View {
                 EmptyStateView(title: "Could not load workspace",
                                message: detailError, symbol: "exclamationmark.triangle")
             } else {
-                EmptyStateView(title: "Select a workspace",
-                               message: "Choose a workspace to see its details, health, and description.",
-                               symbol: "folder")
+                EmptyStateView(
+                    title: "Select a workspace",
+                    message: "Choose a workspace from the list to see its health, metrics, and recent activity.",
+                    symbol: "folder"
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.6))
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
     }
 
     private func loadDetail(_ workspace: Workspace) async {
@@ -351,7 +354,7 @@ struct WorkspacesView: View {
         }
     }
 
-    // MARK: Mutations
+    // MARK: - Mutations
 
     private func toggleArchive() async {
         guard let detail else { return }

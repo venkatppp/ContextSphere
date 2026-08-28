@@ -17,29 +17,15 @@ struct WorkspaceDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 18) {
                 identity
                 if let error = mutationError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("Error: \(error)")
+                    StatusBanner(message: "Action failed", style: .error, detail: error)
                 }
                 metrics
                 workspaceHealthCard
                 if let description = workspace.description, !description.isEmpty {
-                    ContentCard {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Description", systemImage: "text.alignleft")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Text(description)
-                                .font(.callout)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    descriptionCard(description)
                 }
                 meta
                 actions
@@ -60,6 +46,28 @@ struct WorkspaceDetailView: View {
             guard let id = note.userInfo?["workspaceId"] as? String,
                   id == workspace.id else { return }
             Task { await loadHealth() }
+        }
+    }
+
+    private func descriptionCard(_ description: String) -> some View {
+        ContentCard {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Description")
+                        .font(.csEyebrow())
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                }
+                Text(description)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         }
     }
 

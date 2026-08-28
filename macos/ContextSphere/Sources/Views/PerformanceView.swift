@@ -34,13 +34,15 @@ struct PerformanceView: View {
     private var header: some View {
         ScreenHeader("Performance",
                      subtitle: viewModel.startup.map { "Last launch \($0.totalMs) ms · \($0.stages.count) stages" } ?? "What ContextSphere is doing right now",
-                     symbol: "gauge.with.dots.needle.67percent") {
+                     symbol: "gauge.with.dots.needle.67percent",
+                     eyebrow: "System") {
             HStack(spacing: 8) {
                 Button {
                     Task { await viewModel.refreshAll() }
                 } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
                 }
+                .buttonStyle(.borderless)
                 .help("Refresh performance")
                 Menu {
                     Button("Run Benchmark") { Task { await viewModel.runBenchmark() } }
@@ -67,12 +69,12 @@ struct PerformanceView: View {
     }
 
     private func errorState(_ msg: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.orange)
-            Text("Performance unavailable").font(.title3.weight(.semibold))
-            Text(msg).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
-            Button("Retry") { Task { await viewModel.refreshAll() } }.buttonStyle(.borderedProminent)
-        }.frame(maxWidth: .infinity).padding(32)
+        EmptyStateView(
+            title: "Performance unavailable",
+            message: msg,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { Task { await viewModel.refreshAll() } })
+        )
     }
 
     private var loadedContent: some View {

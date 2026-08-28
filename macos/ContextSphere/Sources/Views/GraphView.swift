@@ -25,28 +25,28 @@ struct GraphScreen: View {
             ZStack(alignment: .topLeading) {
                 canvasArea(geo.size)
                 searchSurface
-                    .padding(16)
+                    .padding(20)
                 if viewModel.isExpanding {
                     expandingBadge
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 18)
+                        .padding(.bottom, 22)
                 }
                 statusBar
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(16)
+                    .padding(20)
                 controls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(16)
+                    .padding(20)
                 if viewModel.showInspector {
                     GraphInspectorView(viewModel: viewModel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        .padding(16)
+                        .padding(20)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
                 stateOverlay
                 debugFooter
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .padding(16)
+                    .padding(20)
                     .allowsHitTesting(false)
             }
         }
@@ -194,29 +194,50 @@ struct GraphScreen: View {
         viewModel.consumeFocusRequest()
     }
 
+    // MARK: - Search surface
+
     private var searchSurface: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Find in context…", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
+                    .font(.system(size: 13))
                     .onSubmit { viewModel.submitSearch() }
                     .accessibilityLabel("Search graph nodes")
-                if viewModel.isSearching { ProgressView().controlSize(.small).accessibilityLabel("Searching graph") }
+                if viewModel.isSearching {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("Searching graph")
+                }
                 if !viewModel.searchQuery.isEmpty {
                     Button { viewModel.clearSearch() } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }.buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear graph search")
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                    .accessibilityLabel("Clear graph search")
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .frame(width: 300)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(width: 320)
+            .glassEffect(.regular.interactive(),
+                         in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
             if let e = viewModel.searchError {
-                Text(e).font(.caption).foregroundStyle(.red).padding(10)
+                Text(e)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(10)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                    .frame(width: 300, alignment: .leading)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                            .strokeBorder(.separator, lineWidth: 0.5)
+                    )
+                    .frame(width: 320, alignment: .leading)
             }
             if !viewModel.searchQuery.isEmpty && !viewModel.isSearching && !viewModel.searchResults.isEmpty {
                 searchResultsList
@@ -226,32 +247,54 @@ struct GraphScreen: View {
 
     private var searchResultsList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
+            LazyVStack(alignment: .leading, spacing: 1) {
                 ForEach(viewModel.searchResults) { node in
                     Button { viewModel.focusSearchResult(node) } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: node.nodeType.symbol).font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(node.nodeType.color).frame(width: 16).accessibilityHidden(true)
+                            Image(systemName: node.nodeType.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(node.nodeType.color)
+                                .frame(width: 16)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(node.title).font(.callout.weight(.medium)).lineLimit(1).foregroundStyle(.primary)
+                                Text(node.title)
+                                    .font(.callout.weight(.medium))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.primary)
                                 HStack(spacing: 6) {
-                                    Text(node.nodeType.title).font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                                    Text(node.nodeType.title)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.secondary)
                                     if let ws = viewModel.workspaceName(for: node) {
-                                        Text(ws).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                                        Text("· \(ws)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
                                     }
                                 }
                             }
                             Spacer(minLength: 4)
-                        }.padding(.horizontal, 10).padding(.vertical, 7).contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-            }.padding(6)
+            }
+            .padding(6)
         }
-        .frame(width: 300).frame(maxHeight: 320)
+        .frame(width: 320)
+        .frame(maxHeight: 320)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                .strokeBorder(.separator, lineWidth: 0.5)
+        )
         .accessibilityLabel("Graph search results")
     }
+
+    // MARK: - Controls (glass)
 
     private var controls: some View {
         HStack(spacing: 4) {
@@ -286,8 +329,13 @@ struct GraphScreen: View {
                 }
 #endif
             } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle").frame(width: 26, height: 26)
-            }.menuStyle(.borderlessButton).fixedSize().help("Density & demo").accessibilityLabel("Graph options")
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Density & demo")
+            .accessibilityLabel("Graph options")
             glassControlButton(viewModel.showInspector ? "sidebar.right.fill" : "sidebar.right",
                                help: viewModel.showInspector ? "Hide inspector" : "Show inspector") {
                 viewModel.showInspector.toggle()
@@ -299,27 +347,50 @@ struct GraphScreen: View {
 
     private func glassControlButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
-        }.buttonStyle(.plain).contentShape(Rectangle()).help(help).accessibilityLabel(help)
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .help(help)
+        .accessibilityLabel(help)
     }
+
+    // MARK: - Status bar
 
     private var statusBar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Text("\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships")
-                    .font(.caption).foregroundStyle(.secondary)
-                if viewModel.isTruncated {
-                    Text("· showing first \(viewModel.nodes.count) of \(viewModel.totalNodeCount)")
-                        .font(.caption2).foregroundStyle(.orange)
-                }
-                if viewModel.contextFocusID != nil { Text("· focused").font(.caption2).foregroundStyle(.orange) }
-                if camera.semanticLevel == .overview { Text("· overview").font(.caption2).foregroundStyle(.tertiary) }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(.regularMaterial, in: Capsule())
-            .accessibilityLabel("\(viewModel.nodes.count) nodes, \(viewModel.visibleEdges.count) relationships")
+            statusPill
             workspacePicker
         }
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 6) {
+            Text("\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if viewModel.isTruncated {
+                Text("· showing first \(viewModel.nodes.count) of \(viewModel.totalNodeCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+            if viewModel.contextFocusID != nil {
+                Text("· focused")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+            if camera.semanticLevel == .overview {
+                Text("· overview")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
+        .accessibilityLabel("\(viewModel.nodes.count) nodes, \(viewModel.visibleEdges.count) relationships")
     }
 
     private var workspacePicker: some View {
@@ -328,8 +399,10 @@ struct GraphScreen: View {
             Text("All workspaces").tag(String?.none)
             ForEach(viewModel.workspaces) { ws in Text(ws.name).tag(Optional(ws.id)) }
         }
-        .pickerStyle(.menu).fixedSize()
-        .padding(.horizontal, 10).padding(.vertical, 5)
+        .pickerStyle(.menu)
+        .fixedSize()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .background(.regularMaterial, in: Capsule())
         .accessibilityLabel("Graph context workspace")
     }
@@ -337,77 +410,107 @@ struct GraphScreen: View {
     private var expandingBadge: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Expanding…").font(.callout).foregroundStyle(.secondary)
-        }.padding(.horizontal, 14).padding(.vertical, 8).glassEffect(.regular, in: Capsule())
+            Text("Expanding…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: Capsule())
     }
 
     private var debugFooter: some View {
         HStack(spacing: 8) {
             Text(String(format: "layout %.1f ms", viewModel.lastLayoutDurationMs))
-                .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
             Text("· zoom \(String(format: "%.2f", camera.zoom)) · \(camera.semanticLevel.rawValue)")
-                .font(.caption2).foregroundStyle(.tertiary)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
         .background(.regularMaterial.opacity(0.7), in: Capsule())
         .opacity(viewModel.nodes.isEmpty ? 0 : 1)
         .accessibilityHidden(true)
         .allowsHitTesting(false)
     }
 
+    // MARK: - State overlay
+
     @ViewBuilder private var stateOverlay: some View {
         switch viewModel.state {
         case .idle, .loading:
             LoadingView(label: "Loading context field…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity).background(.background.opacity(0.35))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background.opacity(0.35))
         case .failed(let m):
-            VStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle").font(.system(size: 32)).foregroundStyle(.orange)
+            VStack(spacing: 14) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 32, weight: .light))
+                    .foregroundStyle(.orange)
                 Text("Graph unavailable").font(.title3.weight(.semibold))
-                Text(humanGraphError(m)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
+                Text(humanGraphError(m))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
                 if humanGraphError(m) != m {
-                    Text(m).font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 420).textSelection(.enabled)
+                    Text(m)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                        .textSelection(.enabled)
                 }
                 HStack(spacing: 10) {
-                    Button("Retry") { viewModel.retry() }.buttonStyle(.borderedProminent).controlSize(.small)
+                    Button("Retry") { viewModel.retry() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                         .accessibilityLabel("Retry loading graph")
-                    Button("Refresh") { viewModel.refresh() }.buttonStyle(.bordered).controlSize(.small)
+                    Button("Refresh") { viewModel.refresh() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
 #if DEBUG
-                    Button("Load Demo") { viewModel.loadFixture() }.buttonStyle(.bordered).controlSize(.small)
+                    Button("Load Demo") { viewModel.loadFixture() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
 #endif
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.background.opacity(0.45))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.background.opacity(0.45))
         case .loaded:
             if viewModel.nodes.isEmpty {
-                VStack(spacing: 10) {
-#if DEBUG
-                    EmptyStateView(title: "No graph data yet",
-                                   message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and open files; the knowledge graph syncs automatically. Use the demo fixture to explore the Context Field.",
-                                   symbol: "point.3.connected.trianglepath.dotted")
-#else
-                    EmptyStateView(title: "No graph data yet",
-                                   message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and files to see the context field’s relationships unfold. Edits, opens and commits sync into the graph automatically.",
-                                   symbol: "point.3.connected.trianglepath.dotted")
-#endif
-                    if let hint = viewModel.lastError {
-                        Text(hint).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
-                    }
-                    Button("Retry") { viewModel.retry() }.buttonStyle(.bordered).controlSize(.small)
-                        .accessibilityLabel("Retry loading graph")
-                }.background(.background.opacity(0.3))
+                EmptyStateView(
+                    title: "No graph data yet",
+                    message: "ContextSphere builds the graph from your workspaces and files. Add a workspace and open files; the knowledge graph syncs automatically.",
+                    symbol: "point.3.connected.trianglepath.dotted",
+                    primaryAction: ("Retry", { viewModel.retry() })
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background.opacity(0.3))
             } else if let hint = viewModel.lastError {
                 // Subtle inline warning when graph is shown but a subgraph/edge was stale.
                 VStack {
                     Spacer()
                     HStack(spacing: 8) {
-                        Image(systemName: "info.circle").foregroundStyle(.secondary)
-                        Text(hint).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        Button("Dismiss") { viewModel.clearTransientError() }.buttonStyle(.borderless).controlSize(.small)
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                        Text(hint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Button("Dismiss") { viewModel.clearTransientError() }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 56)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 64)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
     }

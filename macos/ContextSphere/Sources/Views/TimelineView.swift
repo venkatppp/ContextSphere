@@ -22,7 +22,7 @@ struct TimelineView: View {
                 header
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous))
             }
         }
         .task { await viewModel.initialLoadIfNeeded() }
@@ -78,11 +78,24 @@ struct TimelineView: View {
     private var header: some View {
         ScreenHeader("Timeline",
                      subtitle: subtitle,
-                     symbol: "clock") {
-            HStack(spacing: 10) {
+                     symbol: "clock",
+                     eyebrow: "Workspace") {
+            HStack(spacing: 8) {
                 workspacePicker
                 typePicker
-                refreshButton
+                Button {
+                    Task { await viewModel.refresh() }
+                } label: {
+                    if viewModel.isFetching {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh timeline")
+                .accessibilityLabel("Refresh timeline")
             }
         }
     }
@@ -122,21 +135,6 @@ struct TimelineView: View {
         .pickerStyle(.menu)
         .fixedSize()
         .accessibilityLabel("Filter timeline by event type")
-    }
-
-    private var refreshButton: some View {
-        Button {
-            Task { await viewModel.refresh() }
-        } label: {
-            if viewModel.isFetching {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "arrow.clockwise")
-            }
-        }
-        .disabled(viewModel.isFetching)
-        .help("Refresh timeline")
-        .accessibilityLabel("Refresh timeline")
     }
 
     // MARK: - Content
@@ -179,66 +177,35 @@ struct TimelineView: View {
     }
 
     private func errorState(_ message: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(.orange)
-            Text("Timeline unavailable").font(.title3.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Button("Retry") {
-                Task { await viewModel.refresh() }
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Retry loading the timeline")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "Timeline unavailable",
+            message: message,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { Task { await viewModel.refresh() } })
+        )
     }
 
     private func emptyState(title: String, message: String, symbol: String,
                             actionTitle: String? = nil, action: (() -> Void)? = nil) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
-            Text(title).font(.title3.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .accessibilityLabel(actionTitle)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: title,
+            message: message,
+            symbol: symbol,
+            primaryAction: actionTitle.map { (label: $0, perform: action ?? {}) }
+        )
     }
 
     private var eventList: some View {
         VStack(alignment: .leading, spacing: 0) {
             sessionsStrip
             if let lastError = viewModel.lastError {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("Refresh failed: \(lastError)").lineLimit(1)
-                    Spacer()
-                    Button("Retry") {
-                        Task { await viewModel.refresh() }
-                    }
-                    .font(.callout)
-                }
-                .font(.callout)
-                .padding(10)
-                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                StatusBanner(
+                    message: "Refresh failed",
+                    style: .warning,
+                    detail: lastError,
+                    primaryAction: ("Retry", { Task { await viewModel.refresh() } })
+                )
                 .padding(.bottom, 12)
-                .accessibilityLabel("Refresh failed: \(lastError)")
             }
 
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -281,6 +248,17 @@ struct TimelineView: View {
     private var sessionsStrip: some View {
         if !viewModel.sessions.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "rectangle.stack")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Sessions")
+                        .font(.csEyebrow())
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                    Spacer()
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(viewModel.sessions) { session in
@@ -306,27 +284,28 @@ struct TimelineView: View {
         return Button {
             viewModel.selectSession(session.id)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(start.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Label(Self.durationText(session.durationSeconds), systemImage: "clock")
-                    Label("\(session.eventCount)", systemImage: "list.bullet")
-                    Label("\(session.fileCount) files", systemImage: "doc")
+                    Text("· \(session.eventCount) events")
+                    Text("· \(session.fileCount) files")
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.vertical, 8)
+            .frame(width: 200, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.55)) : AnyShapeStyle(.quaternary),
+                RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.25),
                                   lineWidth: isSelected ? 1 : 0.5)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         }
         .buttonStyle(.plain)
         .help("Filter the feed to this work session")
@@ -341,14 +320,21 @@ struct TimelineView: View {
     private func groupHeader(_ group: TimelineViewModel.DayGroup) -> some View {
         HStack(spacing: 10) {
             Text(group.label)
-                .font(.headline)
-                .foregroundStyle(.primary)
+                .font(.csEyebrow())
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+            Text("· \(group.events.count) events")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             Rectangle()
-                .fill(.quaternary)
-                .frame(height: 1)
+                .fill(.quaternary.opacity(0.5))
+                .frame(height: 0.5)
         }
         .padding(.top, 18)
         .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
         .accessibilityLabel("\(group.label), \(group.events.count) events")
     }
 
@@ -362,6 +348,8 @@ struct TimelineView: View {
     }
 }
 
+// MARK: - Row
+
 /// One timeline entry: type marker, human-readable description, artifact,
 /// workspace, and timestamp. File-backed events are tappable and vend a
 /// native macOS context menu (Open / Reveal / Copy).
@@ -371,6 +359,7 @@ struct TimelineEventRow: View {
     let isLast: Bool
     var isFocused: Bool = false
     var onOpen: ((String) -> Void)? = nil
+    @State private var isHovered = false
 
     private var primaryPath: String? {
         event.metadata?.string("path")
@@ -384,72 +373,57 @@ struct TimelineEventRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(spacing: 3) {
-                Circle()
-                    .fill(event.eventType.color)
-                    .frame(width: 8, height: 8)
-                    .overlay(Circle().strokeBorder(.background.opacity(0.6), lineWidth: 1))
+            // Rail with a node for the event
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(event.eventType.color.opacity(0.18))
+                        .frame(width: 22, height: 22)
+                    Circle()
+                        .fill(event.eventType.color)
+                        .frame(width: 8, height: 8)
+                }
+                .padding(.top, 6)
                 if !isLast {
                     Rectangle()
-                        .fill(Color.primary.opacity(0.09))
+                        .fill(Color.primary.opacity(0.08))
                         .frame(width: 1)
                         .frame(maxHeight: .infinity)
                 }
             }
-            .frame(width: 8)
+            .frame(width: 22)
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: event.eventType.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(event.eventType.color)
-                        .accessibilityHidden(true)
-                    Text(event.displayTitle)
-                        .font(.callout.weight(.medium))
-                    Spacer()
-                    Text(event.occurredAtDate.formatted(date: .omitted, time: .shortened))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if isFileEvent {
-                        Image(systemName: "arrow.up.forward.app")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                rowHeader
                 if let artifact = event.artifactName {
                     Text(artifact)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                HStack(spacing: 6) {
-                    if let workspaceName {
-                        Text(workspaceName)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    if let detail = event.displayDetail {
-                        Text(detail)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
+                if let detail = event.displayDetail, detail != event.artifactName {
+                    Text(detail)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let workspaceName {
+                    Text(workspaceName)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isFocused
-                        ? AnyShapeStyle(Color.accentColor.opacity(0.5))
-                        : AnyShapeStyle(.separator),
-                        lineWidth: isFocused ? 1 : 0.5)
-            )
+            .background(rowBackground)
+            .overlay(rowOverlay)
         }
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onTapGesture {
             guard let path = primaryPath else { return }
             onOpen?(path)
@@ -486,6 +460,50 @@ struct TimelineEventRow: View {
         .accessibilityLabel(accessibilityText)
         .accessibilityHint(isFileEvent ? "Double-click to open file, right-click for more actions" : "Timeline event")
         .accessibilityAddTraits(isFileEvent ? .isButton : [])
+    }
+
+    private var rowHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: event.eventType.symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(event.eventType.color)
+                .accessibilityHidden(true)
+            Text(event.displayTitle)
+                .font(.callout.weight(.medium))
+            Spacer()
+            Text(event.occurredAtDate.formatted(date: .omitted, time: .shortened))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+            if isFileEvent {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.caption2)
+                    .foregroundStyle(isHovered ? .secondary : .tertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            .fill(rowBackgroundStyle)
+    }
+
+    private var rowBackgroundStyle: AnyShapeStyle {
+        if isHovered || isFocused {
+            return AnyShapeStyle(.regularMaterial)
+        }
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private var rowOverlay: some View {
+        RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            .strokeBorder(rowBorderColor, lineWidth: 0.5)
+    }
+
+    private var rowBorderColor: Color {
+        if isFocused { return Color.accentColor.opacity(0.5) }
+        if isHovered { return Color.secondary.opacity(0.25) }
+        return Color.clear
     }
 
     private var accessibilityText: String {
