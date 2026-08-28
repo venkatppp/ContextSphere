@@ -1250,6 +1250,9 @@ pub fn run() {
                 if let Some(manager) = app_handle.try_state::<RecoveryManager>() {
                     let _ = tauri::async_runtime::block_on(manager.record_clean_shutdown());
                 }
+                if let Some(watcher) = app_handle.try_state::<FileWatcher>() {
+                    let _ = tauri::async_runtime::block_on(watcher.stop_all());
+                }
             }
         });
 }

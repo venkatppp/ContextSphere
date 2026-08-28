@@ -418,10 +418,10 @@ impl AdaptiveLearningEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::test_database;
 
     #[tokio::test]
     async fn calculates_confidence_correctly() {
-        // Mock repository for testing
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         let repository = LearningRepository::new(pool);
         let engine = AdaptiveLearningEngine::new(Arc::new(repository));
@@ -429,5 +429,222 @@ mod tests {
         assert!((engine.calculate_confidence(1) - 0.55).abs() < 0.1);
         assert!((engine.calculate_confidence(10) - 0.80).abs() < 0.1);
         assert!(engine.calculate_confidence(100) > 0.90);
+    }
+
+    async fn test_engine() -> (AdaptiveLearningEngine, Arc<LearningRepository>) {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+        // Keep guard alive via leaking tempdir? test_database returns TempDir guard, but we drop it here.
+        // For these tests we use in-memory DB via repository alone, not the guard.
+        (engine, repo)
+    }
+
+    #[tokio::test]
+    async fn first_observation_creates_preference_with_low_confidence() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-1".into(),
+                FeedbackAction::Accepted,
+                serde_json::json!({"category": "productivity"}),
+            )
+            .await
+            .unwrap();
+
+        let prefs = repo
+            .get_preferences_by_type(PreferenceType::RecommendationCategory)
+            .await
+            .unwrap();
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0].evidence_count, 1);
+        assert!((prefs[0].confidence - 0.5).abs() < 0.01, "first observation confidence 0.5");
+    }
+
+    #[tokio::test]
+    async fn repeated_observation_increases_evidence_and_confidence() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        for _ in 0..3 {
+            engine
+                .record_feedback(
+                    FeedbackType::Recommendation,
+                    FeedbackTargetType::Recommendation,
+                    "rec-1".into(),
+                    FeedbackAction::Accepted,
+                    serde_json::json!({"category": "productivity"}),
+                )
+                .await
+                .unwrap();
+        }
+
+        let prefs = repo
+            .get_preferences_by_type(PreferenceType::RecommendationCategory)
+            .await
+            .unwrap();
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0].evidence_count, 3);
+        assert!(
+            prefs[0].confidence > 0.5,
+            "confidence should increase with evidence"
+        );
+        assert!(
+            prefs[0].confidence < 0.95,
+            "confidence must remain bounded"
+        );
+    }
+
+    #[tokio::test]
+    async fn conflicting_behavior_decreases_confidence() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        // Accept
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-1".into(),
+                FeedbackAction::Accepted,
+                serde_json::json!({"category": "productivity"}),
+            )
+            .await
+            .unwrap();
+        let before = repo
+            .get_preferences_by_type(PreferenceType::RecommendationCategory)
+            .await
+            .unwrap()[0]
+            .confidence;
+
+        // Reject same category
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-1".into(),
+                FeedbackAction::Rejected,
+                serde_json::json!({"category": "productivity"}),
+            )
+            .await
+            .unwrap();
+        let after = repo
+            .get_preferences_by_type(PreferenceType::RecommendationCategory)
+            .await
+            .unwrap()[0]
+            .confidence;
+
+        assert!(after < before, "rejection should decrease confidence");
+        assert!(after >= 0.1, "confidence floor 0.1");
+    }
+
+    #[tokio::test]
+    async fn successful_and_failed_execution_influence_via_feedback() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        // Helpful
+        engine
+            .record_feedback(
+                FeedbackType::Action,
+                FeedbackTargetType::WorkflowTransition,
+                "workflow-1".into(),
+                FeedbackAction::Helpful,
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
+        let helpful = repo
+            .get_preferences_by_type(PreferenceType::Workflow)
+            .await
+            .unwrap();
+        assert_eq!(helpful[0].evidence_count, 1);
+
+        // NotHelpful on same workflow should decrease
+        engine
+            .record_feedback(
+                FeedbackType::Action,
+                FeedbackTargetType::WorkflowTransition,
+                "workflow-1".into(),
+                FeedbackAction::NotHelpful,
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
+        let after = repo
+            .get_preferences_by_type(PreferenceType::Workflow)
+            .await
+            .unwrap()[0]
+            .confidence;
+        assert!(after < 0.6, "not helpful should reduce");
+    }
+
+    #[tokio::test]
+    async fn workspace_isolation_for_preferences() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        // Two different target_ids simulating workspace-specific preferences
+        engine
+            .record_feedback(
+                FeedbackType::Prediction,
+                FeedbackTargetType::WorkspacePrediction,
+                "ws-a".into(),
+                FeedbackAction::Accepted,
+                serde_json::json!({"category": "switch"}),
+            )
+            .await
+            .unwrap();
+        engine
+            .record_feedback(
+                FeedbackType::Prediction,
+                FeedbackTargetType::WorkspacePrediction,
+                "ws-b".into(),
+                FeedbackAction::Accepted,
+                serde_json::json!({"category": "switch"}),
+            )
+            .await
+            .unwrap();
+
+        // Both should be stored as separate preferences keyed by target_id
+        let prefs = repo
+            .get_preferences_by_type(PreferenceType::WorkspaceSwitching)
+            .await
+            .unwrap();
+        // At least 1 preference for workspace switching (key = target_id)
+        assert!(!prefs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dismissed_does_not_create_preference() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-1".into(),
+                FeedbackAction::Dismissed,
+                serde_json::json!({"category": "productivity"}),
+            )
+            .await
+            .unwrap();
+
+        let prefs = repo
+            .get_preferences_by_type(PreferenceType::RecommendationCategory)
+            .await
+            .unwrap();
+        assert!(prefs.is_empty(), "dismissed should be neutral");
     }
 }

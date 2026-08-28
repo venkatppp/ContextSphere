@@ -84,6 +84,10 @@ fn main() {
                 {
                     let _ = tauri::async_runtime::block_on(manager.record_clean_shutdown());
                 }
+                if let Some(watcher) = app_handle.try_state::<chronodesk_lib::watcher::FileWatcher>()
+                {
+                    let _ = tauri::async_runtime::block_on(watcher.stop_all());
+                }
             }
         });
 }

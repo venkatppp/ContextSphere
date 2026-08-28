@@ -252,6 +252,20 @@ impl FileRepository {
         Ok(())
     }
 
+    /// Updates the FTS5 `search_index` body for a file artifact.
+    ///
+    /// Called after a file is created or modified to keep filename+path
+    /// search augmented with local file content (text files <256KB, 10k chars).
+    /// No-op if the row is missing (e.g. search index not yet created).
+    pub async fn update_search_body(&self, id: Uuid, body: String) -> Result<(), DatabaseError> {
+        sqlx::query("UPDATE search_index SET body = ? WHERE entity_type = 'file' AND entity_id = ?")
+            .bind(body)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// Deletes a single artifact. Any `timeline_events` row referencing it
     /// has its `file_id` set to `NULL` (schema's `ON DELETE SET NULL`) —
     /// the historical event is kept, just detached from the now-gone file.

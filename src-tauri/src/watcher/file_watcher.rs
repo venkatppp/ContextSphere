@@ -158,6 +158,15 @@ impl FileWatcher {
         self.active.lock().await.keys().cloned().collect()
     }
 
+    /// Stops all active watches and aborts their background tasks.
+    /// Used for graceful shutdown on `RunEvent::Exit`.
+    pub async fn stop_all(&self) {
+        let mut active = self.active.lock().await;
+        for (_, handle) in active.drain() {
+            handle.stop();
+        }
+    }
+
     /// Spawns the three background tasks that make up one watch's
     /// pipeline (OS watch + reconnect, intake/normalize, debounce-drain
     /// + record) and returns a handle to stop them.
