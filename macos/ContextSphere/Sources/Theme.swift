@@ -1,21 +1,365 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Design tokens
+// MARK: - Design system
 //
 // ContextSphere's design language.
 //
 // Principles:
 // - Calm content layer, glass for navigation/control layer only.
 // - Native materials and controls — nothing faked.
-// - Hierarchy comes from spacing, typography, and material depth.
+// - Hierarchy from spacing, typography, and material depth.
 // - Information density without clutter (Raycast, Linear, Things).
-// - Liquid Glass is intentional: sidebar, toolbar, hero chrome, search field,
-//   command palette. Content uses standard materials, not glass-on-glass.
+// - Liquid Glass is intentional: sidebar, toolbar, hero chrome, search
+//   field, command palette. Content uses standard materials.
+// - Semantic tokens over hardcoded values. Every screen reads from the
+//   same palette. Dark and light are first-class themes.
+
+// MARK: - Theme mode
+
+/// User-selectable theme. `system` follows macOS appearance.
+enum AppearanceMode: String, CaseIterable, Identifiable, Hashable, Codable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+    /// Resolves the mode against the current system appearance.
+    func resolved(scheme: ColorScheme) -> ColorScheme {
+        switch self {
+        case .system: scheme
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+// MARK: - Semantic tokens
+
+/// All semantic colors used by the app. Two palettes, one for dark, one
+/// for light. Resolved via `Color.cs(...)` extensions at the call site.
+enum CSColor {
+    // Layered surfaces
+    static let backdropTop       = "backdrop.top"
+    static let backdropBottom    = "backdrop.bottom"
+    static let backdropAccent    = "backdrop.accent"
+    static let surface           = "surface"
+    static let surfaceElevated   = "surface.elevated"
+    static let surfaceSidebar    = "surface.sidebar"
+    static let surfaceChrome     = "surface.chrome"
+    static let surfaceHero       = "surface.hero"
+    static let surfaceField      = "surface.field"   // graph canvas wash
+
+    // Text
+    static let textPrimary       = "text.primary"
+    static let textSecondary     = "text.secondary"
+    static let textTertiary      = "text.tertiary"
+    static let textOnAccent      = "text.onAccent"
+
+    // Structure
+    static let border            = "border"
+    static let borderSubtle      = "border.subtle"
+    static let separator         = "separator"
+    static let hoverFill         = "hover.fill"
+    static let selectionFill     = "selection.fill"
+    static let selectionBorder   = "selection.border"
+
+    // Status
+    static let success           = "status.success"
+    static let warning           = "status.warning"
+    static let error             = "status.error"
+    static let info              = "status.info"
+
+    // Graph nodes (semantic)
+    static let graphWorkspace       = "graph.workspace"
+    static let graphFile            = "graph.file"
+    static let graphSession         = "graph.session"
+    static let graphExecution       = "graph.execution"
+    static let graphMemory          = "graph.memory"
+    static let graphIntelligence    = "graph.intelligence"
+    static let graphEvent           = "graph.event"
+    static let graphEdge            = "graph.edge"
+    static let graphEdgeHighlight   = "graph.edge.highlight"
+    static let graphEdgeAmbient     = "graph.edge.ambient"
+    static let graphHalo            = "graph.halo"
+    static let graphCluster         = "graph.cluster"
+    static let graphFocus           = "graph.focus"
+
+    // Sidebar selected pill
+    static let sidebarSelectedFill  = "sidebar.selected"
+    static let sidebarSelectedTint  = "sidebar.selected.tint"
+}
+
+struct ThemePalette {
+    // Backdrop wash
+    let backdropTop: Color
+    let backdropBottom: Color
+    let backdropAccent: Color
+
+    // Surfaces
+    let surface: Color
+    let surfaceElevated: Color
+    let surfaceSidebar: Color
+    let surfaceChrome: Color
+    let surfaceHero: Color
+    let surfaceField: Color
+
+    // Text
+    let textPrimary: Color
+    let textSecondary: Color
+    let textTertiary: Color
+    let textOnAccent: Color
+
+    // Structure
+    let border: Color
+    let borderSubtle: Color
+    let separator: Color
+    let hoverFill: Color
+    let selectionFill: Color
+    let selectionBorder: Color
+
+    // Status
+    let success: Color
+    let warning: Color
+    let error: Color
+    let info: Color
+
+    // Graph
+    let graphWorkspace: Color
+    let graphFile: Color
+    let graphSession: Color
+    let graphExecution: Color
+    let graphMemory: Color
+    let graphIntelligence: Color
+    let graphEvent: Color
+    let graphEdge: Color
+    let graphEdgeHighlight: Color
+    let graphEdgeAmbient: Color
+    let graphHalo: Color
+    let graphCluster: Color
+    let graphFocus: Color
+
+    // Sidebar
+    let sidebarSelectedFill: Color
+    let sidebarSelectedTint: Color
+}
+
+private let darkPalette = ThemePalette(
+    backdropTop:        Color(red: 0.085, green: 0.090, blue: 0.115),
+    backdropBottom:     Color(red: 0.055, green: 0.060, blue: 0.085),
+    backdropAccent:     Color(red: 0.30, green: 0.45, blue: 0.95),
+    surface:            Color(red: 0.110, green: 0.115, blue: 0.140),
+    surfaceElevated:    Color(red: 0.135, green: 0.142, blue: 0.170),
+    surfaceSidebar:     Color(red: 0.090, green: 0.095, blue: 0.118),
+    surfaceChrome:      Color(red: 0.110, green: 0.115, blue: 0.140),
+    surfaceHero:        Color(red: 0.130, green: 0.137, blue: 0.165),
+    surfaceField:       Color(red: 0.075, green: 0.080, blue: 0.105),
+    textPrimary:        Color(red: 0.940, green: 0.948, blue: 0.962),
+    textSecondary:      Color(red: 0.690, green: 0.710, blue: 0.745),
+    textTertiary:       Color(red: 0.490, green: 0.510, blue: 0.545),
+    textOnAccent:       Color.white,
+    border:             Color.white.opacity(0.10),
+    borderSubtle:       Color.white.opacity(0.06),
+    separator:          Color.white.opacity(0.07),
+    hoverFill:          Color.white.opacity(0.05),
+    selectionFill:      Color.accentColor.opacity(0.18),
+    selectionBorder:    Color.accentColor.opacity(0.40),
+    success:            Color(red: 0.36, green: 0.82, blue: 0.46),
+    warning:            Color(red: 0.95, green: 0.66, blue: 0.30),
+    error:              Color(red: 0.95, green: 0.42, blue: 0.42),
+    info:               Color(red: 0.40, green: 0.70, blue: 0.95),
+    graphWorkspace:     Color(red: 0.55, green: 0.62, blue: 0.95), // indigo
+    graphFile:          Color(red: 0.36, green: 0.78, blue: 0.82), // teal
+    graphSession:       Color(red: 0.45, green: 0.75, blue: 0.95), // cyan
+    graphExecution:     Color(red: 0.95, green: 0.62, blue: 0.32), // orange
+    graphMemory:        Color(red: 0.85, green: 0.55, blue: 0.80), // pink
+    graphIntelligence:  Color(red: 0.70, green: 0.55, blue: 0.95), // purple
+    graphEvent:         Color(red: 0.65, green: 0.85, blue: 0.45), // green
+    graphEdge:          Color.white.opacity(0.30),
+    graphEdgeHighlight: Color.accentColor,
+    graphEdgeAmbient:   Color.white.opacity(0.12),
+    graphHalo:          Color.accentColor.opacity(0.20),
+    graphCluster:       Color.accentColor.opacity(0.05),
+    graphFocus:         Color.accentColor,
+    sidebarSelectedFill:   Color.accentColor.opacity(0.18),
+    sidebarSelectedTint:   Color.accentColor
+)
+
+private let lightPalette = ThemePalette(
+    backdropTop:        Color(red: 0.985, green: 0.988, blue: 0.995),
+    backdropBottom:     Color(red: 0.945, green: 0.955, blue: 0.975),
+    backdropAccent:     Color(red: 0.30, green: 0.45, blue: 0.95),
+    surface:            Color(red: 1.000, green: 1.000, blue: 1.000),
+    surfaceElevated:    Color(red: 0.998, green: 0.998, blue: 1.000),
+    surfaceSidebar:     Color(red: 0.965, green: 0.970, blue: 0.982),
+    surfaceChrome:      Color(red: 0.985, green: 0.988, blue: 0.995),
+    surfaceHero:        Color(red: 1.000, green: 1.000, blue: 1.000),
+    surfaceField:       Color(red: 0.975, green: 0.980, blue: 0.990),
+    textPrimary:        Color(red: 0.110, green: 0.115, blue: 0.140),
+    textSecondary:      Color(red: 0.380, green: 0.410, blue: 0.470),
+    textTertiary:       Color(red: 0.560, green: 0.585, blue: 0.640),
+    textOnAccent:       Color.white,
+    border:             Color.black.opacity(0.10),
+    borderSubtle:       Color.black.opacity(0.05),
+    separator:          Color.black.opacity(0.08),
+    hoverFill:          Color.black.opacity(0.04),
+    selectionFill:      Color.accentColor.opacity(0.14),
+    selectionBorder:    Color.accentColor.opacity(0.35),
+    success:            Color(red: 0.18, green: 0.62, blue: 0.32),
+    warning:            Color(red: 0.82, green: 0.52, blue: 0.10),
+    error:              Color(red: 0.82, green: 0.22, blue: 0.22),
+    info:               Color(red: 0.20, green: 0.50, blue: 0.85),
+    graphWorkspace:     Color(red: 0.40, green: 0.46, blue: 0.85),
+    graphFile:          Color(red: 0.18, green: 0.62, blue: 0.68),
+    graphSession:       Color(red: 0.22, green: 0.55, blue: 0.80),
+    graphExecution:     Color(red: 0.82, green: 0.50, blue: 0.18),
+    graphMemory:        Color(red: 0.72, green: 0.36, blue: 0.66),
+    graphIntelligence:  Color(red: 0.55, green: 0.40, blue: 0.82),
+    graphEvent:         Color(red: 0.40, green: 0.65, blue: 0.22),
+    graphEdge:          Color.black.opacity(0.22),
+    graphEdgeHighlight: Color.accentColor,
+    graphEdgeAmbient:   Color.black.opacity(0.08),
+    graphHalo:          Color.accentColor.opacity(0.15),
+    graphCluster:       Color.accentColor.opacity(0.04),
+    graphFocus:         Color.accentColor,
+    sidebarSelectedFill:   Color.accentColor.opacity(0.14),
+    sidebarSelectedTint:   Color.accentColor
+)
+
+// MARK: - Environment
+
+/// The current palette. Push into the SwiftUI environment from
+/// `RootEnvironment` so views can read semantic colors without re-reading
+/// `ColorScheme`.
+struct CSPalette: EnvironmentKey {
+    static let defaultValue: ThemePalette = darkPalette
+}
+
+extension EnvironmentValues {
+    var csPalette: ThemePalette {
+        get { self[CSPalette.self] }
+        set { self[CSPalette.self] = newValue }
+    }
+    /// Resolved appearance mode (system/light/dark → concrete scheme).
+    var csAppearanceMode: AppearanceMode {
+        get { self[CSAppearanceModeKey.self] }
+        set { self[CSAppearanceModeKey.self] = newValue }
+    }
+}
+
+private struct CSAppearanceModeKey: EnvironmentKey {
+    static let defaultValue: AppearanceMode = .system
+}
+
+// MARK: - Color resolution
+
+extension Color {
+    /// Resolves a semantic color token in the current environment.
+    /// Reads from the environment palette, falling back to darkPalette.
+    static func cs(_ token: String) -> Color {
+        let palette = currentPalette()
+        switch token {
+        case CSColor.backdropTop:       return palette.backdropTop
+        case CSColor.backdropBottom:    return palette.backdropBottom
+        case CSColor.backdropAccent:    return palette.backdropAccent
+        case CSColor.surface:           return palette.surface
+        case CSColor.surfaceElevated:   return palette.surfaceElevated
+        case CSColor.surfaceSidebar:    return palette.surfaceSidebar
+        case CSColor.surfaceChrome:     return palette.surfaceChrome
+        case CSColor.surfaceHero:       return palette.surfaceHero
+        case CSColor.surfaceField:      return palette.surfaceField
+        case CSColor.textPrimary:       return palette.textPrimary
+        case CSColor.textSecondary:     return palette.textSecondary
+        case CSColor.textTertiary:      return palette.textTertiary
+        case CSColor.textOnAccent:      return palette.textOnAccent
+        case CSColor.border:            return palette.border
+        case CSColor.borderSubtle:      return palette.borderSubtle
+        case CSColor.separator:         return palette.separator
+        case CSColor.hoverFill:         return palette.hoverFill
+        case CSColor.selectionFill:     return palette.selectionFill
+        case CSColor.selectionBorder:   return palette.selectionBorder
+        case CSColor.success:           return palette.success
+        case CSColor.warning:           return palette.warning
+        case CSColor.error:             return palette.error
+        case CSColor.info:              return palette.info
+        case CSColor.graphWorkspace:    return palette.graphWorkspace
+        case CSColor.graphFile:         return palette.graphFile
+        case CSColor.graphSession:      return palette.graphSession
+        case CSColor.graphExecution:    return palette.graphExecution
+        case CSColor.graphMemory:       return palette.graphMemory
+        case CSColor.graphIntelligence: return palette.graphIntelligence
+        case CSColor.graphEvent:        return palette.graphEvent
+        case CSColor.graphEdge:         return palette.graphEdge
+        case CSColor.graphEdgeHighlight: return palette.graphEdgeHighlight
+        case CSColor.graphEdgeAmbient:  return palette.graphEdgeAmbient
+        case CSColor.graphHalo:         return palette.graphHalo
+        case CSColor.graphCluster:      return palette.graphCluster
+        case CSColor.graphFocus:        return palette.graphFocus
+        case CSColor.sidebarSelectedFill: return palette.sidebarSelectedFill
+        case CSColor.sidebarSelectedTint: return palette.sidebarSelectedTint
+        default: return palette.textPrimary
+        }
+    }
+}
+
+/// Cache the most recent system-resolved color scheme so palette lookups
+/// (which can run from a non-@MainActor context inside Canvas closures)
+/// always return the right value. Updated on every RootEnvironment render.
+@MainActor
+private var activeResolvedScheme: ColorScheme = .light
+
+private func currentPalette() -> ThemePalette {
+    // Read from the active window's environment by walking the
+    // appearance-mode key. We don't have a global singleton — every
+    // top-level scene pushes its own environment — so a thread-local
+    // cache filled in `RootEnvironment` is the simplest reliable path.
+    MainActor.assumeIsolated {
+        let mode = activeAppearanceMode
+        let scheme: ColorScheme
+        switch mode {
+        case .system: scheme = activeResolvedScheme
+        case .light:  scheme = .light
+        case .dark:   scheme = .dark
+        }
+        return scheme == .dark ? darkPalette : lightPalette
+    }
+}
+
+/// Thread-safe-ish holder for the current mode. Set from the root scene.
+@MainActor
+private var activeAppearanceMode: AppearanceMode = .system
+
+@MainActor
+final class AppearanceController: ObservableObject {
+    static let shared = AppearanceController()
+    @Published var mode: AppearanceMode {
+        didSet {
+            UserDefaults.standard.set(mode.rawValue, forKey: "cs.appearance")
+            activeAppearanceMode = mode
+        }
+    }
+    private init() {
+        let stored = UserDefaults.standard.string(forKey: "cs.appearance")
+        let initial = AppearanceMode(rawValue: stored ?? "system") ?? .system
+        self.mode = initial
+        activeAppearanceMode = initial
+    }
+}
+
+// MARK: - Theme tokens
 
 enum Theme {
-
-    // Accent — system accent. Used sparingly, never decoratively.
     static let accent = Color.accentColor
 
     // MARK: Spacing scale
@@ -38,19 +382,23 @@ enum Theme {
     static let cornerPill: CGFloat = 999
 
     // MARK: Layout
-    static let contentMaxWidth: CGFloat = 1120
+    static let contentMaxWidth: CGFloat = 1280
     static let sidebarWidth: CGFloat = 232
     static let cardPadding: CGFloat = 16
     static let cardPaddingLarge: CGFloat = 20
     static let sectionGap: CGFloat = 22
 
-    // MARK: Control heights (native-feel)
+    // MARK: Control heights
     enum Control {
         static let minHeightRegular: CGFloat = 24
         static let minHeightLarge: CGFloat = 32
         static let minHeightXLarge: CGFloat = 38
         static let fieldHeight: CGFloat = 30
+        static let iconButton: CGFloat = 28
     }
+
+    // MARK: Page header height
+    static let pageHeaderHeight: CGFloat = 56
 
     // MARK: Animation
     static func spring(_ reduceMotion: Bool = false,
@@ -61,65 +409,81 @@ enum Theme {
 }
 
 // MARK: - Typography
-//
-// A coherent type scale. Native system fonts only.
+
 extension Font {
-
-    /// Screen title (28pt semibold).
-    static let csScreenTitle = Font.system(size: 26, weight: .semibold, design: .default)
-
-    /// Section title (17pt semibold — same as .headline, but explicit).
+    static let csScreenTitle  = Font.system(size: 24, weight: .semibold, design: .default)
     static let csSectionTitle = Font.system(size: 17, weight: .semibold, design: .default)
-
-    /// Card title.
-    static let csCardTitle = Font.system(size: 15, weight: .semibold, design: .default)
-
-    /// Primary body.
-    static let csBody = Font.system(size: 13, weight: .regular, design: .default)
-
-    /// Secondary body.
-    static let csSecondary = Font.system(size: 13, weight: .regular, design: .default)
-
-    /// Metadata, captions.
-    static let csMetadata = Font.system(size: 11, weight: .regular, design: .default)
-
-    /// Small caps-style eyebrow labels (uppercased, tracked).
+    static let csCardTitle    = Font.system(size: 15, weight: .semibold, design: .default)
+    static let csBody         = Font.system(size: 13, weight: .regular, design: .default)
+    static let csSecondary    = Font.system(size: 13, weight: .regular, design: .default)
+    static let csMetadata     = Font.system(size: 11, weight: .regular, design: .default)
+    static let csEyebrowFont: Font = .system(size: 11, weight: .semibold, design: .default)
     static func csEyebrow(size: CGFloat = 11) -> Font {
         .system(size: size, weight: .semibold, design: .default)
     }
-
-    /// Large metric/number display.
     static func csMetric(size: CGFloat = 28) -> Font {
         .system(size: size, weight: .semibold, design: .rounded)
     }
 }
 
-// MARK: - Content backdrop
-//
-// Calm, near-monochrome tint for the content layer. Respects Reduce
-// Transparency and Reduce Motion.
+// MARK: - Foreground helpers
+
+/// Reads a semantic text color in the current environment.
+struct CSText: ViewModifier {
+    let token: String
+    func body(content: Content) -> some View {
+        content.foregroundStyle(Color.cs(token))
+    }
+}
+
+extension View {
+    /// Applies a semantic text color.
+    func csForeground(_ token: String) -> some View {
+        modifier(CSText(token: token))
+    }
+}
+
+// MARK: - Root environment
+
+/// Root view that injects the appearance/palette into the environment
+/// and reacts to the user's theme choice.
+struct RootEnvironment<Content: View>: View {
+    @ObservedObject private var appearance = AppearanceController.shared
+    @Environment(\.colorScheme) private var colorScheme
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let resolved = appearance.mode.resolved(scheme: colorScheme)
+        let palette = resolved == .dark ? darkPalette : lightPalette
+        activeResolvedScheme = resolved
+        return content
+            .environment(\.csPalette, palette)
+            .environment(\.csAppearanceMode, appearance.mode)
+            .preferredColorScheme(appearance.mode == .system ? nil :
+                                  (appearance.mode == .dark ? .dark : .light))
+    }
+}
+
+// MARK: - Backdrop
+
 struct ContentBackdrop: View {
-    @Environment(\.colorScheme) private var scheme
+    @Environment(\.csPalette) private var palette
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if reduceTransparency || reduceMotion {
-            Color(nsColor: .windowBackgroundColor)
+            Color.cs(CSColor.surface)
         } else {
             ZStack {
                 LinearGradient(
-                    colors: scheme == .dark
-                        ? [Color(red: 0.085, green: 0.090, blue: 0.115),
-                           Color(red: 0.055, green: 0.060, blue: 0.085)]
-                        : [Color(red: 0.965, green: 0.970, blue: 0.980),
-                           Color(red: 0.930, green: 0.940, blue: 0.960)],
+                    colors: [palette.backdropTop, palette.backdropBottom],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .overlay {
                     RadialGradient(
-                        colors: [Theme.accent.opacity(scheme == .dark ? 0.07 : 0.04), .clear],
+                        colors: [palette.backdropAccent.opacity(0.06), .clear],
                         center: .topTrailing,
                         startRadius: 0,
                         endRadius: 700
@@ -133,7 +497,6 @@ struct ContentBackdrop: View {
 
 // MARK: - Surfaces
 
-/// Calm content panel for the information layer. Material, not glass.
 struct ContentCard<Content: View>: View {
     var cornerRadius: CGFloat = Theme.cornerLarge
     var padding: CGFloat = Theme.cardPaddingLarge
@@ -142,15 +505,17 @@ struct ContentCard<Content: View>: View {
     var body: some View {
         content
             .padding(padding)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                Color.cs(CSColor.surface).opacity(0.85),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.6), lineWidth: 0.5)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
     }
 }
 
-/// Compact content panel with smaller padding.
 struct CompactCard<Content: View>: View {
     var cornerRadius: CGFloat = Theme.cornerRegular
     @ViewBuilder var content: Content
@@ -158,16 +523,17 @@ struct CompactCard<Content: View>: View {
     var body: some View {
         content
             .padding(Theme.cardPadding)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                Color.cs(CSColor.surface).opacity(0.85),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.5), lineWidth: 0.5)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
     }
 }
 
-/// Floating contextual chrome: glass that stays legible above the
-/// content layer (hero panels, search fields, transient toolbars).
 struct GlassSection<Content: View>: View {
     var tint: Color = .clear
     var interactive = false
@@ -184,35 +550,19 @@ struct GlassSection<Content: View>: View {
     }
 }
 
-/// Legacy `Theme.card` alias for existing views.
-extension Theme {
-    static func card<Content: View>(_ content: Content, cornerRadius: CGFloat = 14) -> some View {
-        content
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 0.5)
-            }
-    }
-}
-
 // MARK: - Divider
 
-/// Subtle hairline divider used between rows.
 struct Hairline: View {
-    var opacity: Double = 0.5
+    var opacity: Double = 1.0
     var body: some View {
         Rectangle()
-            .fill(.separator.opacity(opacity))
+            .fill(Color.cs(CSColor.separator).opacity(opacity))
             .frame(height: 0.5)
     }
 }
 
 // MARK: - Headers
 
-/// Page header shared by every screen: title + optional subtitle, with
-/// optional trailing slot. Eyebrow-style group label sits above.
 struct ScreenHeader<Content: View>: View {
     let title: String
     var subtitle: String?
@@ -242,7 +592,7 @@ struct ScreenHeader<Content: View>: View {
                 if let eyebrow {
                     Text(eyebrow)
                         .font(.csEyebrow())
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .textCase(.uppercase)
                         .tracking(0.6)
                         .accessibilityHidden(true)
@@ -250,19 +600,20 @@ struct ScreenHeader<Content: View>: View {
                 HStack(spacing: 10) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.tint)
+                            .font(.system(size: 20, weight: .semibold))
+                            .csForeground(CSColor.info)
                             .accessibilityHidden(true)
                     }
                     Text(title)
                         .font(.csScreenTitle)
-                        .tracking(-0.4)
+                        .csForeground(CSColor.textPrimary)
+                        .tracking(-0.3)
                         .accessibilityLabel(title)
                 }
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(2)
                 }
             }
@@ -273,32 +624,31 @@ struct ScreenHeader<Content: View>: View {
     }
 }
 
-/// In-content section header.
 struct SectionHeader: View {
     let title: String
     var subtitle: String?
     var symbol: String?
-    var systemImageColor: Color = .secondary
+    var systemImageColor: Color? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(systemImageColor)
+                    .font(.system(size: 11, weight: .semibold))
+                    .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
             }
             Text(title)
                 .font(.csEyebrow())
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.6)
             if let subtitle {
                 Text("·")
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
         }
@@ -309,30 +659,29 @@ struct SectionHeader: View {
 
 // MARK: - States
 
-/// Premium empty-state: large title, calm subtitle, contextual action,
-/// optional secondary detail block. No decorative noise.
 struct EmptyStateView: View {
     let title: String
     var message: String?
     var symbol: String = "sparkles"
     var primaryAction: (label: String, perform: () -> Void)?
     var secondaryAction: (label: String, perform: () -> Void)?
-    var details: [(String, String)]? = nil // (symbol, detail)
+    var details: [(String, String)]? = nil
 
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: symbol)
                 .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title3.weight(.semibold))
+                    .csForeground(CSColor.textPrimary)
                     .multilineTextAlignment(.center)
                 if let message {
                     Text(message)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
                 }
@@ -342,7 +691,7 @@ struct EmptyStateView: View {
                     ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
                         Label(detail.1, systemImage: detail.0)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                     }
                 }
                 .frame(maxWidth: 360, alignment: .leading)
@@ -375,7 +724,6 @@ struct EmptyStateView: View {
     }
 }
 
-/// Loading view: subtle progress + label.
 struct LoadingView: View {
     var label = "Loading…"
 
@@ -385,7 +733,7 @@ struct LoadingView: View {
                 .controlSize(.small)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
@@ -393,7 +741,6 @@ struct LoadingView: View {
     }
 }
 
-/// Inline loading row (used inside cards/lists).
 struct InlineLoading: View {
     var label = "Loading…"
     var body: some View {
@@ -401,35 +748,32 @@ struct InlineLoading: View {
             ProgressView().controlSize(.small)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
         }
         .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Badges / status indicators
+// MARK: - Badges
 
-/// Calm status badge used for system states. Rounded, tonal, small.
 struct CSStatusBadge: View {
     enum Kind {
         case success, warning, error, info, neutral
-
-        var color: Color {
+        var token: String {
             switch self {
-            case .success: .green
-            case .warning: .orange
-            case .error: .red
-            case .info: .blue
-            case .neutral: .secondary
+            case .success: CSColor.success
+            case .warning: CSColor.warning
+            case .error:   CSColor.error
+            case .info:    CSColor.info
+            case .neutral: CSColor.textSecondary
             }
         }
-
         var symbol: String {
             switch self {
             case .success: "checkmark.circle.fill"
             case .warning: "exclamationmark.triangle.fill"
-            case .error: "xmark.circle.fill"
-            case .info: "info.circle.fill"
+            case .error:   "xmark.circle.fill"
+            case .info:    "info.circle.fill"
             case .neutral: "circle.fill"
             }
         }
@@ -446,20 +790,19 @@ struct CSStatusBadge: View {
             Text(text)
                 .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(kind.color)
+        .csForeground(kind.token)
         .padding(.horizontal, 7)
         .padding(.vertical, 2.5)
-        .background(kind.color.opacity(0.12), in: Capsule(style: .continuous))
+        .background(Color.cs(kind.token).opacity(0.14), in: Capsule(style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text)
     }
 }
 
-/// Compact, neutral chip used for grouping metadata.
 struct MetaChip: View {
     let text: String
     var systemImage: String? = nil
-    var tint: Color = .secondary
+    var tint: String = CSColor.textSecondary
 
     var body: some View {
         HStack(spacing: 3) {
@@ -470,16 +813,13 @@ struct MetaChip: View {
             Text(text)
                 .font(.caption2)
         }
-        .foregroundStyle(tint)
+        .csForeground(tint)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(.quaternary.opacity(0.4), in: Capsule(style: .continuous))
+        .background(Color.cs(CSColor.textTertiary).opacity(0.10), in: Capsule(style: .continuous))
     }
 }
 
-// MARK: - Stat tile
-
-/// A calm stat tile: large number, label, optional symbol.
 struct CSStatTile: View {
     let value: String
     let label: String
@@ -492,18 +832,18 @@ struct CSStatTile: View {
                 if let symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .accessibilityHidden(true)
                 }
                 Text(label)
                     .font(.csEyebrow())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.5)
             }
             Text(value)
                 .font(.csMetric(size: 24))
-                .foregroundStyle(.primary)
+                .csForeground(CSColor.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .monospacedDigit()
@@ -515,19 +855,20 @@ struct CSStatTile: View {
                     Text(trend.text)
                         .font(.caption2)
                 }
-                .foregroundStyle(trend.isPositive ? .green : .orange)
+                .csForeground(trend.isPositive ? CSColor.success : CSColor.warning)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(Color.cs(CSColor.surfaceElevated), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        }
         .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Toolbar
-
-/// Native-feeling toolbar item with system-correct spacing.
 struct ToolbarIconButton: View {
     let systemImage: String
     let help: String
@@ -544,11 +885,9 @@ struct ToolbarIconButton: View {
         .buttonStyle(.borderless)
         .help(help)
         .accessibilityLabel(help)
-        .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+        .foregroundStyle(isActive ? Color.accentColor : Color.cs(CSColor.textSecondary))
     }
 }
-
-// MARK: - Hero card (used in Dashboard / Workspaces detail)
 
 struct HeroCard<Content: View>: View {
     var cornerRadius: CGFloat = Theme.cornerXLarge
@@ -558,15 +897,16 @@ struct HeroCard<Content: View>: View {
         content
             .padding(Theme.cardPaddingLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                Color.cs(CSColor.surfaceHero).opacity(0.92),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
     }
 }
-
-// MARK: - Pill button (used for filter chips / quick filters)
 
 struct PillButton: View {
     let title: String
@@ -587,41 +927,45 @@ struct PillButton: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                isSelected ? Theme.accent.opacity(0.18) : Color.clear,
+                isSelected
+                    ? Color.cs(CSColor.selectionFill)
+                    : Color.clear,
                 in: Capsule(style: .continuous)
             )
             .overlay(
                 Capsule(style: .continuous)
                     .strokeBorder(
-                        isSelected ? Theme.accent.opacity(0.4) : Color.secondary.opacity(0.35),
+                        isSelected
+                            ? Color.cs(CSColor.selectionBorder)
+                            : Color.cs(CSColor.border),
                         lineWidth: 0.5
                     )
             )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textPrimary)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 }
 
-// MARK: - Banner (for warnings, errors, info across the app)
+// MARK: - Banner
 
 struct StatusBanner: View {
     enum Style {
         case warning, error, info
-        var color: Color {
+        var token: String {
             switch self {
-            case .warning: .orange
-            case .error: .red
-            case .info: .blue
+            case .warning: CSColor.warning
+            case .error:   CSColor.error
+            case .info:    CSColor.info
             }
         }
         var symbol: String {
             switch self {
             case .warning: "exclamationmark.triangle"
-            case .error: "xmark.octagon"
-            case .info: "info.circle"
+            case .error:   "xmark.octagon"
+            case .info:    "info.circle"
             }
         }
     }
@@ -633,18 +977,20 @@ struct StatusBanner: View {
     var secondaryAction: (label: String, perform: () -> Void)? = nil
 
     var body: some View {
+        let token = style.token
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: style.symbol)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(style.color)
+                .csForeground(token)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(message)
                     .font(.callout.weight(.medium))
+                    .csForeground(CSColor.textPrimary)
                 if let detail {
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
             Spacer(minLength: 8)
@@ -664,19 +1010,18 @@ struct StatusBanner: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .fill(style.color.opacity(0.10))
+                .fill(Color.cs(token).opacity(0.10))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .strokeBorder(style.color.opacity(0.35), lineWidth: 0.5)
+                .strokeBorder(Color.cs(token).opacity(0.35), lineWidth: 0.5)
         )
         .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Hover + selection helpers
+// MARK: - Hover / Selection
 
-/// View modifier for a calm row hover state.
 struct HoverRowModifier: ViewModifier {
     let isHovered: Bool
     let isSelected: Bool
@@ -687,20 +1032,34 @@ struct HoverRowModifier: ViewModifier {
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(isSelected
-                          ? Theme.accent.opacity(0.18)
-                          : (isHovered ? Color.primary.opacity(0.06) : .clear))
+                          ? Color.cs(CSColor.selectionFill)
+                          : (isHovered ? Color.cs(CSColor.hoverFill) : .clear))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.accent.opacity(0.4) : .clear, lineWidth: 0.5)
+                    .strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : .clear,
+                                  lineWidth: 0.5)
             )
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
 extension View {
-    /// Calm row treatment: subtle on hover, accent on selection.
     func hoverRow(isHovered: Bool, isSelected: Bool, cornerRadius: CGFloat = Theme.cornerRegular) -> some View {
         modifier(HoverRowModifier(isHovered: isHovered, isSelected: isSelected, cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - Legacy alias
+
+extension Theme {
+    static func card<Content: View>(_ content: Content, cornerRadius: CGFloat = 14) -> some View {
+        content
+            .padding(16)
+            .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.cs(CSColor.border), lineWidth: 0.5)
+            }
     }
 }

@@ -84,7 +84,7 @@ struct PerformanceView: View {
             if let profile = viewModel.profile { profileCard(profile) }
             if let opt = viewModel.optimizeResult, !opt.recommendations.isEmpty { optimizeCard(opt) }
             if let err = viewModel.lastError {
-                Text(err).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                Text(err).font(.caption).csForeground(CSColor.error).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -97,9 +97,9 @@ struct PerformanceView: View {
                     HStack {
                         Text(stage.label).font(.callout)
                         Spacer()
-                        Text("\(stage.durationMs) ms").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text("\(stage.durationMs) ms").font(.caption.monospacedDigit()).csForeground(CSColor.textSecondary)
                     }
-                    ProgressView(value: Double(stage.durationMs) / Double(max(s.totalMs, 1))).tint(.indigo)
+                    ProgressView(value: Double(stage.durationMs) / Double(max(s.totalMs, 1))).tint(Color.cs(CSColor.info))
                 }
             }
         }
@@ -112,15 +112,15 @@ struct PerformanceView: View {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("CPU \(String(format: "%.1f", d.cpu.usagePercent))%", systemImage: "cpu").font(.callout.weight(.medium))
-                        Text("\(d.cpu.cores) cores · parallelism \(d.cpu.cpuParallelism)").font(.caption2).foregroundStyle(.secondary)
+                        Text("\(d.cpu.cores) cores · parallelism \(d.cpu.cpuParallelism)").font(.caption2).csForeground(CSColor.textSecondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 4) {
                         Label("Memory \(String(format: "%.1f", d.memory.percent))%", systemImage: "memorychip").font(.callout.weight(.medium))
-                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(d.memory.usedBytes), countStyle: .memory)) / \(ByteCountFormatter.string(fromByteCount: Int64(d.memory.totalBytes), countStyle: .memory))").font(.caption2).foregroundStyle(.secondary)
+                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(d.memory.usedBytes), countStyle: .memory)) / \(ByteCountFormatter.string(fromByteCount: Int64(d.memory.totalBytes), countStyle: .memory))").font(.caption2).csForeground(CSColor.textSecondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: 4) {
                         Label("DB \(ByteCountFormatter.string(fromByteCount: Int64(d.db.sizeBytes), countStyle: .file))", systemImage: "cylinder").font(.callout.weight(.medium))
-                        Text(d.db.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                        Text(d.db.path).font(.caption2).csForeground(CSColor.textTertiary).lineLimit(1).truncationMode(.middle)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !d.workers.isEmpty {
@@ -129,8 +129,8 @@ struct PerformanceView: View {
                         HStack {
                             Text(w.name).font(.caption.weight(.medium))
                             Spacer()
-                            Text(w.status).font(.caption2).foregroundStyle(w.status == "healthy" ? .green : .orange).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary.opacity(0.3), in: Capsule())
-                            Text("\(w.executionCount) runs · \(String(format: "%.1f", w.avgExecutionTimeMs)) ms").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                            Text(w.status).font(.caption2).foregroundStyle(w.status == "healthy" ? Color.cs(CSColor.success) : Color.cs(CSColor.warning)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                            Text("\(w.executionCount) runs · \(String(format: "%.1f", w.avgExecutionTimeMs)) ms").font(.caption2).csForeground(CSColor.textSecondary).monospacedDigit()
                         }
                     }
                 }
@@ -143,18 +143,18 @@ struct PerformanceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Profiler", subtitle: "\(p.aggregates.count) aggregates · \(p.recent.count) recent", symbol: "waveform.path.ecg")
                 if p.aggregates.isEmpty {
-                    Text("No samples yet — profiler fills as you use the app.").font(.callout).foregroundStyle(.secondary)
+                    Text("No samples yet — profiler fills as you use the app.").font(.callout).csForeground(CSColor.textSecondary)
                 } else {
                     ForEach(p.aggregates.prefix(6), id: \.name) { agg in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(agg.name).font(.callout.weight(.medium)).lineLimit(1)
-                                Text(agg.category).font(.caption2).foregroundStyle(.secondary)
+                                Text(agg.category).font(.caption2).csForeground(CSColor.textSecondary)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 1) {
-                                Text(String(format: "%.1f ms", agg.avgMs)).font(.caption.monospacedDigit()).foregroundStyle(.primary)
-                                Text("p95 \(String(format: "%.1f", agg.p95Ms)) ms · \(agg.count)×").font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                                Text(String(format: "%.1f ms", agg.avgMs)).font(.caption.monospacedDigit()).csForeground(CSColor.textPrimary)
+                                Text("p95 \(String(format: "%.1f", agg.p95Ms)) ms · \(agg.count)×").font(.caption2).csForeground(CSColor.textTertiary).monospacedDigit()
                             }
                         }
                         Divider().opacity(0.3)
@@ -173,12 +173,12 @@ struct PerformanceView: View {
                         HStack {
                             Text(rec.title).font(.callout.weight(.medium))
                             Spacer()
-                            Text(rec.severity.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(rec.severity == "critical" ? .red : rec.severity == "warning" ? .orange : .secondary).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary.opacity(0.3), in: Capsule())
+                            Text(rec.severity.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(rec.severity == "critical" ? Color.cs(CSColor.error) : rec.severity == "warning" ? Color.cs(CSColor.warning) : .secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
                         }
-                        Text(rec.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(rec.detail).font(.caption).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(8)
-                    .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.cs(CSColor.hoverFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
         }

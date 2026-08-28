@@ -4,11 +4,13 @@ import SwiftUI
 struct ContextSphereApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
-            AppShell()
-                .environmentObject(AppRouter.shared)
-                .frame(minWidth: 940, minHeight: 640)
+            RootEnvironment {
+                AppShell()
+                    .environmentObject(AppRouter.shared)
+                    .frame(minWidth: 940, minHeight: 640)
+            }
         }
-        .defaultSize(width: 1240, height: 820)
+        .defaultSize(width: 1280, height: 860)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(after: .newItem) {
@@ -41,8 +43,10 @@ struct ContextSphereApp: App {
         }
 
         Settings {
-            SettingsView()
-                .frame(minWidth: 640, minHeight: 480)
+            RootEnvironment {
+                SettingsView()
+                    .frame(minWidth: 760, minHeight: 540)
+            }
         }
     }
 }

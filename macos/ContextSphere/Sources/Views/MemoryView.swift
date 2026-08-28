@@ -155,18 +155,18 @@ struct MemoryView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
                 .font(.csEyebrow())
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.5)
             Text(value.map(String.init) ?? "—")
                 .font(.csMetric(size: 24))
-                .foregroundStyle(.primary)
+                .csForeground(CSColor.textPrimary)
                 .monospacedDigit()
                 .accessibilityLabel("\(label): \(value.map(String.init) ?? "unknown")")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(Color.cs(CSColor.borderSubtle), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -191,7 +191,7 @@ struct MemoryView: View {
             } else {
                 Text("No learning signals yet — confidence builds with each remembered run.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -203,18 +203,18 @@ struct MemoryView: View {
             HStack(spacing: 8) {
                 Text(label)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.3)
                     .lineLimit(1)
                 Spacer()
                 Text(value.percentString)
                     .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(.primary)
+                    .csForeground(CSColor.textPrimary)
                     .accessibilityLabel("\(label): \(value.percentString)")
             }
             ProgressView(value: value)
-                .tint(value >= 0.7 ? .green : value >= 0.4 ? .orange : .red)
+                .tint(value >= 0.7 ? Color.cs(CSColor.success) : value >= 0.4 ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                 .scaleEffect(x: 1, y: 1.1, anchor: .center)
                 .accessibilityLabel(label)
                 .help(help)
@@ -245,7 +245,7 @@ struct MemoryView: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 TextField("Search remembered goals…", text: $viewModel.query)
                     .textFieldStyle(.plain)
                     .accessibilityLabel("Search remembered goals")
@@ -257,7 +257,7 @@ struct MemoryView: View {
                         viewModel.query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                     }
                     .buttonStyle(.plain)
                     .help("Clear search")
@@ -266,7 +266,7 @@ struct MemoryView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Color.cs(CSColor.hoverFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             Picker("Kind", selection: Binding(
                 get: { viewModel.selectedKind },
@@ -322,7 +322,7 @@ struct MemoryView: View {
     private var noMatches: some View {
         Text("No memories match the current filters.")
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .csForeground(CSColor.textSecondary)
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity)
     }
@@ -358,13 +358,13 @@ struct MemoryView: View {
             if viewModel.families.isEmpty && viewModel.failurePatterns.isEmpty {
                 Text("Patterns emerge as the same kinds of work repeat across runs.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             } else {
                 if !viewModel.families.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Workflow families")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                         LazyVStack(spacing: 8) {
                             ForEach(viewModel.families, id: \.familyId) { family in
                                 WorkflowFamilyCard(family: family)
@@ -376,7 +376,7 @@ struct MemoryView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Things to avoid")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                         LazyVStack(spacing: 8) {
                             ForEach(viewModel.failurePatterns, id: \.goalFingerprint) { pattern in
                                 FailurePatternRow(pattern: pattern)
@@ -415,7 +415,7 @@ struct MemoryView: View {
                 Label("Merged \(merge.recordsMerged) duplicates in \(merge.groupsMerged) groups",
                       systemImage: "checkmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.green)
+                    .csForeground(CSColor.success)
                     .accessibilityLabel("Merged \(merge.recordsMerged) duplicates in \(merge.groupsMerged) groups")
             }
             if viewModel.duplicatesLoading && viewModel.duplicateGroups.isEmpty {
@@ -423,7 +423,7 @@ struct MemoryView: View {
             } else if viewModel.duplicateGroups.isEmpty {
                 Text("No identical memories — every remembered run is unique.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             } else {
                 LazyVStack(spacing: 8) {
                     ForEach(viewModel.duplicateGroups, id: \.goalFingerprint) { group in
@@ -496,7 +496,7 @@ struct MemoryView: View {
                     .accessibilityLabel("Create memory snapshot")
                 }
                 if let notice = viewModel.snapshotNotice {
-                    Text(notice).font(.caption).foregroundStyle(.secondary)
+                    Text(notice).font(.caption).csForeground(CSColor.textSecondary)
                         .accessibilityLabel(notice)
                 }
                 if viewModel.snapshotsLoading && viewModel.snapshots.isEmpty {
@@ -504,7 +504,7 @@ struct MemoryView: View {
                 } else if viewModel.snapshots.isEmpty {
                     Text("No snapshots yet — capture one before risky cleanups.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 } else {
                     ForEach(viewModel.snapshots.prefix(5)) { snapshot in
                         snapshotRow(snapshot)
@@ -512,13 +512,13 @@ struct MemoryView: View {
                     if viewModel.snapshots.count > 5 {
                         Text("\(viewModel.snapshots.count - 5) older snapshot\(viewModel.snapshots.count - 5 == 1 ? "" : "s") kept by the core")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                     }
                 }
                 if let restore = viewModel.restoreResult {
                     Text("Restored \(restore.recordsRestored) records · \(restore.snapshotsKept) snapshots kept")
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .csForeground(CSColor.success)
                         .accessibilityLabel("Restore finished: \(restore.recordsRestored) records restored")
                 }
             }
@@ -553,7 +553,7 @@ struct MemoryView: View {
         HStack(spacing: 8) {
             Image(systemName: "camera")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(snapshot.label)
@@ -561,7 +561,7 @@ struct MemoryView: View {
                     .lineLimit(1)
                 Text("\(snapshot.recordCount) records · \(snapshot.createdAt.relativeTime)")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
             Button("Restore") { confirmRestoreSnapshotID = snapshot.id }
@@ -581,7 +581,7 @@ struct MemoryView: View {
                     .font(.callout.weight(.semibold))
                 Text("Move the whole store between machines as portable JSON.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Button {
@@ -611,11 +611,11 @@ struct MemoryView: View {
                 if let imported = viewModel.importResult {
                     Text("Imported \(imported.imported), skipped \(imported.skipped) existing")
                         .font(.caption)
-                        .foregroundStyle(imported.imported > 0 ? Color.green : Color.secondary)
+                        .foregroundStyle(imported.imported > 0 ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                         .accessibilityLabel("Import finished: \(imported.imported) imported, \(imported.skipped) skipped")
                 }
                 if let transfer = viewModel.transferNotice {
-                    Text(transfer).font(.caption).foregroundStyle(.secondary)
+                    Text(transfer).font(.caption).csForeground(CSColor.textSecondary)
                         .accessibilityLabel(transfer)
                 }
             }
@@ -660,7 +660,7 @@ struct MemoryView: View {
             if let lastError = viewModel.lastError {
                 Text(lastError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .accessibilityLabel("Memory action error: \(lastError)")
             }
         }
@@ -682,7 +682,7 @@ struct MemoryView: View {
                     }
                 } else {
                     Text("No index information.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(.callout).csForeground(CSColor.textSecondary)
                 }
                 Button {
                     Task { await viewModel.reindex() }
@@ -699,7 +699,7 @@ struct MemoryView: View {
                 .accessibilityLabel("Reindex memory")
                 if let result = viewModel.reindexResult {
                     Text("Indexed \(result.indexed) of \(result.requested) (\(result.failed) failed)")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).csForeground(CSColor.textSecondary)
                         .accessibilityLabel("Reindex finished: \(result.indexed) of \(result.requested)")
                 }
             }
@@ -720,7 +720,7 @@ struct MemoryView: View {
                     infoRow(label: "Expired", value: "\(storage.expiredMemories)")
                 } else {
                     Text("No storage information.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(.callout).csForeground(CSColor.textSecondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -734,7 +734,7 @@ struct MemoryView: View {
                     .font(.callout.weight(.semibold))
                 Text("Expired memories are removed on the next cleanup pass.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button {
                     Task { await viewModel.runCleanup() }
@@ -751,7 +751,7 @@ struct MemoryView: View {
                 .accessibilityLabel("Run memory cleanup now")
                 if let report = viewModel.cleanupReport {
                     Text("Removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).csForeground(CSColor.textSecondary)
                         .accessibilityLabel("Cleanup result: removed \(report.removedExpired) expired, marked \(report.expiredMarked), compressed \(report.compressed)")
                 }
                 Divider()
@@ -770,7 +770,7 @@ struct MemoryView: View {
                 .accessibilityLabel("Compress oversized memories")
                 if let compress = viewModel.compressResult {
                     Text("Compressed \(compress.compressed) of \(compress.examined) examined")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).csForeground(CSColor.textSecondary)
                         .accessibilityLabel("Compression finished: \(compress.compressed) of \(compress.examined)")
                 }
             }
@@ -780,7 +780,7 @@ struct MemoryView: View {
 
     private func infoRow(label: String, value: String) -> some View {
         HStack(spacing: 8) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(label).font(.caption).csForeground(CSColor.textSecondary)
             Spacer()
             Text(value)
                 .font(.caption.monospacedDigit())
@@ -824,7 +824,7 @@ private struct MemoryRow: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: hit.record.kind.symbol)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(hit.record.status == .success ? Color.green : Color.secondary)
+                    .foregroundStyle(hit.record.status == .success ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                     .frame(width: 22)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
@@ -835,10 +835,10 @@ private struct MemoryRow: View {
                     HStack(spacing: 6) {
                         statusBadge
                         Text(hit.record.kind.title)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                         if let workspaceName {
                             Text("· \(workspaceName)")
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
@@ -847,16 +847,16 @@ private struct MemoryRow: View {
                     HStack(spacing: 6) {
                         if let retentionBadge = hit.record.retentionBadge {
                             Text(retentionBadge)
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                         }
                         if hit.record.replayCount > 0 {
                             Label("\(hit.record.replayCount) replays",
                                   systemImage: "arrow.triangle.2.circlepath")
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                         }
                         Spacer()
                         Text(hit.record.createdAt.relativeTime)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                     }
                     .font(.caption2)
                 }
@@ -874,7 +874,7 @@ private struct MemoryRow: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(isSelected
                     ? AnyShapeStyle(Color.accentColor.opacity(0.5))
-                    : AnyShapeStyle(.quaternary),
+                    : AnyShapeStyle(Color.cs(CSColor.borderSubtle)),
                               lineWidth: isSelected ? 1 : 0.5)
         )
         .accessibilityElement(children: .combine)
@@ -895,9 +895,9 @@ private struct MemoryRow: View {
 
     private var statusColor: Color {
         switch hit.record.status {
-        case .success: .green
-        case .failed: .red
-        case .cancelled: .orange
+        case .success: Color.cs(CSColor.success)
+        case .failed: Color.cs(CSColor.error)
+        case .cancelled: Color.cs(CSColor.warning)
         }
     }
 
@@ -925,23 +925,23 @@ private struct WorkflowFamilyCard: View {
                     Spacer()
                     Text("\(family.memberCount) workflow\(family.memberCount == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 if !family.goals.isEmpty {
                     Text(family.goals.joined(separator: " · "))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(2)
                 }
                 HStack(spacing: 12) {
                     Label("\(family.totalSuccesses) succeeded", systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
+                        .csForeground(CSColor.success)
                     Label("\(family.totalFailures) failed", systemImage: "xmark.circle")
-                        .foregroundStyle(.red)
+                        .csForeground(CSColor.error)
                     if family.avgConfidence > 0 {
                         Label("\(family.avgConfidence.percentString) confidence",
                               systemImage: "waveform.path.ecg")
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                     }
                 }
                 .font(.caption2)
@@ -952,7 +952,7 @@ private struct WorkflowFamilyCard: View {
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(.quaternary.opacity(0.35), in: Capsule())
+                                .background(Color.cs(CSColor.borderSubtle), in: Capsule())
                         }
                         .accessibilityHidden(true)
                     }
@@ -991,29 +991,29 @@ private struct FailurePatternRow: View {
                     Spacer()
                     Text("\(pattern.occurrences) run\(pattern.occurrences == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 Text(pattern.description)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text(pattern.goal)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(pattern.patternType.title), \(pattern.description), \(pattern.occurrences) runs")
     }
 
     private var severityColor: Color {
-        if pattern.severity > 0.7 { return .red }
-        if pattern.severity > 0.4 { return .orange }
-        return .yellow
+        if pattern.severity > 0.7 { return Color.cs(CSColor.error) }
+        if pattern.severity > 0.4 { return Color.cs(CSColor.warning) }
+        return Color.cs(CSColor.warning)
     }
 }
 
@@ -1035,35 +1035,35 @@ private struct DuplicateGroupCard: View {
                     Spacer()
                     Text("\(group.records.count) copies · \(group.duplicateIDs.count) removed by merge")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 Text(group.reason)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .lineLimit(2)
                 ForEach(group.records, id: \.id) { record in
                     HStack(spacing: 6) {
                         Image(systemName: record.id == group.keepId ? "star.fill" : "doc")
                             .font(.caption2)
-                            .foregroundStyle(record.id == group.keepId ? Color.yellow : Color.secondary)
+                            .foregroundStyle(record.id == group.keepId ? Color.cs(CSColor.warning) : Color.cs(CSColor.textSecondary))
                             .accessibilityHidden(true)
                         Text(record.status.title)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                         if let workspaceName {
                             Text("· \(workspaceName)")
                                 .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                                 .lineLimit(1)
                         }
                         Spacer()
                         Text(record.createdAt.relativeTime)
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                         if record.id == group.keepId {
                             Text("kept")
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.green)
+                                .csForeground(CSColor.success)
                         }
                     }
                     .accessibilityElement(children: .combine)

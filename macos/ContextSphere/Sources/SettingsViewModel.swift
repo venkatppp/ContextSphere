@@ -40,22 +40,12 @@ final class SettingsViewModel: ObservableObject {
     private var thresholdLoaded = SettingsViewModel.thresholdDefault
     private var thresholdDebounce: Task<Void, Never>?
 
-    // MARK: Watched paths
+    // MARK: Watched paths (merged into General)
 
     @Published private(set) var watchedPaths: [String] = []
     @Published var watchPathInput = ""
     @Published private(set) var watchAddState: SettingsSaveState = .idle
     @Published private(set) var watchPathErrors: [String: String] = [:]
-
-    // MARK: LLM provider
-
-    static let temperatureRange = 0.0...2.0
-    @Published var llmDraft = LLMSettings(
-        provider: .openai, baseUrl: "https://api.openai.com/v1", apiKey: "",
-        model: "", temperature: 0.7, maxTokens: 2000, contextWindow: 128000)
-    @Published private(set) var llmLoaded: LLMSettings?
-    @Published private(set) var llmSave: SettingsSaveState = .idle
-    @Published private(set) var llmTest: SettingsSaveState = .idle
 
     // MARK: Security policy
 
@@ -77,7 +67,6 @@ final class SettingsViewModel: ObservableObject {
     // MARK: Dirty state
 
     var thresholdDirty: Bool { thresholdSeconds != thresholdLoaded }
-    var llmDirty: Bool { llmLoaded != llmDraft }
     var monitorDirty: Bool { monitorIntervalSeconds != monitorLoaded }
     var auditDirty: Bool { auditRetentionDays != auditLoaded }
     var findingsDirty: Bool { findingsRetentionDays != findingsLoaded }
@@ -94,15 +83,12 @@ final class SettingsViewModel: ObservableObject {
                 "get_session_inactivity_threshold", as: Int.self)
             async let paths: [String] = CoreBridge.shared.request(
                 "list_watch_paths", as: [String].self)
-            async let llm: LLMSettings = CoreBridge.shared.request(
-                "llm_get_settings", as: LLMSettings.self)
             async let security: [SecurityConfigEntry] = CoreBridge.shared.request(
                 "security_config", as: [SecurityConfigEntry].self)
-            let (loadedThreshold, loadedPaths, loadedLLM, loadedSecurity) =
-                try await (threshold, paths, llm, security)
+            let (loadedThreshold, loadedPaths, loadedSecurity) =
+                try await (threshold, paths, security)
             apply(threshold: loadedThreshold,
                   paths: loadedPaths,
-                  llm: loadedLLM,
                   security: loadedSecurity)
             phase = .loaded
         } catch {
@@ -110,7 +96,7 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
-    private func apply(threshold: Int, paths: [String], llm: LLMSettings,
+    private func apply(threshold: Int, paths: [String],
                        security: [SecurityConfigEntry]) {
         thresholdSeconds = threshold
         thresholdLoaded = threshold
@@ -119,11 +105,6 @@ final class SettingsViewModel: ObservableObject {
         watchedPaths = paths
         watchPathErrors = [:]
         watchAddState = .idle
-
-        llmDraft = llm
-        llmLoaded = llm
-        llmSave = .idle
-        llmTest = .idle
 
         let values = Dictionary(uniqueKeysWithValues: security.map { ($0.key, $0.value) })
         let monitor = values[Self.monitorKey].flatMap(Int.init)
@@ -143,8 +124,6 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: General — session threshold
 
-    /// Debounced auto-save: persists a settled stepper value to the
-    /// backend and reports the backend-confirmed outcome.
     func scheduleThresholdSave() {
         thresholdDebounce?.cancel()
         thresholdDebounce = Task { [weak self] in
@@ -220,73 +199,6 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
-    // MARK: LLM provider
-
-    /// Mirrors `LLMSettings::validate` client-side; the backend remains
-    /// the ultimate authority and its errors surface verbatim.
-    func saveLLM() async -> Bool {
-        if llmDraft.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty {
-            llmSave = .failed("Base URL is required.")
-            return false
-        }
-        if llmDraft.apiKey.isEmpty {
-            llmSave = .failed("API key is required.")
-            return false
-        }
-        if llmDraft.model.trimmingCharacters(in: .whitespaces).isEmpty {
-            llmSave = .failed("Model is required.")
-            return false
-        }
-        if !Self.temperatureRange.contains(llmDraft.temperature) {
-            llmSave = .failed("Temperature must be between 0.0 and 2.0.")
-            return false
-        }
-        if llmDraft.maxTokens == 0 {
-            llmSave = .failed("Max tokens must be greater than 0.")
-            return false
-        }
-        llmSave = .saving
-        do {
-            let data = try JSONEncoder().encode(llmDraft)
-            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw CoreError.decode("llm settings encoding failed")
-            }
-            try await CoreBridge.shared.call("llm_update_settings", params: ["settings": object])
-            llmLoaded = llmDraft
-            llmSave = .saved
-            return true
-        } catch {
-            llmSave = .failed(error.localizedDescription)
-            return false
-        }
-    }
-
-    /// Saves the draft first (the test runs against persisted settings),
-    /// then asks the backend to probe the provider. Bounded by a timeout
-    /// so an unreachable endpoint cannot wedge the UI.
-    func testLLM() async {
-        if llmDraft != llmLoaded {
-            guard await saveLLM() else { return }
-        }
-        llmTest = .saving
-        do {
-            try await withTimeout(seconds: 20) {
-                try await CoreBridge.shared.call("llm_test_connection")
-            }
-            llmTest = .saved
-        } catch {
-            llmTest = .failed(error.localizedDescription)
-        }
-    }
-
-    func revertLLM() {
-        if let loaded = llmLoaded {
-            llmDraft = loaded
-        }
-        llmSave = .idle
-        llmTest = .idle
-    }
-
     // MARK: Security policy
 
     func scheduleSecuritySave(key: String, value: Int) {
@@ -350,20 +262,5 @@ final class SettingsViewModel: ObservableObject {
         case Self.auditKey, Self.findingsKey: return Self.retentionRange
         default: return nil
         }
-    }
-}
-
-// MARK: - Timeout helper
-
-private func withTimeout<T>(seconds: TimeInterval,
-                            _ operation: @escaping () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(for: .seconds(seconds))
-            throw CoreError.transport("operation timed out after \(Int(seconds)) seconds")
-        }
-        defer { group.cancelAll() }
-        return try await group.next()!
     }
 }

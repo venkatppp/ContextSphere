@@ -41,6 +41,37 @@ final class GraphViewModel: ObservableObject {
         }
     }
 
+    /// Lenses — control which nodes are emphasised in the layout.
+    /// Each lens is a client-side filter; the underlying graph data is
+    /// never modified.
+    enum Lens: String, CaseIterable, Identifiable {
+        case all, files, sessions, executions, activity, related, primary
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all:        "All"
+            case .files:      "Files"
+            case .sessions:   "Sessions"
+            case .executions: "Executions"
+            case .activity:   "Activity"
+            case .related:    "Related"
+            case .primary:    "Most relevant"
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .all:        "circle.grid.3x3"
+            case .files:      "doc.text"
+            case .sessions:   "sparkles"
+            case .executions: "play.circle"
+            case .activity:   "bolt.horizontal"
+            case .related:    "arrow.triangle.branch"
+            case .primary:    "star"
+            }
+        }
+    }
+    @Published var lens: Lens = .all
+
     private static let subgraphDepth = 2
     private static let searchLimit: UInt32 = 20
     /// Whole-graph render budget: nodes fetched for the unfiltered view.
@@ -229,6 +260,34 @@ final class GraphViewModel: ObservableObject {
         switch edgeDensity {
         case .all: edges
         case .strong: edges.filter { $0.weight >= 0.5 }
+        }
+    }
+
+    /// Lenses — control which nodes are emphasised in the layout. The
+    /// graph data itself is unchanged; the renderer treats "ambient"
+    /// nodes (those outside the lens) as subdued. We return a Set of
+    /// node IDs that the lens is "about" so the renderer can promote
+    /// them, and their connected neighbours for context.
+    func lensHighlightedNodeIDs() -> Set<String>? {
+        switch lens {
+        case .all:        return nil
+        case .files:      return Set(nodes.filter { $0.nodeType == .file }.map(\.id))
+        case .sessions:   return Set(nodes.filter { $0.nodeType == .autonomousSession }.map(\.id))
+        case .executions: return Set(nodes.filter { $0.nodeType == .execution }.map(\.id))
+        case .activity:
+            let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+            return Set(nodes.filter { node in
+                guard let date = node.updatedAt.isoDate ?? node.createdAt.isoDate else { return false }
+                return date >= cutoff
+            }.map(\.id))
+        case .related:
+            // All non-orphan nodes
+            return Set(nodes.filter { $0.workspaceId != nil }.map(\.id))
+        case .primary:
+            // Top 25% by relevance
+            let sorted = relevanceScores.sorted { $0.value > $1.value }
+            let cutoff = max(1, sorted.count / 4)
+            return Set(sorted.prefix(cutoff).map(\.key))
         }
     }
 
@@ -911,7 +970,8 @@ final class GraphViewModel: ObservableObject {
                 let inputs = nodesSnap.map { node in
                     GraphLayout.NodeInput(id: node.id, nodeType: node.nodeType,
                                           workspaceId: node.workspaceId, entityId: node.entityId,
-                                          isWorkspace: node.nodeType == .workspace)
+                                          isWorkspace: node.nodeType == .workspace,
+                                          radius: node.nodeType.nodeRadius)
                 }
                 let edgeInputs = edgesSnap.map {
                     GraphLayout.EdgeInput(source: $0.sourceID, target: $0.targetID, weight: $0.weight)

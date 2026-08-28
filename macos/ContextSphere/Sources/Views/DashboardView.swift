@@ -7,9 +7,10 @@ import AppKit
 /// - "What changed?"           → recent context (activity + open files)
 /// - "Is everything healthy?"  → compact system health strip
 ///
-/// Hierarchy: hero → briefing → intelligence + recent → system health.
-/// The information layer uses calm native material. Glass is reserved
-/// for the hero chrome and interactive controls only.
+/// Layout is fully responsive: at narrow widths cards stack into a
+/// single column; at medium widths the layout splits into a 2-column
+/// grid; at wide widths the system health strip becomes a 4-up metric
+/// row alongside the daily briefing.
 struct DashboardView: View {
     let workspaces: [Workspace]
     let onRevealWorkspace: (String) -> Void
@@ -40,29 +41,29 @@ struct DashboardView: View {
         workspaces.first { $0.status == .active } ?? workspaces.first
     }
 
-    // MARK: - Body
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if !loadErrors.isEmpty {
-                    loadErrorBanner
+        GeometryReader { geo in
+            let width = geo.size.width
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if !loadErrors.isEmpty {
+                        loadErrorBanner
+                    }
+                    if workspaces.isEmpty {
+                        emptyWorkspaces
+                    } else {
+                        hero(width: width)
+                        briefingRow(width: width)
+                        intelligenceRow(width: width)
+                        systemHealth(width: width)
+                    }
                 }
-                if workspaces.isEmpty {
-                    emptyWorkspaces
-                } else {
-                    hero
-                    briefingCard
-                    intelligenceRow
-                    systemHealth
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, layoutPadding(for: width))
+                .padding(.vertical, 20)
             }
-            .frame(maxWidth: Theme.contentMaxWidth)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 18)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
         }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .task(id: workspaces.first?.id) { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .intelligenceDidChange)) { _ in
             intelligenceRefreshTask?.cancel()
@@ -80,19 +81,39 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Responsive helpers
+
+    private func layoutPadding(for width: CGFloat) -> CGFloat {
+        if width < 760 { return 16 }
+        if width < 1100 { return 22 }
+        return 32
+    }
+
+    private func splitRatio(for width: CGFloat) -> CGFloat {
+        // 60/40 split, but collapses to full-width under 1100.
+        if width < 1100 { return 1.0 }
+        if width < 1400 { return 0.58 }
+        return 0.62
+    }
+
+    private func twoColumn(for width: CGFloat) -> Bool {
+        width >= 900
+    }
+
     // MARK: - Empty state
 
     private var emptyWorkspaces: some View {
         VStack(spacing: 18) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 40, weight: .light))
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             VStack(spacing: 6) {
                 Text("Create your first workspace")
                     .font(.title2.weight(.semibold))
+                    .csForeground(CSColor.textPrimary)
                 Text("ContextSphere learns from the work you do inside a workspace. Create one and it will begin tracking context here.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
             }
@@ -106,11 +127,10 @@ struct DashboardView: View {
             .controlSize(.large)
             .accessibilityLabel("Create your first workspace")
 
-            // First-run 3-step journey — calm, not glass, explains empty→populated without fake data
             VStack(alignment: .leading, spacing: 12) {
                 Text("How it works")
                     .font(.csEyebrow())
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .textCase(.uppercase)
                     .tracking(0.6)
                 HStack(alignment: .top, spacing: 12) {
@@ -121,20 +141,20 @@ struct DashboardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.shield")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                     Text("Files are observed locally on this Mac and never uploaded. Watch paths are managed in Settings.")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
             }
             .padding(16)
             .frame(maxWidth: 460)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
+            .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             )
         }
         .frame(maxWidth: .infinity)
@@ -146,15 +166,16 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(number)
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.white)
+                .csForeground(CSColor.textOnAccent)
                 .frame(width: 22, height: 22)
                 .background(Circle().fill(Color.accentColor))
                 .accessibilityHidden(true)
             Text(title)
                 .font(.caption.weight(.semibold))
+                .csForeground(CSColor.textPrimary)
             Text(detail)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,28 +193,49 @@ struct DashboardView: View {
         )
     }
 
-    // MARK: - Hero
+    // MARK: - Hero (full width)
 
-    private var hero: some View {
+    private func hero(width: CGFloat) -> some View {
         HeroCard {
             if let workspace = currentWorkspace {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 18) {
+                if width < 900 {
+                    VStack(alignment: .leading, spacing: 16) {
                         workspaceIdentity(workspace)
-                        Spacer(minLength: 16)
-                        healthGauge(workspace)
-                        actionColumn(workspace)
-                    }
-                    if let actionError {
-                        StatusBanner(message: "Action failed", style: .error, detail: actionError)
-                    }
-                    if let resume, !resume.unfinishedWork.isEmpty {
                         Hairline()
-                        unfinishedWorkList(resume.unfinishedWork)
-                    } else if let session = lastSession,
-                              session.workspaceId != currentWorkspace?.id {
-                        Hairline()
-                        lastSessionRow(session)
+                        HStack(alignment: .top, spacing: 18) {
+                            healthGauge(workspace)
+                            actionColumn(workspace)
+                        }
+                        if let actionError {
+                            StatusBanner(message: "Action failed", style: .error, detail: actionError)
+                        }
+                        if let resume, !resume.unfinishedWork.isEmpty {
+                            unfinishedWorkList(resume.unfinishedWork)
+                        } else if let session = lastSession,
+                                  session.workspaceId != currentWorkspace?.id {
+                            lastSessionRow(session)
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(alignment: .top, spacing: 18) {
+                            workspaceIdentity(workspace)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Spacer(minLength: 16)
+                            healthGauge(workspace)
+                            actionColumn(workspace)
+                        }
+                        if let actionError {
+                            StatusBanner(message: "Action failed", style: .error, detail: actionError)
+                        }
+                        if let resume, !resume.unfinishedWork.isEmpty {
+                            Hairline()
+                            unfinishedWorkList(resume.unfinishedWork)
+                        } else if let session = lastSession,
+                                  session.workspaceId != currentWorkspace?.id {
+                            Hairline()
+                            lastSessionRow(session)
+                        }
                     }
                 }
             }
@@ -217,6 +259,7 @@ struct DashboardView: View {
                 HStack(spacing: 8) {
                     Text(workspace.name)
                         .font(.title3.weight(.semibold))
+                        .csForeground(CSColor.textPrimary)
                         .lineLimit(1)
                     if workspace.status == .active {
                         CSStatusBadge(text: "Active", kind: .success)
@@ -225,30 +268,30 @@ struct DashboardView: View {
                 if let path = workspace.rootPath, !path.isEmpty {
                     Text(path)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } else if let description = workspace.description, !description.isEmpty {
                     Text(description)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(2)
                 }
                 if let openFiles = resume?.openFiles, !openFiles.isEmpty {
                     HStack(spacing: 6) {
                         Text("Open")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .textCase(.uppercase)
                             .tracking(0.5)
                         ForEach(openFiles.prefix(3), id: \.self) { file in
                             HStack(spacing: 3) {
                                 Image(systemName: "doc")
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                                 Text((file as NSString).lastPathComponent)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                                     .lineLimit(1)
                             }
                             .help(file)
@@ -266,18 +309,20 @@ struct DashboardView: View {
         VStack(spacing: 4) {
             ZStack {
                 Circle()
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 6)
+                    .stroke(Color.cs(CSColor.textTertiary).opacity(0.15), lineWidth: 6)
                 Circle()
                     .trim(from: 0, to: max(0.02, workspace.healthScore / 100))
-                    .stroke(healthColor(workspace.healthScore), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .stroke(healthColor(workspace.healthScore),
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(Theme.spring(reduceMotion), value: workspace.healthScore)
                 VStack(spacing: 0) {
                     Text("\(Int(workspace.healthScore))")
                         .font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
+                        .csForeground(CSColor.textPrimary)
                     Text("Health")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
             .frame(width: 64, height: 64)
@@ -286,9 +331,9 @@ struct DashboardView: View {
     }
 
     private func healthColor(_ score: Double) -> Color {
-        if score >= 70 { return .green }
-        if score >= 40 { return .orange }
-        return .red
+        if score >= 70 { return Color.cs(CSColor.success) }
+        if score >= 40 { return Color.cs(CSColor.warning) }
+        return Color.cs(CSColor.error)
     }
 
     private func actionColumn(_ workspace: Workspace) -> some View {
@@ -313,7 +358,7 @@ struct DashboardView: View {
 
             Text("Active \(workspace.lastActiveAt.relativeTime)")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
         }
     }
 
@@ -322,10 +367,10 @@ struct DashboardView: View {
             HStack(spacing: 6) {
                 Image(systemName: "tray.full")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text("Unfinished work")
                     .font(.csEyebrow())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
             }
@@ -339,15 +384,16 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.description)
                             .font(.callout)
+                            .csForeground(CSColor.textPrimary)
                         HStack(spacing: 6) {
                             if let file = item.filePath {
                                 Text((file as NSString).lastPathComponent)
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                             }
                             Text("· \(item.confidence.percentString) confidence")
                                 .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                         }
                     }
                 }
@@ -357,9 +403,9 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Daily briefing
+    // MARK: - Daily briefing (full width, then system health)
 
-    private var briefingCard: some View {
+    private func briefingRow(width: CGFloat) -> some View {
         ContentCard {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Daily Briefing",
@@ -376,6 +422,7 @@ struct DashboardView: View {
                         if let lang = briefing.primaryLanguage ?? briefing.summary.primaryLanguage {
                             briefingStat(lang, symbol: "chevron.left.forwardslash.chevron.right")
                         }
+                        Spacer()
                     }
                     if !briefing.insights.isEmpty {
                         Hairline()
@@ -384,7 +431,7 @@ struct DashboardView: View {
                                     id: \.offset) { _, insight in
                                 Label(insight, systemImage: "sparkle")
                                     .font(.callout)
-                                    .foregroundStyle(.primary)
+                                    .csForeground(CSColor.textPrimary)
                             }
                         }
                     }
@@ -394,14 +441,14 @@ struct DashboardView: View {
                                     id: \.offset) { _, suggestion in
                                 Label(suggestion, systemImage: "lightbulb")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                             }
                         }
                     }
                 } else if !loadErrors.contains(where: { $0.hasPrefix("Daily briefing") }) {
                     Text("Your day at a glance will appear here once there is some activity.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
         }
@@ -415,20 +462,32 @@ struct DashboardView: View {
             Text(text)
                 .font(.caption.weight(.medium))
         }
-        .foregroundStyle(.secondary)
+        .csForeground(CSColor.textSecondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.3), in: Capsule(style: .continuous))
+        .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+                    in: Capsule(style: .continuous))
     }
 
-    // MARK: - Intelligence + Recent context
+    // MARK: - Intelligence + Recent Context
 
-    private var intelligenceRow: some View {
-        HStack(alignment: .top, spacing: 16) {
-            intelligencePanel
-                .frame(maxWidth: .infinity)
-            recentContextPanel
-                .frame(maxWidth: .infinity)
+    private func intelligenceRow(width: CGFloat) -> some View {
+        if twoColumn(for: width) {
+            return AnyView(
+                HStack(alignment: .top, spacing: 16) {
+                    intelligencePanel
+                        .frame(maxWidth: .infinity)
+                    recentContextPanel
+                        .frame(maxWidth: .infinity)
+                }
+            )
+        } else {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 16) {
+                    intelligencePanel
+                    recentContextPanel
+                }
+            )
         }
     }
 
@@ -452,7 +511,7 @@ struct DashboardView: View {
                 } else {
                     Text("Predictions will appear here as ContextSphere learns your patterns.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
 
                 if !recommendations.isEmpty {
@@ -472,19 +531,20 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Next workspace")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .textCase(.uppercase)
                     .tracking(0.5)
                 Text(prediction.workspaceName)
                     .font(.callout.weight(.semibold))
+                    .csForeground(CSColor.textPrimary)
                 Text(prediction.reason)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
             Text(prediction.confidence.percentString)
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Next workspace: \(prediction.workspaceName). \(prediction.reason). Confidence \(prediction.confidence.percentString)")
@@ -494,20 +554,21 @@ struct DashboardView: View {
         HStack(spacing: 10) {
             Image(systemName: continuation.willContinue ? "play.circle.fill" : "pause.circle.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(continuation.willContinue ? .green : .secondary)
+                .csForeground(continuation.willContinue ? CSColor.success : CSColor.textSecondary)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(continuation.willContinue ? "Session continuation expected" : "Session winding down")
                     .font(.callout.weight(.medium))
+                    .csForeground(CSColor.textPrimary)
                 Text(continuation.reason)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
             if continuation.willContinue {
                 Text("≈ \(Duration.seconds(Double(continuation.estimatedDurationSeconds)).formatted(.units(allowed: [.minutes])))")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
         }
         .accessibilityElement(children: .combine)
@@ -518,7 +579,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Likely files")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .textCase(.uppercase)
                 .tracking(0.5)
             ForEach(files) { file in
@@ -528,19 +589,19 @@ struct DashboardView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "doc")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                             .frame(width: 14)
                         Text((file.filePath as NSString).lastPathComponent)
                             .font(.callout)
                             .lineLimit(1)
-                            .foregroundStyle(.primary)
+                            .csForeground(CSColor.textPrimary)
                         Spacer()
                         Text(file.confidence.percentString)
                             .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                         Image(systemName: "arrow.up.forward.app")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                     }
                     .padding(.vertical, 3)
                     .contentShape(Rectangle())
@@ -589,7 +650,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Recommended")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .textCase(.uppercase)
                 .tracking(0.5)
             ForEach(recommendations.prefix(3)) { recommendation in
@@ -603,10 +664,11 @@ struct DashboardView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(recommendation.title)
                                     .font(.callout.weight(.medium))
+                                    .csForeground(CSColor.textPrimary)
                                     .multilineTextAlignment(.leading)
                                 Text(recommendation.description)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
                             }
@@ -637,7 +699,7 @@ struct DashboardView: View {
                 if explainError != nil && explainingId == recommendation.id {
                     Text(explainError!)
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .csForeground(CSColor.warning)
                 }
             }
         }
@@ -653,7 +715,7 @@ struct DashboardView: View {
                 if activity.isEmpty {
                     Text("No activity recorded yet in \(currentWorkspace?.name ?? "this workspace").")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(activity.prefix(6).enumerated()), id: \.element.id) { index, event in
@@ -670,7 +732,7 @@ struct DashboardView: View {
                     Label("\(resume.openFiles.count) files open",
                           systemImage: "doc.on.doc")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
         }
@@ -678,43 +740,46 @@ struct DashboardView: View {
 
     // MARK: - System health
 
-    private var systemHealth: some View {
+    private func systemHealth(width: CGFloat) -> some View {
         ContentCard {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "System Health",
-                              subtitle: "Core status at a glance",
+                              subtitle: "Status at a glance",
                               symbol: "waveform.path.ecg")
 
                 if let health {
-                    HStack(spacing: 24) {
-                        HealthFact(title: "Core",
+                    let columns: Int = width < 900 ? 2 : 4
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16),
+                                             count: columns), alignment: .leading, spacing: 12) {
+                        HealthFact(title: "System",
                                    value: health.isHealthy ? "Healthy" : health.status.capitalized,
                                    symbol: "checkmark.circle.fill",
-                                   color: health.isHealthy ? .green : .orange)
+                                   color: health.isHealthy ? Color.cs(CSColor.success) : Color.cs(CSColor.warning))
                         HealthFact(title: "Uptime",
                                    value: Duration.seconds(Double(health.uptimeSeconds)).formatted(.units(allowed: [.hours, .minutes])),
                                    symbol: "clock",
-                                   color: .secondary)
+                                   color: Color.cs(CSColor.textSecondary))
                         HealthFact(title: "Workers",
                                    value: "\(health.workersActive)",
                                    symbol: "person.2",
-                                   color: .secondary)
+                                   color: Color.cs(CSColor.textSecondary))
                         HealthFact(title: "Cache hits",
                                    value: health.cacheHitRate.percentString,
                                    symbol: "bolt.horizontal.circle",
-                                   color: .secondary)
-                        Spacer()
-                        if let version = CoreBridge.shared.backendVersion {
+                                   color: Color.cs(CSColor.textSecondary))
+                    }
+                    if let version = CoreBridge.shared.backendVersion {
+                        HStack {
+                            Spacer()
                             Text("v\(version)")
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text("Runtime health unavailable.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
         }
@@ -886,9 +951,10 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Resume last session in \(session.workspaceName)")
                     .font(.callout.weight(.medium))
+                    .csForeground(CSColor.textPrimary)
                 Text(Self.lastSessionDetail(session))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             Spacer()
             Button("Switch") {
@@ -916,8 +982,6 @@ struct DashboardView: View {
 
 // MARK: - Supporting views
 
-/// Presents the reasoning behind a recommendation: plain-language
-/// explanation, per-engine sources, and supporting evidence.
 struct ExplanationSheet: View {
     let explanation: ExplainablePrediction
     let onDismiss: () -> Void
@@ -927,13 +991,15 @@ struct ExplanationSheet: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("Why this recommendation", systemImage: "questionmark.circle")
                     .font(.headline)
+                    .csForeground(CSColor.textPrimary)
                 Spacer()
                 Text("confidence \(Int((explanation.confidence * 100).rounded()))%")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             Text(explanation.explanation)
                 .font(.callout)
+                .csForeground(CSColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if !explanation.supportingEvidence.isEmpty {
@@ -941,7 +1007,7 @@ struct ExplanationSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Supporting evidence")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     ForEach(explanation.supportingEvidence.prefix(6)) { evidence in
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "checkmark.seal")
@@ -952,9 +1018,10 @@ struct ExplanationSheet: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(evidence.description)
                                     .font(.callout)
+                                    .csForeground(CSColor.textPrimary)
                                 Text("\(evidence.source) · \(Int((evidence.confidence * 100).rounded()))%")
                                     .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .csForeground(CSColor.textTertiary)
                             }
                         }
                         .accessibilityElement(children: .combine)
@@ -965,7 +1032,7 @@ struct ExplanationSheet: View {
             if !explanation.sourceEngines.isEmpty {
                 Text("Sources: \(explanation.sourceEngines.joined(separator: ", "))")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
 
             HStack {
@@ -993,18 +1060,19 @@ struct DashboardActivityRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.displayTitle)
                     .font(.callout)
+                    .csForeground(CSColor.textPrimary)
                     .lineLimit(1)
                 if let artifact = event.artifactName {
                     Text(artifact)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                 }
             }
             Spacer()
             Text(event.occurredAt.relativeTime)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
         }
         .padding(.vertical, 7)
         .accessibilityElement(children: .combine)
@@ -1034,11 +1102,12 @@ struct HealthFact: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .textCase(.uppercase)
                     .tracking(0.5)
                 Text(value)
                     .font(.callout.weight(.medium))
+                    .csForeground(CSColor.textPrimary)
                     .monospacedDigit()
             }
         }
@@ -1056,16 +1125,25 @@ struct PriorityPill: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(Capsule().fill(color.opacity(0.16)))
-            .foregroundStyle(color)
+            .csForeground(token)
             .accessibilityLabel("\(priority) priority")
     }
 
     private var color: Color {
         switch priority.lowercased() {
-        case "critical": .red
-        case "high": .orange
-        case "medium": .yellow
-        default: .secondary
+        case "critical": Color.cs(CSColor.error)
+        case "high":     Color.cs(CSColor.warning)
+        case "medium":   Color.cs(CSColor.warning)
+        default:         Color.cs(CSColor.textSecondary)
+        }
+    }
+
+    private var token: String {
+        switch priority.lowercased() {
+        case "critical": CSColor.error
+        case "high":     CSColor.warning
+        case "medium":   CSColor.warning
+        default:         CSColor.textSecondary
         }
     }
 }

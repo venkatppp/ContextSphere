@@ -70,19 +70,19 @@ struct MaintenanceView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 32, weight: .light))
-                .foregroundStyle(.orange)
+                .csForeground(CSColor.warning)
             Text("Maintenance unavailable")
                 .font(.title3.weight(.semibold))
             Text(humanMaintenanceError(msg))
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 380)
                 .textSelection(.enabled)
             if humanMaintenanceError(msg) != msg {
                 Text(msg)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
                     .textSelection(.enabled)
@@ -106,7 +106,7 @@ struct MaintenanceView: View {
             return "The maintenance service returned no data. Retry to re-check database health."
         }
         if lower.contains("timed out") { return "The maintenance check timed out. Retry." }
-        if lower.contains("core daemon is not running") { return "Core daemon is not running. Reconnect via the status footer." }
+        if lower.contains("core daemon is not running") { return "Connection unavailable. Try Refresh to reconnect." }
         return raw
     }
 
@@ -118,25 +118,25 @@ struct MaintenanceView: View {
             } else {
                 // Valid empty: no pending restore is normal; show subtle hint, not an error.
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-                    Text("No pending restore").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "checkmark.circle").csForeground(CSColor.textSecondary)
+                    Text("No pending restore").font(.caption).csForeground(CSColor.textSecondary)
                     Spacer()
-                    Text("A staged restore appears here and applies on next launch.").font(.caption2).foregroundStyle(.tertiary)
+                    Text("A staged restore appears here and applies on next launch.").font(.caption2).csForeground(CSColor.textTertiary)
                 }
                 .padding(10)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             backupsCard
             if let rep = viewModel.lastOptimize { maintenanceResultCard(rep) }
             if let err = viewModel.lastError {
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                    Text(err).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Image(systemName: "exclamationmark.circle").csForeground(CSColor.warning)
+                    Text(err).font(.caption).csForeground(CSColor.textSecondary).textSelection(.enabled)
                     Spacer()
                     Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderless).controlSize(.small)
                 }
                 .padding(10)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityLabel("Maintenance warning: \(err)")
             }
         }
@@ -148,19 +148,19 @@ struct MaintenanceView: View {
                 SectionHeader(title: "Integrity", subtitle: r.ok ? "OK" : "Failed", symbol: r.ok ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(r.dbPath).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                        Text("Size \(ByteCountFormatter.string(fromByteCount: r.main.databaseSizeBytes, countStyle: .file)) · \(r.main.pageCount) pages · \(r.main.journalMode)").font(.caption2).foregroundStyle(.tertiary)
+                        Text(r.dbPath).font(.caption).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Text("Size \(ByteCountFormatter.string(fromByteCount: r.main.databaseSizeBytes, countStyle: .file)) · \(r.main.pageCount) pages · \(r.main.journalMode)").font(.caption2).csForeground(CSColor.textTertiary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Circle().fill(r.ok ? Color.green : Color.red).frame(width: 10, height: 10)
+                    Circle().fill(r.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error)).frame(width: 10, height: 10)
                 }
                 if !r.main.foreignKeyCheck.isEmpty {
-                    Text("Foreign key issues: \(r.main.foreignKeyCheck.joined(separator: ", "))").font(.caption).foregroundStyle(.red)
+                    Text("Foreign key issues: \(r.main.foreignKeyCheck.joined(separator: ", "))").font(.caption).csForeground(CSColor.error)
                 }
                 HStack {
-                    Label(r.main.integrity.ok ? "integrity_check OK" : "integrity_check failed", systemImage: r.main.integrity.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.integrity.ok ? .green : .red)
-                    Label(r.main.quickCheck.ok ? "quick_check OK" : "quick_check failed", systemImage: r.main.quickCheck.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.quickCheck.ok ? .green : .red)
+                    Label(r.main.integrity.ok ? "integrity_check OK" : "integrity_check failed", systemImage: r.main.integrity.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.integrity.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
+                    Label(r.main.quickCheck.ok ? "quick_check OK" : "quick_check failed", systemImage: r.main.quickCheck.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.quickCheck.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
                     Spacer()
-                    Text("Freelist \(r.main.freelistCount)").font(.caption2).foregroundStyle(.secondary)
+                    Text("Freelist \(r.main.freelistCount)").font(.caption2).csForeground(CSColor.textSecondary)
                 }
             }
         }
@@ -170,9 +170,9 @@ struct MaintenanceView: View {
         ContentCard {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Pending Restore", systemImage: "arrow.triangle.branch").font(.callout.weight(.semibold))
-                Text(p.message).font(.callout).foregroundStyle(.secondary)
-                Text("Applies on next launch · \(p.backupPath)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
-                Button("Cancel Pending Restore") { showCancelRestoreConfirm = true }.buttonStyle(.bordered).controlSize(.small).tint(.red)
+                Text(p.message).font(.callout).csForeground(CSColor.textSecondary)
+                Text("Applies on next launch · \(p.backupPath)").font(.caption2).csForeground(CSColor.textTertiary).lineLimit(1).truncationMode(.middle)
+                Button("Cancel Pending Restore") { showCancelRestoreConfirm = true }.buttonStyle(.bordered).controlSize(.small).tint(Color.cs(CSColor.error))
             }
         }
     }
@@ -182,21 +182,21 @@ struct MaintenanceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Backups", subtitle: "\(viewModel.backups.count)", symbol: "externaldrive")
                 if viewModel.backups.isEmpty {
-                    Text("No backups yet — create one to be able to restore.").font(.callout).foregroundStyle(.secondary)
+                    Text("No backups yet — create one to be able to restore.").font(.callout).csForeground(CSColor.textSecondary)
                 } else {
                     ForEach(viewModel.backups.prefix(10), id: \.id) { run in
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
-                                    Text(run.kind.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                                    Text(run.status.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(run.status == "success" ? .green : run.status == "failed" ? .red : .orange).padding(.horizontal, 5).padding(.vertical, 1).background(.quaternary.opacity(0.3), in: Capsule())
+                                    Text(run.kind.capitalized).font(.caption2.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase)
+                                    Text(run.status.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(run.status == "success" ? Color.cs(CSColor.success) : run.status == "failed" ? Color.cs(CSColor.error) : Color.cs(CSColor.warning)).padding(.horizontal, 5).padding(.vertical, 1).background(Color.cs(CSColor.borderSubtle), in: Capsule())
                                 }
                                 Text(run.path.isEmpty ? run.detail : run.path).font(.callout).lineLimit(1).truncationMode(.middle)
-                                Text("\(run.startedAt.relativeTime) · \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file)) · \(run.durationMs) ms").font(.caption2).foregroundStyle(.tertiary)
+                                Text("\(run.startedAt.relativeTime) · \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file)) · \(run.durationMs) ms").font(.caption2).csForeground(CSColor.textTertiary)
                             }
                             Spacer()
                             if run.kind == "backup" && run.status == "success" {
-                                Button("Restore") { showRestoreConfirm = run.id }.buttonStyle(.bordered).controlSize(.small).tint(.orange)
+                                Button("Restore") { showRestoreConfirm = run.id }.buttonStyle(.bordered).controlSize(.small).tint(Color.cs(CSColor.warning))
                             }
                         }
                         Divider().opacity(0.3)
@@ -218,8 +218,8 @@ struct MaintenanceView: View {
         ContentCard {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Last Maintenance", systemImage: "hammer").font(.callout.weight(.semibold))
-                Text("Freed \(r.freedPages) pages · \(ByteCountFormatter.string(fromByteCount: r.recoveredBytes, countStyle: .file)) · Vacuum \(r.vacuumRan ? "yes" : "no") · Checkpoint \(r.checkpointedFrames) frames").font(.caption).foregroundStyle(.secondary)
-                Text(r.checkedAt.relativeTime).font(.caption2).foregroundStyle(.tertiary)
+                Text("Freed \(r.freedPages) pages · \(ByteCountFormatter.string(fromByteCount: r.recoveredBytes, countStyle: .file)) · Vacuum \(r.vacuumRan ? "yes" : "no") · Checkpoint \(r.checkpointedFrames) frames").font(.caption).csForeground(CSColor.textSecondary)
+                Text(r.checkedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
             }
         }
     }

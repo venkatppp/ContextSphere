@@ -97,37 +97,62 @@ struct WorkspacesView: View {
     // MARK: - Header
 
     private var header: some View {
-        ScreenHeader(
-            "Workspaces",
-            subtitle: workspaces.isEmpty
-                ? "Organize your work into contexts ContextSphere can understand."
-                : "\(activeWorkspaces.count) active · \(archivedWorkspaces.count) archived",
-            symbol: "folder",
-            eyebrow: "Workspace"
-        ) {
-            HStack(spacing: 8) {
-                if !workspaces.isEmpty {
-                    Text("\(workspaces.count)")
-                        .font(.caption.monospacedDigit().weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 18, weight: .semibold))
+                        .csForeground(CSColor.info)
+                    Text("Workspaces")
+                        .font(.csScreenTitle)
+                        .csForeground(CSColor.textPrimary)
+                        .tracking(-0.3)
+                }
+                Text(subtitle)
+                    .font(.callout)
+                    .csForeground(CSColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if !workspaces.isEmpty {
+                HStack(spacing: 6) {
+                    Text("\(activeWorkspaces.count) active")
+                        .font(.caption2.weight(.medium))
+                        .csForeground(CSColor.success)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(.quaternary.opacity(0.4), in: Capsule(style: .continuous))
-                        .accessibilityLabel("\(workspaces.count) workspaces")
+                        .background(
+                            Color.cs(CSColor.success).opacity(0.14),
+                            in: Capsule(style: .continuous)
+                        )
+                    Text("\(archivedWorkspaces.count) archived")
+                        .font(.caption2.weight(.medium))
+                        .csForeground(CSColor.textSecondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            Color.cs(CSColor.textTertiary).opacity(0.10),
+                            in: Capsule(style: .continuous)
+                        )
                 }
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous))
+        .background(Color.cs(CSColor.surface))
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous)
-                .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+            Rectangle()
+                .fill(Color.cs(CSColor.separator))
+                .frame(height: 0.5),
+            alignment: .bottom
         )
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .accessibilityElement(children: .combine)
+    }
+
+    private var subtitle: String {
+        if workspaces.isEmpty {
+            return "Organize your work into contexts ContextSphere can understand."
+        }
+        return "Your contexts. Switch, archive, or create new ones."
     }
 
     private var workspacesContent: some View {
@@ -135,9 +160,9 @@ struct WorkspacesView: View {
             header
             HSplitView {
                 masterList
-                    .frame(minWidth: 280, idealWidth: 320)
+                    .frame(minWidth: 300, idealWidth: 340)
                 detailPane
-                    .frame(minWidth: 400)
+                    .frame(minWidth: 420)
             }
         }
     }
@@ -160,9 +185,18 @@ struct WorkspacesView: View {
                                     .contextMenu { rowContextMenu(for: workspace) }
                             }
                         } header: {
-                            SectionHeader(title: "Active", symbol: "folder.fill")
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 4)
+                            HStack(spacing: 6) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .csForeground(CSColor.textTertiary)
+                                Text("Active")
+                                    .font(.csEyebrow(size: 10))
+                                    .tracking(0.7)
+                                    .csForeground(CSColor.textTertiary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 4)
                         }
                     }
                     if !archivedWorkspaces.isEmpty {
@@ -175,9 +209,18 @@ struct WorkspacesView: View {
                                     .contextMenu { rowContextMenu(for: workspace) }
                             }
                         } header: {
-                            SectionHeader(title: "Archived", symbol: "archivebox")
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 4)
+                            HStack(spacing: 6) {
+                                Image(systemName: "archivebox")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .csForeground(CSColor.textTertiary)
+                                Text("Archived")
+                                    .font(.csEyebrow(size: 10))
+                                    .tracking(0.7)
+                                    .csForeground(CSColor.textTertiary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.bottom, 4)
                         }
                     }
                 }
@@ -185,9 +228,9 @@ struct WorkspacesView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(.regularMaterial)
+        .background(Color.cs(CSColor.surfaceSidebar))
         .overlay(
-            Rectangle().fill(.separator.opacity(0.6)).frame(width: 1),
+            Rectangle().fill(Color.cs(CSColor.separator)).frame(width: 0.5),
             alignment: .trailing
         )
     }
@@ -243,12 +286,12 @@ struct WorkspacesView: View {
         VStack(spacing: 12) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             Text("No workspaces yet")
                 .font(.headline)
             Text("Create your first workspace — ContextSphere will learn from the work you do inside it.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
             Button {
@@ -294,7 +337,7 @@ struct WorkspacesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+        .background(Color.cs(CSColor.surface).opacity(0.5))
     }
 
     private func loadDetail(_ workspace: Workspace) async {

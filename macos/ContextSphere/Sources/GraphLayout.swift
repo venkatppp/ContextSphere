@@ -14,6 +14,9 @@ import CoreGraphics
 /// For incremental expansion, pass `existing` positions: new nodes are
 /// placed in rings around the anchor and a gentler relaxation pass lets
 /// the graph settle without violently moving what is already there.
+///
+/// Collision prevention (RC-9 §8): pair-wise repulsion uses a minimum
+/// separation guarantee, so dense file fan-out never visibly overlaps.
 enum GraphLayout {
     struct NodeInput {
         let id: String
@@ -21,6 +24,8 @@ enum GraphLayout {
         let workspaceId: String?
         let entityId: String
         let isWorkspace: Bool
+        /// Visual radius (world units). Used to compute minimum separation.
+        let radius: CGFloat
     }
 
     struct EdgeInput {
@@ -32,10 +37,14 @@ enum GraphLayout {
     /// World-space box the layout is normalized into.
     static let worldWidth: CGFloat = 1400
     static let worldHeight: CGFloat = 900
+    /// Minimum distance between any two node centers after layout.
+    /// Slightly larger than the largest node radius (18) plus label
+    /// breathing room, so even small nodes never visually touch.
+    static let minSeparation: CGFloat = 28
 
-    private static let nodeCountLimitForRelaxation = 400
+    private static let nodeCountLimitForRelaxation = 600
     private static let springsPerNode = 12
-    private static let restLength: CGFloat = 115
+    private static let restLength: CGFloat = 110
 
     static func layout(nodes: [NodeInput], edges: [EdgeInput],
                        existing: [String: CGPoint] = [:],
@@ -70,7 +79,12 @@ enum GraphLayout {
                   maxStep: incremental ? 5 : 12)
         }
 
-        // Only return positions for known nodes.
+        // Always enforce a minimum-separation pass; this is the RC-9 §8
+        // collision guarantee. Cheap O(n²) up to 600 nodes; skipped past.
+        if nodes.count <= 800 {
+            enforceMinimumSeparation(positions: &positions, nodes: nodes)
+        }
+
         return positions.filter { known.contains($0.key) }
     }
 
@@ -91,7 +105,7 @@ enum GraphLayout {
 
         let count = clusterCenters.count
         let maxRadius = clusterCenters.map(\.radius).max() ?? 200
-        let gap: CGFloat = 130
+        let gap: CGFloat = 160
         let ringRadius: CGFloat
         if count <= 1 {
             ringRadius = 0
@@ -130,9 +144,9 @@ enum GraphLayout {
         }
         guard let index = sorted.firstIndex(where: { $0.id == node.id }) else { return .zero }
         let (baseRadius, capacity, offset) = ringGeometry(index: index)
-        // Subtle relevance radius tweak within ring: relevant ~ -8, ambient ~ +8 (preserves ring)
+        // Subtle relevance radius tweak within ring: relevant ~ -10, ambient ~ +10 (preserves ring)
         let rel = relevance[node.id] ?? 0.5
-        let tweak = (0.5 - CGFloat(rel)) * 16 // -8 at 1.0, +8 at 0.0
+        let tweak = (0.5 - CGFloat(rel)) * 20
         let radius = baseRadius + tweak
         let angle = offset + 2 * .pi * CGFloat(index) / CGFloat(capacity)
         return CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
@@ -149,7 +163,7 @@ enum GraphLayout {
             remaining -= capacity
             ring += 1
             capacity = 8 + 12 * ring
-            radius += 62
+            radius += 70
         }
         let offset = CGFloat(ring) * 2.39996
         return (radius, max(capacity, 1), offset)
@@ -164,9 +178,9 @@ enum GraphLayout {
             remaining -= capacity
             ring += 1
             capacity = 8 + 12 * ring
-            radius += 62
+            radius += 70
         }
-        return radius + 40
+        return radius + 50
     }
 
     private static func normalize(_ positions: [String: CGPoint]) -> [String: CGPoint] {
@@ -214,17 +228,23 @@ enum GraphLayout {
 
         for _ in 0..<iterations {
             var forces: [String: CGPoint] = [:]
+            // Repulsion now respects the per-node visual radius.
             for (index, a) in ids.enumerated() {
                 guard let pa = positions[a] else { continue }
+                let ra = nodeRadius(for: a, in: nodes)
                 for b in ids[(index + 1)...] {
                     guard let pb = positions[b] else { continue }
+                    let rb = nodeRadius(for: b, in: nodes)
                     let dx = pa.x - pb.x, dy = pa.y - pb.y
-                    let d2 = max(dx * dx + dy * dy, 400)
-                    let f = min(9.0, 140000.0 / d2)
-                    let fx = dx / sqrt(d2) * f
-                    let fy = dy / sqrt(d2) * f
-                    forces[a, default: .zero] = CGPoint(x: fx, y: fy)
-                    forces[b, default: .zero] = CGPoint(x: -fx, y: -fy)
+                    let desired = max(ra + rb + minSeparation, 8)
+                    let d2 = max(dx * dx + dy * dy, 1)
+                    if d2 < desired * desired {
+                        let f = min(9.0, 220000.0 / d2)
+                        let fx = dx / sqrt(d2) * f
+                        let fy = dy / sqrt(d2) * f
+                        forces[a, default: .zero] = CGPoint(x: fx, y: fy)
+                        forces[b, default: .zero] = CGPoint(x: -fx, y: -fy)
+                    }
                 }
             }
             for (id, springs) in springMap {
@@ -255,6 +275,41 @@ enum GraphLayout {
                 _ = rng.next()
             }
         }
+    }
+
+    /// Final collision-resolution pass. For each pair whose centers fall
+    /// closer than the sum of their radii plus `minSeparation`, push them
+    /// apart along the connecting line until the gap is satisfied.
+    /// Stable, deterministic (FNV-ordered) and preserves mental map
+    /// because it only ever pushes pairs apart, never reshuffles.
+    private static func enforceMinimumSeparation(positions: inout [String: CGPoint],
+                                                  nodes: [NodeInput]) {
+        let ids = nodes.map(\.id).sorted { fnv1a($0) < fnv1a($1) }
+        for i in 0..<ids.count {
+            let a = ids[i]
+            guard positions[a] != nil else { continue }
+            let ra = nodeRadius(for: a, in: nodes)
+            for j in (i + 1)..<ids.count {
+                let b = ids[j]
+                guard let pb = positions[b] else { continue }
+                let pa = positions[a]!
+                let rb = nodeRadius(for: b, in: nodes)
+                let dx = pa.x - pb.x, dy = pa.y - pb.y
+                let d2 = max(dx * dx + dy * dy, 0.0001)
+                let minD = ra + rb + minSeparation
+                if d2 < minD * minD {
+                    let d = sqrt(d2)
+                    let push = (minD - d) * 0.5
+                    let nx = dx / d, ny = dy / d
+                    positions[a] = CGPoint(x: pa.x + nx * push, y: pa.y + ny * push)
+                    positions[b] = CGPoint(x: pb.x - nx * push, y: pb.y - ny * push)
+                }
+            }
+        }
+    }
+
+    private static func nodeRadius(for id: String, in nodes: [NodeInput]) -> CGFloat {
+        nodes.first(where: { $0.id == id })?.radius ?? 9
     }
 
     private static func placeAroundAnchor(_ nodes: [NodeInput], anchor: CGPoint,

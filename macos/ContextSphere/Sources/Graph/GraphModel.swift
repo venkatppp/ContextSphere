@@ -177,7 +177,7 @@ struct GraphVisualizationModel {
         // Clusters by workspace
         var byCluster: [String: [String]] = [:]
         for n in visualNodes { byCluster[n.clusterId, default: []].append(n.id) }
-        let palette: [Color] = [.indigo, .teal, .orange, .purple, .pink, .cyan, .green, .brown]
+        let palette: [Color] = [Color.cs(CSColor.info), Color.cs(CSColor.graphFile), Color.cs(CSColor.warning), Color.cs(CSColor.graphIntelligence), Color.cs(CSColor.graphMemory), Color.cs(CSColor.graphSession), Color.cs(CSColor.success), .brown]
         let clusters: [VisualCluster] = byCluster
             .sorted { $0.key < $1.key }
             .enumerated()

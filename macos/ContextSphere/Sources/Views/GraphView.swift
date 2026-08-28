@@ -1,16 +1,25 @@
 import SwiftUI
 
-/// Native Canvas-based Context Field (prompt §6) — the living visual
-/// representation of computer context.
+/// Native Canvas-based Context Field — the living visual representation
+/// of computer context.
 ///
 /// Architecture: GraphVisualizationModel → GraphLayoutEngine → GraphRenderState
 /// → GraphRenderer (Canvas) → GraphCamera → SwiftUI surface.
 /// Each layer is separate; this file owns only the SwiftUI surface.
+///
+/// Escape behavior (RC-9 §13):
+///   1. If the search field is focused, Escape dismisses keyboard focus
+///      and clears the search field if it has content. The graph and
+///      inspector are NEVER torn down.
+///   2. If no field is focused, Escape clears the current node selection
+///      (so the inspector closes) but stays on the graph view.
+///   3. Escape NEVER navigates away from the graph screen.
 struct GraphScreen: View {
     @ObservedObject var viewModel: GraphViewModel
     @StateObject private var camera = GraphCamera()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @FocusState private var searchFieldFocused: Bool
 
     @State private var hoveredNodeID: String?
     @State private var canvasSize: CGSize = .zero
@@ -21,40 +30,54 @@ struct GraphScreen: View {
     private let renderer = CanvasGraphRenderer()
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                canvasArea(geo.size)
-                searchSurface
-                    .padding(20)
-                if viewModel.isExpanding {
-                    expandingBadge
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 22)
-                }
-                statusBar
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(20)
-                controls
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(20)
-                if viewModel.showInspector {
-                    GraphInspectorView(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        VStack(spacing: 0) {
+            // Top: integrated page header
+            graphHeader
+                .padding(.horizontal, 24)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+            // Canvas
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    canvasArea(geo.size)
+                    // Lenses (top-center, compact)
+                    lensBar
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 16)
+                    // Search surface
+                    searchSurface
                         .padding(20)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    if viewModel.isExpanding {
+                        expandingBadge
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, 22)
+                    }
+                    statusBar
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(20)
+                    controls
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(20)
+                    if viewModel.showInspector {
+                        GraphInspectorView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                            .padding(20)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                    stateOverlay
                 }
-                stateOverlay
-                debugFooter
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .padding(20)
-                    .allowsHitTesting(false)
             }
         }
-        .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85), value: viewModel.positions)
+        .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85),
+                   value: viewModel.positions)
         .animation(reduceMotion ? .none : .easeOut(duration: 0.25), value: viewModel.showInspector)
         .task { viewModel.initialLoadIfNeeded() }
         .onAppear { camera.setViewport(canvasSize) }
         .onChange(of: viewModel.layoutGeneration) { _, _ in needsFit = true }
+        .onChange(of: viewModel.lens) { _, _ in
+            // Lenses don't change layout, but the render state needs a refresh.
+            viewModel.objectWillChange.send()
+        }
         .onChange(of: canvasSize) { _, newSize in
             camera.setViewport(newSize)
             if needsFit, newSize.width > 0 { applyFit() }
@@ -63,15 +86,114 @@ struct GraphScreen: View {
         .onChange(of: viewModel.contextFocusID) { _, _ in
             if viewModel.contextFocusID == nil { needsFit = true }
         }
+        // Escape handles BOTH the search field and the selection, in that
+        // order. It never leaves the Graph view (§13).
+        .background {
+            Button("") { handleEscape() }
+                .keyboardShortcut(.escape, modifiers: [])
+                .hidden()
+                .accessibilityHidden(true)
+        }
     }
+
+    // MARK: - Header (integrated)
+
+    private var graphHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 18, weight: .semibold))
+                        .csForeground(CSColor.info)
+                    Text("Knowledge Graph")
+                        .font(.csScreenTitle)
+                        .csForeground(CSColor.textPrimary)
+                        .tracking(-0.3)
+                }
+                Text(headerSubtitle)
+                    .font(.callout)
+                    .csForeground(CSColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            workspacePicker
+        }
+    }
+
+    private var headerSubtitle: String {
+        if let name = viewModel.contextName {
+            return "\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships · \(name)"
+        }
+        return "\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships"
+    }
+
+    // MARK: - Lens bar
+
+    private var lensBar: some View {
+        HStack(spacing: 4) {
+            ForEach(GraphViewModel.Lens.allCases) { lens in
+                Button {
+                    viewModel.lens = lens
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: lens.symbol)
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(lens.title)
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        viewModel.lens == lens
+                            ? Color.cs(CSColor.selectionFill)
+                            : Color.clear,
+                        in: Capsule(style: .continuous)
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(
+                                viewModel.lens == lens
+                                    ? Color.cs(CSColor.selectionBorder)
+                                    : Color.cs(CSColor.border),
+                                lineWidth: 0.5
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .csForeground(viewModel.lens == lens
+                              ? CSColor.sidebarSelectedTint
+                              : CSColor.textPrimary)
+                .accessibilityLabel("Lens: \(lens.title)")
+                .accessibilityAddTraits(viewModel.lens == lens ? .isSelected : [])
+            }
+        }
+        .padding(5)
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.92),
+            in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+    }
+
+    // MARK: - Canvas
 
     private func canvasArea(_ size: CGSize) -> some View {
         Canvas { context, cSize in
             guard viewModel.state == .loaded, !viewModel.positions.isEmpty else { return }
             let model = viewModel.visualizationModel
             let density: GraphEdgeDensity = viewModel.edgeDensity == .all ? .all : .strong
+            // Apply lens: filtered nodes/edges for this view
+            let (filteredNodes, filteredEdges) = applyLens(model: model)
+            let filteredModel = GraphVisualizationModel(
+                nodes: filteredNodes, edges: filteredEdges,
+                clusters: model.clusters, workspaceLens: model.workspaceLens,
+                adjacency: model.adjacency)
             let state = GraphRenderStateBuilder.build(
-                model: model,
+                model: filteredModel,
                 positions: viewModel.positions,
                 camera: camera,
                 selectedID: viewModel.selectedNodeID,
@@ -85,7 +207,7 @@ struct GraphScreen: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
-        .background(Color.clear)
+        .background(Color.cs(CSColor.surfaceField).opacity(0.45))
         .gesture(panGesture)
         .gesture(magnifyGesture)
         .gesture(ExclusiveGesture(doubleTapGesture, tapGesture))
@@ -100,6 +222,28 @@ struct GraphScreen: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Context graph")
         .accessibilityValue(accessibilitySummary)
+    }
+
+    /// Returns a (nodes, edges) tuple restricted by the current lens.
+    /// The lens is purely visual: the underlying data is never mutated.
+    private func applyLens(model: GraphVisualizationModel) -> ([GraphVisualizationModel.VisualNode],
+                                                              [GraphVisualizationModel.VisualEdge]) {
+        if let lens = viewModel.lensHighlightedNodeIDs() {
+            if lens.isEmpty {
+                return (model.nodes, model.edges)
+            }
+            // Always include the highlighted nodes and their first-degree
+            // neighbours so the lens never produces an unreadable isolation.
+            var keep = lens
+            for edge in model.edges {
+                if keep.contains(edge.sourceID) { keep.insert(edge.targetID) }
+                if keep.contains(edge.targetID) { keep.insert(edge.sourceID) }
+            }
+            let nodes = model.nodes.filter { keep.contains($0.id) }
+            let edges = model.edges.filter { keep.contains($0.sourceID) && keep.contains($0.targetID) }
+            return (nodes, edges)
+        }
+        return (model.nodes, model.edges)
     }
 
     private var accessibilitySummary: String {
@@ -119,14 +263,15 @@ struct GraphScreen: View {
         var best: (id: String, d: CGFloat)?
         for (id, p) in viewModel.positions {
             guard let node = viewModel.node(for: id) else { continue }
-            // Screen-space slop so tiny far-apart nodes stay grabbable.
             let hr = max(node.nodeType.nodeRadius / camera.zoom, 6) + 6
             let dx = p.x - world.x, dy = p.y - world.y
-            let d = sqrt(dx*dx + dy*dy)
+            let d = sqrt(dx * dx + dy * dy)
             if d <= hr, best == nil || d < best!.d { best = (id, d) }
         }
         return best?.id
     }
+
+    // MARK: - Gestures
 
     private var panGesture: some Gesture {
         DragGesture(minimumDistance: 1)
@@ -194,6 +339,31 @@ struct GraphScreen: View {
         viewModel.consumeFocusRequest()
     }
 
+    // MARK: - Escape handling (RC-9 §13)
+
+    /// Escape must never dismiss the graph. It performs one of:
+    /// 1. If the search field is focused → clear focus + clear query.
+    /// 2. Else if a node is selected → clear selection (closes inspector).
+    /// 3. Else if a focus is active → clear focus.
+    /// The graph view, layout, camera and all data remain untouched.
+    private func handleEscape() {
+        if searchFieldFocused {
+            searchFieldFocused = false
+            if !viewModel.searchQuery.isEmpty {
+                viewModel.clearSearch()
+            }
+            return
+        }
+        if viewModel.selectedNodeID != nil {
+            viewModel.selectNode(nil)
+            return
+        }
+        if viewModel.contextFocusID != nil {
+            viewModel.clearContextFocus()
+            return
+        }
+    }
+
     // MARK: - Search surface
 
     private var searchSurface: some View {
@@ -201,11 +371,12 @@ struct GraphScreen: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
                 TextField("Find in context…", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
+                    .focused($searchFieldFocused)
                     .onSubmit { viewModel.submitSearch() }
                     .accessibilityLabel("Search graph nodes")
                 if viewModel.isSearching {
@@ -213,9 +384,12 @@ struct GraphScreen: View {
                         .accessibilityLabel("Searching graph")
                 }
                 if !viewModel.searchQuery.isEmpty {
-                    Button { viewModel.clearSearch() } label: {
+                    Button {
+                        viewModel.clearSearch()
+                        searchFieldFocused = false
+                    } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                     }
                     .buttonStyle(.plain)
                     .help("Clear search")
@@ -225,17 +399,23 @@ struct GraphScreen: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .frame(width: 320)
-            .glassEffect(.regular.interactive(),
-                         in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+            .background(
+                Color.cs(CSColor.surfaceChrome).opacity(0.92),
+                in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+            )
             if let e = viewModel.searchError {
                 Text(e)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .padding(10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
+                    .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                            .strokeBorder(.separator, lineWidth: 0.5)
+                            .strokeBorder(Color.cs(CSColor.border), lineWidth: 0.5)
                     )
                     .frame(width: 320, alignment: .leading)
             }
@@ -253,22 +433,22 @@ struct GraphScreen: View {
                         HStack(spacing: 8) {
                             Image(systemName: node.nodeType.symbol)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(node.nodeType.color)
+                                .csForeground(CSColor.textSecondary)
                                 .frame(width: 16)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(node.title)
                                     .font(.callout.weight(.medium))
                                     .lineLimit(1)
-                                    .foregroundStyle(.primary)
+                                    .csForeground(CSColor.textPrimary)
                                 HStack(spacing: 6) {
                                     Text(node.nodeType.title)
                                         .font(.caption2.weight(.medium))
-                                        .foregroundStyle(.secondary)
+                                        .csForeground(CSColor.textSecondary)
                                     if let ws = viewModel.workspaceName(for: node) {
                                         Text("· \(ws)")
                                             .font(.caption2)
-                                            .foregroundStyle(.tertiary)
+                                            .csForeground(CSColor.textTertiary)
                                             .lineLimit(1)
                                     }
                                 }
@@ -286,15 +466,16 @@ struct GraphScreen: View {
         }
         .frame(width: 320)
         .frame(maxHeight: 320)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(Color.cs(CSColor.surfaceChrome).opacity(0.95),
+                    in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 0.5)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
         )
         .accessibilityLabel("Graph search results")
     }
 
-    // MARK: - Controls (glass)
+    // MARK: - Controls
 
     private var controls: some View {
         HStack(spacing: 4) {
@@ -325,7 +506,7 @@ struct GraphScreen: View {
                 Button("Load demo fixture") { viewModel.loadFixture() }
                 Button("Clear demo") { viewModel.refresh() }
                 if viewModel.isUsingFixture {
-                    Text("Using demo data").font(.caption2).foregroundStyle(.tertiary)
+                    Text("Using demo data").font(.caption2).csForeground(CSColor.textTertiary)
                 }
 #endif
             } label: {
@@ -342,7 +523,15 @@ struct GraphScreen: View {
             }
         }
         .padding(6)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.92),
+            in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
     }
 
     private func glassControlButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -362,7 +551,6 @@ struct GraphScreen: View {
     private var statusBar: some View {
         HStack(spacing: 10) {
             statusPill
-            workspacePicker
         }
     }
 
@@ -370,26 +558,29 @@ struct GraphScreen: View {
         HStack(spacing: 6) {
             Text("\(viewModel.nodes.count) nodes · \(viewModel.visibleEdges.count) relationships")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
             if viewModel.isTruncated {
                 Text("· showing first \(viewModel.nodes.count) of \(viewModel.totalNodeCount)")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .csForeground(CSColor.warning)
             }
             if viewModel.contextFocusID != nil {
                 Text("· focused")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .csForeground(CSColor.warning)
             }
             if camera.semanticLevel == .overview {
                 Text("· overview")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: Capsule())
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.92),
+            in: Capsule()
+        )
         .accessibilityLabel("\(viewModel.nodes.count) nodes, \(viewModel.visibleEdges.count) relationships")
     }
 
@@ -401,9 +592,6 @@ struct GraphScreen: View {
         }
         .pickerStyle(.menu)
         .fixedSize()
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.regularMaterial, in: Capsule())
         .accessibilityLabel("Graph context workspace")
     }
 
@@ -412,28 +600,14 @@ struct GraphScreen: View {
             ProgressView().controlSize(.small)
             Text("Expanding…")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .glassEffect(.regular, in: Capsule())
-    }
-
-    private var debugFooter: some View {
-        HStack(spacing: 8) {
-            Text(String(format: "layout %.1f ms", viewModel.lastLayoutDurationMs))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-            Text("· zoom \(String(format: "%.2f", camera.zoom)) · \(camera.semanticLevel.rawValue)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.regularMaterial.opacity(0.7), in: Capsule())
-        .opacity(viewModel.nodes.isEmpty ? 0 : 1)
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.92),
+            in: Capsule()
+        )
     }
 
     // MARK: - State overlay
@@ -443,22 +617,23 @@ struct GraphScreen: View {
         case .idle, .loading:
             LoadingView(label: "Loading context field…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background.opacity(0.35))
+                .background(Color.cs(CSColor.surface).opacity(0.35))
         case .failed(let m):
             VStack(spacing: 14) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(.orange)
+                    .csForeground(CSColor.warning)
                 Text("Graph unavailable").font(.title3.weight(.semibold))
+                    .csForeground(CSColor.textPrimary)
                 Text(humanGraphError(m))
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 420)
                 if humanGraphError(m) != m {
                     Text(m)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
                         .textSelection(.enabled)
@@ -479,7 +654,7 @@ struct GraphScreen: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background.opacity(0.45))
+            .background(Color.cs(CSColor.surface).opacity(0.45))
         case .loaded:
             if viewModel.nodes.isEmpty {
                 EmptyStateView(
@@ -489,17 +664,16 @@ struct GraphScreen: View {
                     primaryAction: ("Retry", { viewModel.retry() })
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background.opacity(0.3))
+                .background(Color.cs(CSColor.surface).opacity(0.30))
             } else if let hint = viewModel.lastError {
-                // Subtle inline warning when graph is shown but a subgraph/edge was stale.
                 VStack {
                     Spacer()
                     HStack(spacing: 8) {
                         Image(systemName: "info.circle")
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                         Text(hint)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                             .lineLimit(2)
                         Button("Dismiss") { viewModel.clearTransientError() }
                             .buttonStyle(.borderless)
@@ -507,7 +681,10 @@ struct GraphScreen: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
+                    .background(
+                        Color.cs(CSColor.surfaceChrome).opacity(0.92),
+                        in: Capsule()
+                    )
                     .padding(.bottom, 64)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -522,7 +699,7 @@ struct GraphScreen: View {
         }
         if lower.contains("not found") { return "Some graph data could not be found. The rest of the graph is shown. Retry to refresh." }
         if lower.contains("timed out") { return "The graph request timed out. Try Retry." }
-        if lower.contains("core daemon is not running") { return "Core daemon is not running. Use Retry or the Core status footer to reconnect." }
+        if lower.contains("core daemon is not running") { return "Connection unavailable. Use Retry to reconnect." }
         return raw
     }
 }

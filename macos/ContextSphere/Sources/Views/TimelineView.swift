@@ -251,10 +251,10 @@ struct TimelineView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "rectangle.stack")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text("Sessions")
                         .font(.csEyebrow())
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .textCase(.uppercase)
                         .tracking(0.6)
                     Spacer()
@@ -294,15 +294,15 @@ struct TimelineView: View {
                     Text("· \(session.fileCount) files")
                 }
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(width: 200, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+            .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.25),
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.55) : Color.cs(CSColor.border),
                                   lineWidth: isSelected ? 1 : 0.5)
             )
             .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
@@ -321,14 +321,14 @@ struct TimelineView: View {
         HStack(spacing: 10) {
             Text(group.label)
                 .font(.csEyebrow())
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.6)
             Text("· \(group.events.count) events")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             Rectangle()
-                .fill(.quaternary.opacity(0.5))
+                .fill(Color.cs(CSColor.borderSubtle).opacity(0.5))
                 .frame(height: 0.5)
         }
         .padding(.top, 18)
@@ -386,7 +386,7 @@ struct TimelineEventRow: View {
                 .padding(.top, 6)
                 if !isLast {
                     Rectangle()
-                        .fill(Color.primary.opacity(0.08))
+                        .fill(Color.cs(CSColor.textPrimary).opacity(0.08))
                         .frame(width: 1)
                         .frame(maxHeight: .infinity)
                 }
@@ -399,21 +399,21 @@ struct TimelineEventRow: View {
                 if let artifact = event.artifactName {
                     Text(artifact)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 if let detail = event.displayDetail, detail != event.artifactName {
                     Text(detail)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 if let workspaceName {
                     Text(workspaceName)
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
             .padding(.horizontal, 12)
@@ -473,11 +473,11 @@ struct TimelineEventRow: View {
             Spacer()
             Text(event.occurredAtDate.formatted(date: .omitted, time: .shortened))
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             if isFileEvent {
                 Image(systemName: "arrow.up.forward.app")
                     .font(.caption2)
-                    .foregroundStyle(isHovered ? .secondary : .tertiary)
+                    .csForeground(isHovered ? CSColor.textSecondary : CSColor.textTertiary)
                     .accessibilityHidden(true)
             }
         }
@@ -490,7 +490,7 @@ struct TimelineEventRow: View {
 
     private var rowBackgroundStyle: AnyShapeStyle {
         if isHovered || isFocused {
-            return AnyShapeStyle(.regularMaterial)
+            return AnyShapeStyle(Color.cs(CSColor.surface))
         }
         return AnyShapeStyle(Color.clear)
     }
@@ -502,7 +502,7 @@ struct TimelineEventRow: View {
 
     private var rowBorderColor: Color {
         if isFocused { return Color.accentColor.opacity(0.5) }
-        if isHovered { return Color.secondary.opacity(0.25) }
+        if isHovered { return Color.cs(CSColor.border) }
         return Color.clear
     }
 
@@ -594,16 +594,16 @@ extension TimelineEvent {
 extension TimelineEventType {
     var color: Color {
         switch self {
-        case .create: .green
-        case .open: .blue
-        case .close: .gray
-        case .edit: .indigo
-        case .move: .orange
-        case .delete: .red
-        case .commit: .teal
-        case .visit: .cyan
-        case .screenshot: .pink
-        case .workspaceSwitch: .purple
+        case .create: Color.cs(CSColor.success)
+        case .open: Color.cs(CSColor.info)
+        case .close: Color.cs(CSColor.textTertiary)
+        case .edit: Color.cs(CSColor.info)
+        case .move: Color.cs(CSColor.warning)
+        case .delete: Color.cs(CSColor.error)
+        case .commit: Color.cs(CSColor.graphFile)
+        case .visit: Color.cs(CSColor.graphSession)
+        case .screenshot: Color.cs(CSColor.graphMemory)
+        case .workspaceSwitch: Color.cs(CSColor.graphIntelligence)
         }
     }
 }
