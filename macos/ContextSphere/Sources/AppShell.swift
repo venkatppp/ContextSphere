@@ -131,6 +131,7 @@ extension Notification.Name {
 struct AppShell: View {
     @StateObject private var router = AppRouter.shared
     @ObservedObject private var bridge = CoreBridge.shared
+    @Environment(\.csPalette) private var palette
     @State private var workspaces: [Workspace] = []
     @State private var loaded = false
     @State private var loadFailed: String?
@@ -231,7 +232,7 @@ struct AppShell: View {
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 0)
         }
-        .background(Color.cs(CSColor.surfaceSidebar))
+        .background(palette.surfaceSidebar)
     }
 
     private func revealWorkspace(_ id: String) {
@@ -323,6 +324,7 @@ struct AppShell: View {
 
 private struct SidebarRow: View {
     let section: AppSection
+    @Environment(\.csPalette) private var palette
 
     var body: some View {
         HStack(spacing: 8) {
@@ -340,7 +342,7 @@ private struct SidebarRow: View {
                     .csForeground(CSColor.textTertiary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+                    .background(palette.textTertiary.opacity(0.10),
                                 in: RoundedRectangle(cornerRadius: 3, style: .continuous))
             }
         }
@@ -391,6 +393,7 @@ private struct SidebarHeader: View {
     let workspaces: [Workspace]
     let onShowAll: () -> Void
     let onSwitch: (Workspace) -> Void
+    @Environment(\.csPalette) private var palette
 
     private var headerSubtitle: String {
         if activeWorkspace?.rootPath?.isEmpty == false {
@@ -450,11 +453,11 @@ private struct SidebarHeader: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .fill(Color.cs(CSColor.hoverFill))
+                    .fill(palette.hoverFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .strokeBorder(Color.cs(CSColor.border), lineWidth: 0.5)
+                    .strokeBorder(palette.border, lineWidth: 0.5)
             )
         }
         .menuStyle(.borderlessButton)
@@ -473,6 +476,7 @@ private struct SidebarHeader: View {
 private struct ToolbarBreadcrumb: View {
     let section: AppSection
     let activeWorkspace: Workspace?
+    @Environment(\.csPalette) private var palette
 
     var body: some View {
         HStack(spacing: 8) {
@@ -493,7 +497,7 @@ private struct ToolbarBreadcrumb: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.6),
+            palette.surfaceChrome.opacity(0.6),
             in: Capsule(style: .continuous)
         )
         .accessibilityElement(children: .combine)

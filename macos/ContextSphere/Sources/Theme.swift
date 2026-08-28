@@ -428,11 +428,15 @@ extension Font {
 
 // MARK: - Foreground helpers
 
-/// Reads a semantic text color in the current environment.
+/// Reads a semantic text color from the environment palette.
+/// This ensures the same token resolves to a light foreground in Dark
+/// and a dark foreground in Light, and updates immediately when the
+/// appearance changes (unlike the global Color.cs cache).
 struct CSText: ViewModifier {
     let token: String
+    @Environment(\.csPalette) var palette
     func body(content: Content) -> some View {
-        content.foregroundStyle(Color.cs(token))
+        content.foregroundStyle(palette.color(for: token))
     }
 }
 
@@ -440,6 +444,54 @@ extension View {
     /// Applies a semantic text color.
     func csForeground(_ token: String) -> some View {
         modifier(CSText(token: token))
+    }
+}
+
+// MARK: - ThemePalette token resolution
+
+extension ThemePalette {
+    func color(for token: String) -> Color {
+        switch token {
+        case CSColor.backdropTop:        return backdropTop
+        case CSColor.backdropBottom:     return backdropBottom
+        case CSColor.backdropAccent:     return backdropAccent
+        case CSColor.surface:            return surface
+        case CSColor.surfaceElevated:    return surfaceElevated
+        case CSColor.surfaceSidebar:     return surfaceSidebar
+        case CSColor.surfaceChrome:      return surfaceChrome
+        case CSColor.surfaceHero:        return surfaceHero
+        case CSColor.surfaceField:       return surfaceField
+        case CSColor.textPrimary:        return textPrimary
+        case CSColor.textSecondary:      return textSecondary
+        case CSColor.textTertiary:       return textTertiary
+        case CSColor.textOnAccent:       return textOnAccent
+        case CSColor.border:             return border
+        case CSColor.borderSubtle:       return borderSubtle
+        case CSColor.separator:          return separator
+        case CSColor.hoverFill:          return hoverFill
+        case CSColor.selectionFill:      return selectionFill
+        case CSColor.selectionBorder:    return selectionBorder
+        case CSColor.success:            return success
+        case CSColor.warning:            return warning
+        case CSColor.error:              return error
+        case CSColor.info:               return info
+        case CSColor.graphWorkspace:     return graphWorkspace
+        case CSColor.graphFile:          return graphFile
+        case CSColor.graphSession:       return graphSession
+        case CSColor.graphExecution:     return graphExecution
+        case CSColor.graphMemory:        return graphMemory
+        case CSColor.graphIntelligence:  return graphIntelligence
+        case CSColor.graphEvent:         return graphEvent
+        case CSColor.graphEdge:          return graphEdge
+        case CSColor.graphEdgeHighlight: return graphEdgeHighlight
+        case CSColor.graphEdgeAmbient:   return graphEdgeAmbient
+        case CSColor.graphHalo:          return graphHalo
+        case CSColor.graphCluster:       return graphCluster
+        case CSColor.graphFocus:         return graphFocus
+        case CSColor.sidebarSelectedFill: return sidebarSelectedFill
+        case CSColor.sidebarSelectedTint: return sidebarSelectedTint
+        default: return textPrimary
+        }
     }
 }
 
