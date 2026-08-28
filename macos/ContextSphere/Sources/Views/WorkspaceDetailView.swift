@@ -55,16 +55,16 @@ struct WorkspaceDetailView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "text.alignleft")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text("Description")
                         .font(.csEyebrow())
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .textCase(.uppercase)
                         .tracking(0.6)
                 }
                 Text(description)
                     .font(.callout)
-                    .foregroundStyle(.primary)
+                    .csForeground(CSColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -92,7 +92,7 @@ struct WorkspaceDetailView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("of 100")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .csForeground(CSColor.textSecondary)
                             if let trend = report.trend {
                                 Label(trend >= 0
                                       ? String(format: "+%.0f%%", trend * 100)
@@ -100,7 +100,7 @@ struct WorkspaceDetailView: View {
                                       systemImage: trend >= 0
                                       ? "arrow.up.right" : "arrow.down.right")
                                 .font(.caption2.weight(.medium))
-                                .foregroundStyle(trend >= 0 ? .green : .orange)
+                                .foregroundStyle(trend >= 0 ? Color.cs(CSColor.success) : Color.cs(CSColor.warning))
                             }
                         }
                         Spacer()
@@ -117,14 +117,14 @@ struct WorkspaceDetailView: View {
                                 Spacer()
                                 Text("\(Int((factor.score * 100).rounded()))%")
                                     .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                             }
                             ProgressView(value: factor.score)
-                                .tint(factor.score >= 0.6 ? .green
-                                      : factor.score >= 0.35 ? .orange : .red)
+                                .tint(factor.score >= 0.6 ? Color.cs(CSColor.success)
+                                      : factor.score >= 0.35 ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                             Text(factor.description)
                                 .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .csForeground(CSColor.textTertiary)
                                 .lineLimit(1)
                         }
                         .accessibilityElement(children: .combine)
@@ -134,7 +134,7 @@ struct WorkspaceDetailView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Label(healthError, systemImage: "exclamationmark.triangle")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .csForeground(CSColor.warning)
                         Button("Retry") { Task { await loadHealth() } }
                             .buttonStyle(.link)
                             .font(.caption)
@@ -145,7 +145,7 @@ struct WorkspaceDetailView: View {
                 } else {
                     Text("Health intelligence appears once the workspace has activity.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
             }
         }
@@ -158,7 +158,7 @@ struct WorkspaceDetailView: View {
     }
 
     private func healthColor(_ score: Double) -> Color {
-        score >= 0.6 ? .green : (score >= 0.35 ? .orange : .red)
+        score >= 0.6 ? Color.cs(CSColor.success) : (score >= 0.35 ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
     }
 
     private func loadHealth() async {
@@ -201,14 +201,14 @@ struct WorkspaceDetailView: View {
                 if let path = workspace.rootPath, !path.isEmpty {
                     Label(path, systemImage: "folder")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
                 }
                 Text(workspace.id)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -226,14 +226,14 @@ struct WorkspaceDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Health", systemImage: "heart.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(Int(workspace.healthScore))")
                             .font(.system(size: 28, weight: .bold).monospacedDigit())
                             .foregroundStyle(healthColor)
                         Text("%")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                     }
                     ProgressView(value: workspace.healthScore / 100)
                         .tint(healthColor)
@@ -245,12 +245,12 @@ struct WorkspaceDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Created", systemImage: "calendar")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text(workspace.createdAt.isoDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
                         .font(.callout.weight(.medium))
                     Text(workspace.createdAt.relativeTime)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -258,12 +258,12 @@ struct WorkspaceDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Last active", systemImage: "clock.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text(workspace.lastActiveAt.relativeTime)
                         .font(.callout.weight(.medium))
                     Text(workspace.lastActiveAt.isoDate?.formatted(date: .abbreviated, time: .shortened) ?? "")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -275,12 +275,12 @@ struct WorkspaceDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Details", systemImage: "info.circle")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 LabeledContent("Status", value: workspace.status.rawValue.capitalized)
                     .font(.callout)
                 LabeledContent("Updated", value: workspace.updatedAt.relativeTime)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
         }
     }
@@ -290,7 +290,7 @@ struct WorkspaceDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Workspace Actions", systemImage: "wrench.and.screwdriver")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 HStack(spacing: 10) {
                     Button {
                         onEdit?()
@@ -349,16 +349,16 @@ struct WorkspaceDetailView: View {
                 }
                 Text("Switch makes this workspace current for Dashboard, Timeline, and Search. Archive moves between Active/Archived. Delete removes the workspace record only — files on disk are not deleted.")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var healthColor: Color {
-        if workspace.healthScore >= 70 { return .green }
-        if workspace.healthScore >= 40 { return .orange }
-        return .red
+        if workspace.healthScore >= 70 { return Color.cs(CSColor.success) }
+        if workspace.healthScore >= 40 { return Color.cs(CSColor.warning) }
+        return Color.cs(CSColor.error)
     }
 }
 
@@ -380,7 +380,7 @@ struct HealthSparkline: View {
         } else {
             Text("Not enough history yet")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
         }
     }
 }

@@ -164,23 +164,23 @@ struct LearningView: View {
                                 .accessibilityLabel("Overall recommendation accuracy")
                             Text(insights.recommendationAccuracy.overallAccuracy.percentString)
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .csForeground(CSColor.textSecondary)
                                 .accessibilityLabel("Overall accuracy \(insights.recommendationAccuracy.overallAccuracy.percentString)")
                         }
                     } else {
                         Text("No feedback yet — accuracy readings appear once you act on recommendations.")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
         )
     }
 
@@ -190,7 +190,7 @@ struct LearningView: View {
                 HStack(spacing: 8) {
                     Text(row.label)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Spacer()
                     Text("\(row.value)")
                         .font(.callout.weight(.semibold).monospacedDigit())
@@ -226,7 +226,7 @@ struct LearningView: View {
                 SectionHeader(title: "Accuracy by category", symbol: "list.bullet.rectangle")
                 if accuracy.categoryAccuracy.isEmpty {
                     Text("No category-level feedback yet.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(.callout).csForeground(CSColor.textSecondary)
                 } else {
                     LazyVStack(spacing: 6) {
                         ForEach(accuracy.categoryAccuracy, id: \.category) { category in
@@ -239,12 +239,12 @@ struct LearningView: View {
                                     .accessibilityLabel("Accuracy for \(category.category)")
                                 Text(category.accuracy.percentString)
                                     .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .csForeground(CSColor.textSecondary)
                                     .frame(width: 42, alignment: .trailing)
                                     .accessibilityLabel("\(category.accuracy.percentString) accuracy")
                                 Text("\(category.accepted) / \(category.total)")
                                     .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.tertiary)
+                                    .csForeground(CSColor.textTertiary)
                                     .frame(width: 56, alignment: .trailing)
                                     .accessibilityLabel("\(category.accepted) accepted of \(category.total)")
                             }
@@ -303,7 +303,7 @@ private struct ConfidenceTrendChart: View {
                     PointMark(x: .value("Date", trend.dateValue),
                               y: .value("Average confidence", trend.avgConfidence))
                         .symbolSize(18)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.cs(CSColor.warning))
                 }
             }
         }
@@ -335,7 +335,7 @@ private struct PreferenceRow: View {
                 }
                 Text("\(preference.evidenceCount) piece\(preference.evidenceCount == 1 ? "" : "s") of evidence · updated \(preference.lastUpdated.relativeTime)")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -344,13 +344,13 @@ private struct PreferenceRow: View {
                     .accessibilityLabel("Confidence \(preference.confidence.percentString)")
                 Text(preference.confidence.percentString)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .frame(width: 42, alignment: .trailing)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(preference.preferenceType.title) preference: \(preference.key), confidence \(preference.confidence.percentString), \(preference.evidenceCount) pieces of evidence")
     }
@@ -370,14 +370,14 @@ private struct BehavioralPatternRow: View {
                         .font(.callout.weight(.medium))
                     Text("· \(pattern.occurrences) occurrence\(pattern.occurrences == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 Text(pattern.description)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text("First seen \(pattern.firstSeen.relativeTime) · Last seen \(pattern.lastSeen.relativeTime)")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -386,13 +386,13 @@ private struct BehavioralPatternRow: View {
                     .accessibilityLabel("Confidence \(pattern.confidence.percentString)")
                 Text(pattern.confidence.percentString)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .frame(width: 42, alignment: .trailing)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(pattern.patternType.title) pattern: \(pattern.description), \(pattern.occurrences) occurrences")
     }

@@ -1,36 +1,26 @@
 import SwiftUI
 import AppKit
 
-extension LLMProviderType {
-    var title: String {
-        switch self {
-        case .openai: "OpenAI"
-        case .ollama: "Ollama"
-        case .custom: "Custom"
-        }
-    }
-}
-
 /// Native macOS preferences experience for ContextSphere. Organized as a
 /// real settings window: a sidebar of categories, a detail pane for each,
 /// every control binds to `SettingsViewModel`, which speaks JSON-RPC — the
 /// UI never touches the database directly.
+///
+/// LLM & Copilot have been removed entirely (RC-9 §2). Watched Paths
+/// is merged into General (RC-9 §19). Appearance (theme) lives in General.
 struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
+    @ObservedObject private var appearance = AppearanceController.shared
     @State private var category: Category = .general
-    @State private var showAPIKey = false
-    @State private var categorySearch: String = ""
 
     enum Category: String, CaseIterable, Identifiable, Hashable {
-        case general, watched, llm, security
+        case general, security
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .general: "General"
-            case .watched: "Watched Paths"
-            case .llm: "LLM & Copilot"
             case .security: "Security"
             }
         }
@@ -38,17 +28,13 @@ struct SettingsView: View {
         var symbol: String {
             switch self {
             case .general: "gearshape"
-            case .watched: "folder.badge.gearshape"
-            case .llm: "cpu"
             case .security: "lock.shield"
             }
         }
 
         var summary: String {
             switch self {
-            case .general: "Session and behavior preferences."
-            case .watched: "Folders ContextSphere observes for activity."
-            case .llm: "Optional. Pluggable intelligence for planning & explanations."
+            case .general: "Sessions, watched paths, and appearance."
             case .security: "Background monitoring and audit retention."
             }
         }
@@ -67,128 +53,105 @@ struct SettingsView: View {
         }
         .frame(minWidth: 760, minHeight: 540)
         .task { await viewModel.refresh() }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(category.title)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await viewModel.refresh() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(viewModel.phase != .loaded)
-                .help("Reload settings from the core daemon")
-                .accessibilityLabel("Refresh settings")
-            }
-        }
     }
 
     // MARK: - Content (split layout)
 
     private var content: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             categoryList
-                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
-        } detail: {
+                .frame(width: 240)
+            Divider().opacity(0.4)
             detailColumn
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.regularMaterial)
+                .background(Color.cs(CSColor.surface))
         }
-        .navigationSplitViewStyle(.balanced)
     }
 
     private var categoryList: some View {
         VStack(spacing: 0) {
-            searchField
-                .padding(.horizontal, 12)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
-            List(selection: $category) {
-                Section {
-                    ForEach(filteredCategories) { cat in
-                        categoryRow(cat)
-                            .tag(cat)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
-                            .listRowSeparator(.hidden)
-                    }
-                } header: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                        Text("Categories")
-                            .font(.csEyebrow(size: 10))
-                            .tracking(0.7)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                }
-                .listSectionSeparator(.hidden)
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                    .csForeground(CSColor.textTertiary)
+                Text("Categories")
+                    .font(.csEyebrow(size: 10))
+                    .tracking(0.7)
+                    .csForeground(CSColor.textTertiary)
+                Spacer()
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-        }
-        .background(.regularMaterial)
-    }
+            .padding(.horizontal, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
 
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("Search settings", text: $categorySearch)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .accessibilityLabel("Search settings categories")
-            if !categorySearch.isEmpty {
-                Button {
-                    categorySearch = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 4) {
+                ForEach(Category.allCases) { cat in
+                    categoryRow(cat)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+            }
+            .padding(.horizontal, 8)
+
+            Spacer()
+
+            // Footer info
+            VStack(alignment: .leading, spacing: 4) {
+                Hairline()
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 10, weight: .medium))
+                        .csForeground(CSColor.textTertiary)
+                    Text("ContextSphere v\(CoreBridge.shared.backendVersion ?? "—")")
+                        .font(.caption2)
+                        .csForeground(CSColor.textTertiary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    private var filteredCategories: [Category] {
-        let trimmed = categorySearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return Category.allCases }
-        return Category.allCases.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+        .background(Color.cs(CSColor.surfaceSidebar))
     }
 
     private func categoryRow(_ cat: Category) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: cat.symbol)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 18)
-                .foregroundStyle(.tint)
-            Text(cat.title)
-                .font(.system(size: 13))
-            Spacer()
+        let isSelected = cat == category
+        return Button {
+            category = cat
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: cat.symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 18)
+                    .csForeground(isSelected
+                                  ? CSColor.sidebarSelectedTint
+                                  : CSColor.textSecondary)
+                Text(cat.title)
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .csForeground(isSelected
+                                  ? CSColor.textPrimary
+                                  : CSColor.textPrimary)
+                Spacer()
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.cs(CSColor.sidebarSelectedFill) : .clear)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
+        .buttonStyle(.plain)
         .accessibilityLabel(cat.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
+
+    // MARK: - Detail
 
     private var detailColumn: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 18) {
                 detailHeader
                 detailContent
             }
-            .frame(maxWidth: Theme.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: 760, alignment: .leading)
             .padding(.horizontal, 32)
             .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -201,14 +164,15 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(systemName: category.symbol)
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.tint)
+                    .csForeground(CSColor.info)
                 Text(category.title)
                     .font(.csScreenTitle)
-                    .tracking(-0.4)
+                    .csForeground(CSColor.textPrimary)
+                    .tracking(-0.3)
             }
             Text(category.summary)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -218,8 +182,6 @@ struct SettingsView: View {
     private var detailContent: some View {
         switch category {
         case .general: generalSection
-        case .watched: watchedSection
-        case .llm: llmSection
         case .security: securitySection
         }
     }
@@ -237,7 +199,9 @@ struct SettingsView: View {
 
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsCard(title: "Sessions", subtitle: "When a work session ends",
+            // Sessions
+            SettingsCard(title: "Sessions",
+                         subtitle: "When a work session ends",
                          symbol: "clock.arrow.circlepath") {
                 LabeledContent("Session inactivity threshold") {
                     Stepper(value: $viewModel.thresholdSeconds,
@@ -249,7 +213,7 @@ struct SettingsView: View {
                     .help("A session ends after this long without activity")
                 }
                 if case .failed(let message) = viewModel.thresholdSave {
-                    Text(message).font(.caption).foregroundStyle(.red)
+                    Text(message).font(.caption).csForeground(CSColor.error)
                 }
                 HStack {
                     if viewModel.thresholdDirty {
@@ -261,37 +225,32 @@ struct SettingsView: View {
                     statusBadge(viewModel.thresholdSave)
                 }
             }
-        }
-        .onChange(of: viewModel.thresholdSeconds) { _, _ in
-            viewModel.scheduleThresholdSave()
-        }
-    }
+            .onChange(of: viewModel.thresholdSeconds) { _, _ in
+                viewModel.scheduleThresholdSave()
+            }
 
-    private func formattedDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes) min" }
-        return "\(minutes / 60)h \(minutes % 60)m"
-    }
-
-    // MARK: - Watched paths
-
-    private var watchedSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
+            // Watched Paths (merged from old Watched Paths section)
             SettingsCard(title: "Watched directories",
                          subtitle: "Folders ContextSphere observes for activity",
                          symbol: "folder.badge.gearshape") {
                 if viewModel.watchedPaths.isEmpty {
                     Text("No watched directories. Add one below to start tracking activity.")
-                        .font(.callout).foregroundStyle(.secondary)
+                        .font(.callout)
+                        .csForeground(CSColor.textSecondary)
                 } else {
-                    ForEach(viewModel.watchedPaths, id: \.self) { path in
-                        watchedPathRow(path)
+                    VStack(spacing: 0) {
+                        ForEach(viewModel.watchedPaths, id: \.self) { path in
+                            watchedPathRow(path)
+                            if path != viewModel.watchedPaths.last {
+                                Divider().opacity(0.25)
+                            }
+                        }
                     }
                 }
             }
 
             SettingsCard(title: "Add a directory",
-                         subtitle: "The core daemon validates the path before watching it",
+                         subtitle: "The path is validated before watching",
                          symbol: "plus.circle") {
                 HStack(spacing: 8) {
                     TextField("/path/to/folder", text: $viewModel.watchPathInput)
@@ -310,26 +269,102 @@ struct SettingsView: View {
                     .accessibilityLabel("Add directory to watched paths")
                 }
                 if case .failed(let message) = viewModel.watchAddState {
-                    Text(message).font(.caption).foregroundStyle(.red)
+                    Text(message).font(.caption).csForeground(CSColor.error)
                 } else if case .saved = viewModel.watchAddState {
                     Label("Added", systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(.green)
+                        .font(.caption)
+                        .csForeground(CSColor.success)
+                }
+            }
+
+            // Appearance / Theme
+            SettingsCard(title: "Appearance",
+                         subtitle: "Theme is applied across the entire app",
+                         symbol: "paintpalette") {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Theme")
+                            .font(.callout.weight(.medium))
+                            .csForeground(CSColor.textPrimary)
+                        Text("Choose Dark, Light, or follow the system appearance.")
+                            .font(.caption)
+                            .csForeground(CSColor.textSecondary)
+                    }
+                    Spacer()
+                    Picker("Theme", selection: $appearance.mode) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.symbol).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 280)
+                    .accessibilityLabel("Theme")
+                }
+                // Visual swatches
+                HStack(alignment: .top, spacing: 12) {
+                    themeSwatch(label: "Dark",
+                                top: Color(red: 0.085, green: 0.090, blue: 0.115),
+                                bottom: Color(red: 0.055, green: 0.060, blue: 0.085),
+                                isActive: appearance.mode == .dark)
+                    themeSwatch(label: "Light",
+                                top: Color(red: 0.985, green: 0.988, blue: 0.995),
+                                bottom: Color(red: 0.945, green: 0.955, blue: 0.975),
+                                isActive: appearance.mode == .light)
+                    themeSwatch(label: "System",
+                                top: Color(red: 0.55, green: 0.55, blue: 0.58),
+                                bottom: Color(red: 0.30, green: 0.30, blue: 0.34),
+                                isActive: appearance.mode == .system)
                 }
             }
         }
     }
 
+    private func themeSwatch(label: String, top: Color, bottom: Color, isActive: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack(alignment: .topLeading) {
+                LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                // Mini content mock
+                VStack(alignment: .leading, spacing: 4) {
+                    Capsule().fill(.white.opacity(0.6)).frame(width: 36, height: 4)
+                    Capsule().fill(.white.opacity(0.25)).frame(width: 60, height: 3)
+                    HStack(spacing: 3) {
+                        Circle().fill(.white.opacity(0.4)).frame(width: 8, height: 8)
+                        Capsule().fill(.white.opacity(0.20)).frame(width: 30, height: 3)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(width: 100, height: 64)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isActive ? Color.accentColor : Color.cs(CSColor.border),
+                                  lineWidth: isActive ? 2 : 0.5)
+            )
+            Text(label)
+                .font(.caption2.weight(isActive ? .semibold : .regular))
+                .csForeground(isActive ? CSColor.sidebarSelectedTint : CSColor.textSecondary)
+        }
+    }
+
+    private func formattedDuration(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes) min" }
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+
     private func watchedPathRow(_ path: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "folder.fill")
-                .foregroundStyle(.tint)
+                .csForeground(CSColor.textSecondary)
             Text(path)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .csForeground(CSColor.textPrimary)
             Spacer()
             if let error = viewModel.watchPathErrors[path] {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .help(error)
                     .accessibilityLabel(error)
             }
@@ -337,138 +372,13 @@ struct SettingsView: View {
                 Task { await viewModel.removeWatchPath(path) }
             } label: {
                 Image(systemName: "minus.circle")
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             .buttonStyle(.borderless)
             .help("Stop watching this directory")
             .accessibilityLabel("Remove \(path) from watched paths")
         }
-        .padding(.vertical, 2)
-    }
-
-    // MARK: - LLM
-
-    private var llmSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            // Trust banner
-            SettingsCard(title: "About this section",
-                         subtitle: "Local by default, remote only when you choose",
-                         symbol: "lock.shield") {
-                Text("ContextSphere runs entirely on this Mac. Configuring a remote LLM here is **optional** and only used when you invoke the planner or ask for an explanation. ContextSphere never sends code or file contents automatically.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            SettingsCard(title: "Provider",
-                         subtitle: "Pick a backend for planner and explanations",
-                         symbol: "cpu") {
-                Picker("Provider", selection: $viewModel.llmDraft.provider) {
-                    ForEach(LLMProviderType.allCases, id: \.self) { provider in
-                        Text(provider.title).tag(provider)
-                    }
-                }
-                .accessibilityLabel("LLM provider")
-                LabeledContent("Base URL") {
-                    TextField("https://api.openai.com/v1", text: $viewModel.llmDraft.baseUrl)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("LLM base URL")
-                }
-                LabeledContent("Model") {
-                    TextField("gpt-4o-mini", text: $viewModel.llmDraft.model)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("LLM model name")
-                }
-                LabeledContent("API key") {
-                    HStack(spacing: 6) {
-                        Group {
-                            if showAPIKey {
-                                TextField("sk-…", text: $viewModel.llmDraft.apiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField("sk-…", text: $viewModel.llmDraft.apiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-                        .accessibilityLabel("LLM API key")
-                        Button(showAPIKey ? "Hide" : "Show") { showAPIKey.toggle() }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(showAPIKey ? "Hide API key" : "Show API key")
-                    }
-                }
-                Text("The API key is stored in the macOS Keychain by the core daemon. The app UI never persists it.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            SettingsCard(title: "Generation",
-                         subtitle: "Validated by the backend before saving",
-                         symbol: "slider.horizontal.3") {
-                LabeledContent("Temperature") {
-                    HStack(spacing: 8) {
-                        Slider(value: $viewModel.llmDraft.temperature,
-                               in: SettingsViewModel.temperatureRange, step: 0.1)
-                            .accessibilityLabel("Temperature")
-                        Text(viewModel.llmDraft.temperature,
-                             format: .number.precision(.fractionLength(1)))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 36, alignment: .trailing)
-                    }
-                }
-                LabeledContent("Max tokens") {
-                    Stepper(value: $viewModel.llmDraft.maxTokens,
-                            in: 1...100_000_000, step: 1000) {
-                        Text(viewModel.llmDraft.maxTokens.formatted())
-                            .monospacedDigit()
-                    }
-                    .accessibilityLabel("Max tokens")
-                }
-                LabeledContent("Context window") {
-                    Stepper(value: $viewModel.llmDraft.contextWindow,
-                            in: 1...100_000_000, step: 1000) {
-                        Text(viewModel.llmDraft.contextWindow.formatted())
-                            .monospacedDigit()
-                    }
-                    .accessibilityLabel("Context window size")
-                }
-            }
-
-            SettingsCard(title: "Apply",
-                         subtitle: "Save to the core daemon, then test the connection",
-                         symbol: "checkmark.seal") {
-                HStack(spacing: 8) {
-                    Button("Save") {
-                        Task { await viewModel.saveLLM() }
-                    }
-                    .disabled(!viewModel.llmDirty)
-                    .accessibilityLabel("Save LLM settings")
-                    Button("Test Connection") {
-                        Task { await viewModel.testLLM() }
-                    }
-                    .accessibilityLabel("Test LLM connection")
-                    if viewModel.llmDirty {
-                        Button("Revert") { viewModel.revertLLM() }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Revert LLM settings changes")
-                    }
-                    Spacer()
-                    statusBadge(viewModel.llmSave)
-                    statusBadge(viewModel.llmTest, savedTitle: "Connected")
-                }
-                if case .failed(let message) = viewModel.llmSave {
-                    Text(message).font(.caption).foregroundStyle(.red)
-                }
-                if case .failed(let message) = viewModel.llmTest {
-                    Text(message).font(.caption).foregroundStyle(.red)
-                }
-                Text("Saving persists the whole provider configuration through the core daemon. Memory & Learning capture completed planner executions — configure a provider to enable planning. File edits alone don't create memories.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Security
@@ -524,6 +434,7 @@ struct SettingsView: View {
                 Stepper(value: value, in: range, step: step) {
                     Text("\(value.wrappedValue) \(unit)")
                         .monospacedDigit()
+                        .csForeground(CSColor.textPrimary)
                 }
                 .accessibilityLabel(title)
                 if dirty {
@@ -546,18 +457,18 @@ struct SettingsView: View {
         case .saving:
             HStack(spacing: 4) {
                 ProgressView().controlSize(.small)
-                Text("Working…").font(.caption).foregroundStyle(.secondary)
+                Text("Working…").font(.caption).csForeground(CSColor.textSecondary)
             }
             .accessibilityLabel("Working")
         case .saved:
             Label(savedTitle, systemImage: "checkmark.circle.fill")
                 .font(.caption)
-                .foregroundStyle(.green)
+                .csForeground(CSColor.success)
                 .accessibilityLabel(savedTitle)
         case .failed(let message):
             Label("Failed", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.red)
+                .csForeground(CSColor.error)
                 .help(message)
                 .accessibilityLabel("Failed: \(message)")
         }
@@ -566,8 +477,6 @@ struct SettingsView: View {
 
 // MARK: - Settings card
 
-/// A native settings card: a section title with optional subtitle, a
-/// symbol, and a content slot bound to native form-style controls.
 struct SettingsCard<Content: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -580,16 +489,17 @@ struct SettingsCard<Content: View>: View {
                 if let symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.tint)
+                        .csForeground(CSColor.info)
                 }
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.csSectionTitle)
+                    .csForeground(CSColor.textPrimary)
                 if let subtitle {
                     Text("·")
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 Spacer()
             }
@@ -599,10 +509,13 @@ struct SettingsCard<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
+        .background(
+            Color.cs(CSColor.surface),
+            in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
-                .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
         )
     }
 }

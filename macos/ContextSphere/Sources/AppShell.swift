@@ -122,10 +122,7 @@ final class AppRouter: ObservableObject {
 
 extension Notification.Name {
     static let workspacesDidChange = Notification.Name("workspacesDidChange")
-    /// Intelligence panels should refresh (payload: none). Emitted on
-    /// `prediction:updated` / `recommendation:updated`.
     static let intelligenceDidChange = Notification.Name("intelligenceDidChange")
-    /// Workspace health changed (userInfo: workspaceId, healthScore).
     static let workspaceHealthDidChange = Notification.Name("workspaceHealthDidChange")
 }
 
@@ -133,8 +130,6 @@ extension Notification.Name {
 
 struct AppShell: View {
     @StateObject private var router = AppRouter.shared
-    /// Observed so the sidebar footer and reconnect handling react to
-    /// daemon lifecycle changes.
     @ObservedObject private var bridge = CoreBridge.shared
     @State private var workspaces: [Workspace] = []
     @State private var loaded = false
@@ -154,7 +149,7 @@ struct AppShell: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 248, max: 300)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 232, max: 280)
         } detail: {
             DetailHost(section: router.selection ?? .dashboard,
                        workspaces: workspaces,
@@ -185,7 +180,7 @@ struct AppShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .workspacesDidChange)) { _ in
             workspaceReloadTask?.cancel()
             workspaceReloadTask = Task {
-                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s debounce
+                try? await Task.sleep(nanoseconds: 300_000_000)
                 guard !Task.isCancelled else { return }
                 await loadWorkspaces()
             }
@@ -212,7 +207,7 @@ struct AppShell: View {
                           })
                 .padding(.horizontal, 12)
                 .padding(.top, 14)
-                .padding(.bottom, 6)
+                .padding(.bottom, 10)
             Divider()
                 .opacity(0.4)
                 .padding(.bottom, 4)
@@ -235,20 +230,10 @@ struct AppShell: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 0)
-            Divider()
-                .opacity(0.4)
-                .padding(.top, 4)
-            CoreStatusFooter(isRunning: bridge.isRunning,
-                             isReconnecting: bridge.isReconnecting,
-                             version: bridge.backendVersion) {
-                bridge.reconnect()
-            }
         }
-        .background(.regularMaterial)
+        .background(Color.cs(CSColor.surfaceSidebar))
     }
 
-    /// Reveals a workspace in the Workspaces master list without switching
-    /// the daemon's active workspace.
     private func revealWorkspace(_ id: String) {
         router.selection = .workspaces
         router.revealWorkspaceRequest = id
@@ -281,26 +266,21 @@ struct AppShell: View {
 
     @MainActor
     private func registerEventSink() async {
-        // Register the event sink before the daemon can emit anything.
         CoreBridge.shared.onEvent = { event, payload in
-            // Existing timeline/search live updates + graph live updates
             timeline.handle(event: event, payload: payload)
             search.handle(event: event, payload: payload)
             graph.handle(event: event, payload: payload)
-            // Workspace live events — debounced reload to avoid storms
             if event.hasPrefix("workspace:") {
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
                 }
             }
-            // Intelligence refresh nudges (debounced on the receiver).
             if event == "prediction:updated" || event == "recommendation:updated"
                 || event == "workflow:changed" {
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .intelligenceDidChange, object: nil)
                 }
             }
-            // Live workspace health updates carry the fresh score.
             if event == "health:updated", let payload,
                let obj = try? JSONDecoder().decode([String: JSONValue].self, from: payload) {
                 let workspaceId = obj.string("workspaceId") ?? ""
@@ -311,7 +291,6 @@ struct AppShell: View {
                         userInfo: ["workspaceId": workspaceId, "healthScore": score])
                 }
             }
-            // Proactive engine output → native macOS notifications.
             if event == "proactive:notification" {
                 let data = payload
                 Task { @MainActor in await proactiveNotifier.deliver(data) }
@@ -329,7 +308,6 @@ struct AppShell: View {
                 "list_archived_workspaces", as: [Workspace].self)
             let (a, b) = try await (active, archived)
             workspaces = (a + b).sorted { $0.lastActiveAt > $1.lastActiveAt }
-            // Propagate to view models that cache workspace names
             timeline.setWorkspaces(workspaces)
             search.setWorkspaces(workspaces)
             graph.setWorkspaces(workspaces)
@@ -345,30 +323,30 @@ struct AppShell: View {
 
 private struct SidebarRow: View {
     let section: AppSection
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Label {
-            HStack(spacing: 6) {
-                Text(section.compactTitle)
-                    .font(.system(size: 13, weight: .regular))
-                Spacer(minLength: 4)
-                if let key = section.shortcutKey {
-                    Text("⌘\(String(key.character))")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-                }
-            }
-        } icon: {
+        HStack(spacing: 8) {
             Image(systemName: section.symbol)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .frame(width: 18, alignment: .center)
+                .csForeground(CSColor.textSecondary)
+            Text(section.compactTitle)
+                .font(.system(size: 13, weight: .regular))
+                .csForeground(CSColor.textPrimary)
+            Spacer(minLength: 4)
+            if let key = section.shortcutKey {
+                Text("⌘\(String(key.character))")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .csForeground(CSColor.textTertiary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
         .accessibilityLabel(section.title)
         .accessibilityHint(shortcutHint)
     }
@@ -388,11 +366,11 @@ private struct SidebarGroupHeader: View {
         HStack(spacing: 5) {
             Image(systemName: group.symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             Text(group.title.uppercased())
                 .font(.csEyebrow(size: 10))
                 .tracking(0.7)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
             Spacer()
         }
         .padding(.horizontal, 8)
@@ -403,8 +381,11 @@ private struct SidebarGroupHeader: View {
     }
 }
 
-// MARK: - Sidebar header (active workspace at the top of the sidebar)
+// MARK: - Sidebar header
 
+/// Refined workspace switcher: clean folder icon, workspace name and a
+/// subtle chevron — no crosshair, no heavy box. The compact affordance
+/// keeps the navigation rail the visual priority.
 private struct SidebarHeader: View {
     let activeWorkspace: Workspace?
     let workspaces: [Workspace]
@@ -412,7 +393,7 @@ private struct SidebarHeader: View {
     let onSwitch: (Workspace) -> Void
 
     private var headerSubtitle: String {
-        if let path = activeWorkspace?.rootPath, !path.isEmpty {
+        if activeWorkspace?.rootPath?.isEmpty == false {
             return "Active context"
         }
         if workspaces.isEmpty {
@@ -428,7 +409,10 @@ private struct SidebarHeader: View {
                     Button {
                         onSwitch(workspace)
                     } label: {
-                        Label(workspace.name, systemImage: workspace.status == .active ? "checkmark.circle.fill" : "folder")
+                        Label(workspace.name,
+                              systemImage: workspace.status == .active
+                                ? "checkmark.circle.fill"
+                                : "folder")
                     }
                 }
                 Divider()
@@ -437,40 +421,40 @@ private struct SidebarHeader: View {
                 Button("Create your first workspace", action: onShowAll)
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Theme.accent.opacity(0.18))
-                    Image(systemName: "scope")
-                        .font(.system(size: 13, weight: .semibold))
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.14))
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
-                .frame(width: 26, height: 26)
+                .frame(width: 24, height: 24)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(activeWorkspace?.name ?? "No workspace")
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                        .foregroundStyle(.primary)
+                        .csForeground(CSColor.textPrimary)
                     Text(headerSubtitle)
                         .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(Color.cs(CSColor.hoverFill))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                    .strokeBorder(Color.cs(CSColor.border), lineWidth: 0.5)
             )
         }
         .menuStyle(.borderlessButton)
@@ -483,80 +467,36 @@ private struct SidebarHeader: View {
 
 // MARK: - Toolbar breadcrumb
 
+/// Top-bar breadcrumb. Sits in the toolbar's principal slot and is fully
+/// styled in the chrome. Workspace is a quiet, secondary piece of
+/// metadata; the active page is the primary identity.
 private struct ToolbarBreadcrumb: View {
     let section: AppSection
     let activeWorkspace: Workspace?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             if let activeWorkspace {
                 Text(activeWorkspace.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .regular))
+                    .csForeground(CSColor.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             Text(section.title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
+                .csForeground(CSColor.textPrimary)
                 .lineLimit(1)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.6),
+            in: Capsule(style: .continuous)
+        )
         .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Core status footer
-
-struct CoreStatusFooter: View {
-    let isRunning: Bool
-    var isReconnecting: Bool = false
-    let version: String?
-    /// Manual recovery affordance, shown while offline.
-    var onReconnect: (() -> Void)? = nil
-
-    private var statusColor: Color {
-        isRunning ? .green : (isReconnecting ? .orange : .red)
-    }
-
-    private var statusText: String {
-        if isRunning { return "Core online" }
-        return isReconnecting ? "Core reconnecting…" : "Core offline"
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(statusText)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.primary)
-                if let version {
-                    Text("v\(version)")
-                        .font(.system(size: 9, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            Spacer()
-            if !isRunning, let onReconnect {
-                Button("Retry", action: onReconnect)
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .help("Restart the core daemon")
-                    .accessibilityLabel("Retry core connection")
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(isRunning
-                            ? "ContextSphere core online\(version.map { ", version \($0)" } ?? "")"
-                            : "ContextSphere core offline\(isReconnecting ? ", reconnecting" : "")")
     }
 }
 
@@ -683,7 +623,7 @@ struct CommandPaletteView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .accessibilityHidden(true)
             TextField("Jump to anything…", text: $query)
                 .textFieldStyle(.plain)
@@ -696,7 +636,7 @@ struct CommandPaletteView: View {
                     fieldFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear command palette")
@@ -747,25 +687,27 @@ struct CommandPaletteView: View {
         HStack(spacing: 10) {
             Image(systemName: symbol(for: item))
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(selected(item) ? Color.accentColor : .secondary)
+                .foregroundStyle(selected(item) ? Color.accentColor : Color.cs(CSColor.textSecondary))
                 .frame(width: 20)
             Text(title(for: item))
                 .font(.system(size: 13))
+                .csForeground(CSColor.textPrimary)
             Spacer()
             if case .section(let section) = item, let shortcut = section.shortcutKey {
                 Text("⌘\(String(shortcut.character))")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: 3, style: .continuous))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                .fill(selected(item) ? Color.accentColor.opacity(0.14) : Color.clear)
+                .fill(selected(item) ? Color.cs(CSColor.selectionFill) : Color.clear)
         )
         .contentShape(Rectangle())
     }
@@ -807,8 +749,6 @@ struct CommandPaletteView: View {
                 router.newWorkspaceRequest = true
                 dismiss()
             case .refresh:
-                // Real recovery: restarts the daemon if it is down or
-                // wedged, instead of only probing health.
                 CoreBridge.shared.reconnect()
                 dismiss()
             }

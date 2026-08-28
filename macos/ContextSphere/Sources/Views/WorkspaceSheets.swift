@@ -26,7 +26,7 @@ struct CreateWorkspaceSheet: View {
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
             }
@@ -44,7 +44,7 @@ struct CreateWorkspaceSheet: View {
                 .tracking(-0.2)
             Text("A workspace is a context boundary — ContextSphere learns the files, rhythms, and relationships inside it.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -67,9 +67,9 @@ struct CreateWorkspaceSheet: View {
                         .font(.callout.weight(.medium))
                     Text("optional")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.quaternary.opacity(0.4), in: Capsule())
+                        .background(Color.cs(CSColor.border), in: Capsule())
                 }
                 HStack(spacing: 8) {
                     TextField("/path/to/project", text: $rootPath)
@@ -85,10 +85,10 @@ struct CreateWorkspaceSheet: View {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "lock.shield")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                     Text("If you choose a folder, ContextSphere will watch it locally. Files stay on this Mac and are never uploaded. Leave empty for a placeholder workspace.")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
@@ -99,9 +99,9 @@ struct CreateWorkspaceSheet: View {
                         .font(.callout.weight(.medium))
                     Text("optional")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.quaternary.opacity(0.4), in: Capsule())
+                        .background(Color.cs(CSColor.border), in: Capsule())
                 }
                 TextField("What is this workspace for?", text: $description, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -218,7 +218,7 @@ struct EditWorkspaceSheet: View {
                     .tracking(-0.2)
                 Text("Update the name or description for “\(workspace.name)”.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             .accessibilityElement(children: .combine)
 
@@ -237,9 +237,9 @@ struct EditWorkspaceSheet: View {
                             .font(.callout.weight(.medium))
                         Text("optional")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(.quaternary.opacity(0.4), in: Capsule())
+                            .background(Color.cs(CSColor.border), in: Capsule())
                     }
                     TextField("What is this workspace for?", text: $description, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
@@ -251,12 +251,12 @@ struct EditWorkspaceSheet: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Root path")
                             .font(.csEyebrow())
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .textCase(.uppercase)
                             .tracking(0.5)
                         Text(path)
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .csForeground(CSColor.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
@@ -267,7 +267,7 @@ struct EditWorkspaceSheet: View {
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .accessibilityLabel("Error: \(error)")
             }
 

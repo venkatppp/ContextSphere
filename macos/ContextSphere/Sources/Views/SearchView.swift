@@ -23,7 +23,7 @@ struct SearchView: View {
                 if let notice = viewModel.notice {
                     Text(notice)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .padding(.horizontal, 4)
                         .accessibilityLabel(notice)
                 }
@@ -90,7 +90,7 @@ struct SearchView: View {
                     Label("Save Search", systemImage: "bookmark")
                 }
                 .buttonStyle(.glass)
-                .tint(.indigo)
+                .tint(Color.cs(CSColor.info))
                 .help("Bookmark this query with the backend")
                 .accessibilityLabel("Save current search")
             }
@@ -103,7 +103,7 @@ struct SearchView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .accessibilityHidden(true)
             TextField("Search your context…", text: $viewModel.query)
                 .textFieldStyle(.plain)
@@ -123,7 +123,7 @@ struct SearchView: View {
                     searchFieldFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
@@ -147,7 +147,7 @@ struct SearchView: View {
                 ProgressView()
                 Text("Searching your context…")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 48)
@@ -186,10 +186,10 @@ struct SearchView: View {
             HStack(spacing: 6) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text("Recent")
                     .font(.csEyebrow())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
                 Spacer()
@@ -213,11 +213,11 @@ struct SearchView: View {
             } else if let historyError = viewModel.historyError {
                 Label("History unavailable: \(historyError)", systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .csForeground(CSColor.warning)
             } else {
                 Text("No recent searches — your history appears here after you search.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
         }
     }
@@ -229,17 +229,17 @@ struct SearchView: View {
             HStack(spacing: 6) {
                 Image(systemName: "clock")
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
                 Text(item)
                     .font(.callout)
                     .lineLimit(1)
-                    .foregroundStyle(.primary)
+                    .csForeground(CSColor.textPrimary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+            .background(Color.cs(CSColor.surfaceElevated), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.cs(CSColor.separator), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .help("Run search: \(item)")
@@ -252,10 +252,10 @@ struct SearchView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text("Saved")
                         .font(.csEyebrow())
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .textCase(.uppercase)
                         .tracking(0.6)
                 }
@@ -263,11 +263,11 @@ struct SearchView: View {
             if viewModel.savedSearches.isEmpty, let savedError = viewModel.savedError {
                 Label("Saved searches unavailable: \(savedError)", systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .csForeground(CSColor.warning)
             } else if viewModel.savedSearches.isEmpty {
                 Text("Save a search with the bookmark button to reuse it quickly.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
             }
             ForEach(viewModel.savedSearches) { saved in
                 savedRow(saved)
@@ -287,7 +287,7 @@ struct SearchView: View {
                 Text(saved.query)
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
-                    .foregroundStyle(.primary)
+                    .csForeground(CSColor.textPrimary)
             }
             .buttonStyle(.plain)
             .help("Run saved search: \(saved.query)")
@@ -295,13 +295,13 @@ struct SearchView: View {
             Spacer()
             Text(saved.createdAt.relativeTime)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .accessibilityLabel("Saved \(saved.createdAt.relativeTime)")
             Button {
                 Task { await viewModel.deleteSavedSearch(saved.id) }
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
             }
             .buttonStyle(.plain)
             .help("Delete saved search")
@@ -309,10 +309,10 @@ struct SearchView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+                .strokeBorder(Color.cs(CSColor.separator), lineWidth: 0.5)
         )
     }
 
@@ -342,15 +342,15 @@ struct SearchView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text("Results")
                     .font(.csEyebrow())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
                 Text("· \(viewModel.results.count)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .csForeground(CSColor.textTertiary)
                 Spacer()
             }
             LazyVStack(alignment: .leading, spacing: 6) {
@@ -471,7 +471,7 @@ struct SearchResultRow: View {
                     titleLine
                     result.snippetText
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if let workspaceName {
@@ -480,7 +480,7 @@ struct SearchResultRow: View {
                     if let filePath {
                         Text(filePath)
                             .font(.caption2.monospaced())
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .help(filePath)
@@ -536,7 +536,7 @@ struct SearchResultRow: View {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 26, height: 26)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .background(Color.cs(CSColor.borderSubtle), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -562,7 +562,7 @@ struct SearchResultRow: View {
     private func workspaceCaption(_ name: String) -> some View {
         Label(name, systemImage: "folder")
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .csForeground(CSColor.textTertiary)
             .accessibilityLabel("In workspace \(name)")
     }
 
@@ -573,7 +573,7 @@ struct SearchResultRow: View {
 
     private var rowFill: AnyShapeStyle {
         if isSelected { return AnyShapeStyle(Color.accentColor.opacity(0.14)) }
-        if isHovered { return AnyShapeStyle(.regularMaterial) }
+        if isHovered { return AnyShapeStyle(Color.cs(CSColor.surface)) }
         return AnyShapeStyle(Color.clear)
     }
 
@@ -581,7 +581,7 @@ struct SearchResultRow: View {
         RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
             .strokeBorder(
                 isSelected ? Color.accentColor.opacity(0.5)
-                : (isHovered ? Color.secondary.opacity(0.3) : .clear),
+                : (isHovered ? Color.cs(CSColor.border) : .clear),
                 lineWidth: 0.5
             )
     }
@@ -630,8 +630,8 @@ extension SearchEntityType {
 
     var color: Color {
         switch self {
-        case .workspace: .indigo
-        case .file: .teal
+        case .workspace: Color.cs(CSColor.info)
+        case .file: Color.cs(CSColor.graphFile)
         }
     }
 }

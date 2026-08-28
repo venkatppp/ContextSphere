@@ -31,7 +31,8 @@ enum GraphLayoutEngine {
         let nodes = model.nodes.map { vn in
             GraphLayout.NodeInput(id: vn.id, nodeType: vn.nodeType,
                                    workspaceId: vn.workspaceId, entityId: vn.entityId,
-                                   isWorkspace: vn.isWorkspace)
+                                   isWorkspace: vn.isWorkspace,
+                                   radius: vn.nodeType.nodeRadius)
         }
         let edges = model.edges.map { e in
             GraphLayout.EdgeInput(source: e.sourceID, target: e.targetID, weight: e.weight)
@@ -126,7 +127,8 @@ enum GraphLayoutEngine {
             let inputs = model.nodes.map { vn in
                 GraphLayout.NodeInput(id: vn.id, nodeType: vn.nodeType,
                                       workspaceId: vn.workspaceId, entityId: vn.entityId,
-                                      isWorkspace: vn.isWorkspace)
+                                      isWorkspace: vn.isWorkspace,
+                                      radius: vn.nodeType.nodeRadius)
             }
             let iters = model.nodes.count > 400 ? 15 : 40
             relaxFocus(positions: &pinned, nodes: inputs, edges: edges, focusID: focusID, iterations: iters)

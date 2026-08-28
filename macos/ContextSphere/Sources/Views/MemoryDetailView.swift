@@ -14,7 +14,7 @@ struct MemoryDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: record.kind.symbol)
-                        .foregroundStyle(record.status == .success ? Color.green : Color.secondary)
+                        .foregroundStyle(record.status == .success ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                     Text(record.goal)
                         .font(.headline)
                         .lineLimit(3)
@@ -22,7 +22,7 @@ struct MemoryDetailView: View {
                     if record.version > 1 {
                         Text("v\(record.version)")
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .accessibilityLabel("Version \(record.version)")
                     }
                 }
@@ -34,11 +34,11 @@ struct MemoryDetailView: View {
                     }
                     if let retentionBadge = record.retentionBadge {
                         Text("· \(retentionBadge)")
-                            .foregroundStyle(.orange)
+                            .csForeground(CSColor.warning)
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
                 .accessibilityElement(children: .combine)
                 HStack(spacing: 10) {
                     Text("Learned \(record.createdAt.relativeTime)")
@@ -50,7 +50,7 @@ struct MemoryDetailView: View {
                     }
                 }
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .csForeground(CSColor.textTertiary)
                 .accessibilityElement(children: .combine)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,7 +58,7 @@ struct MemoryDetailView: View {
             if let summary = record.summary {
                 Label(summary, systemImage: "doc.zipper")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .accessibilityLabel("Compressed summary: \(summary)")
             }
 
@@ -82,10 +82,10 @@ struct MemoryDetailView: View {
             controlsRow
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
         )
         .alert("Forget this memory?", isPresented: $confirmForget) {
             Button("Forget", role: .destructive) {
@@ -113,9 +113,9 @@ struct MemoryDetailView: View {
 
     private var statusColor: Color {
         switch record.status {
-        case .success: .green
-        case .failed: .red
-        case .cancelled: .orange
+        case .success: Color.cs(CSColor.success)
+        case .failed: Color.cs(CSColor.error)
+        case .cancelled: Color.cs(CSColor.warning)
         }
     }
 
@@ -143,7 +143,7 @@ struct MemoryDetailView: View {
                 .font(.callout.weight(.semibold).monospacedDigit())
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .csForeground(CSColor.textSecondary)
         }
     }
 
@@ -155,14 +155,14 @@ struct MemoryDetailView: View {
     private var toolsRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Tools used")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).csForeground(CSColor.textSecondary)
             HStack(spacing: 4) {
                 ForEach(record.toolsUsed.prefix(8), id: \.self) { tool in
                     Text(tool)
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(.quaternary.opacity(0.35), in: Capsule())
+                        .background(Color.cs(CSColor.borderSubtle), in: Capsule())
                 }
                 .accessibilityHidden(true)
             }
@@ -174,18 +174,18 @@ struct MemoryDetailView: View {
     private var failuresRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("What went wrong")
-                .font(.caption).foregroundStyle(.red)
+                .font(.caption).csForeground(CSColor.error)
             if !record.failedSteps.isEmpty {
                 ForEach(record.failedSteps, id: \.self) { step in
                     Label(step, systemImage: "xmark.octagon")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .csForeground(CSColor.error)
                 }
             }
             if let error = record.error {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
                     .lineLimit(3)
             }
         }
@@ -198,12 +198,12 @@ struct MemoryDetailView: View {
     private var stepsSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Steps")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).csForeground(CSColor.textSecondary)
             ForEach(Array(record.steps.enumerated()), id: \.offset) { index, step in
                 HStack(alignment: .top, spacing: 6) {
                     Text("\(index + 1)")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .frame(width: 18, alignment: .trailing)
                     Text(step)
                         .font(.caption)
@@ -221,12 +221,12 @@ struct MemoryDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("Remembered plan")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).csForeground(CSColor.textSecondary)
                 Spacer()
                 if plan.confidence > 0 {
                     Text("plan confidence \(plan.confidence.percentString)")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .accessibilityLabel("Plan confidence \(plan.confidence.percentString)")
                 }
             }
@@ -234,7 +234,7 @@ struct MemoryDetailView: View {
                 Label(plan.requiredFiles.joined(separator: ", "),
                       systemImage: "doc")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .lineLimit(2)
                     .accessibilityLabel("Required files: \(plan.requiredFiles.joined(separator: ", "))")
             }
@@ -242,7 +242,7 @@ struct MemoryDetailView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 10))
-                        .foregroundStyle(task.completed ? Color.green : Color.secondary)
+                        .foregroundStyle(task.completed ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                     Text(task.description)
                         .font(.caption)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -252,17 +252,17 @@ struct MemoryDetailView: View {
             }
         }
         .padding(10)
-        .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.cs(CSColor.hoverFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var reasoningSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Reasoning")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).csForeground(CSColor.textSecondary)
             ForEach(record.reasoning, id: \.self) { note in
                 Text(note)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -275,12 +275,12 @@ struct MemoryDetailView: View {
     private var lineageSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Lineage")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).csForeground(CSColor.textSecondary)
             if let lineage = viewModel.lineage {
                 if lineage.ancestors.isEmpty && lineage.children.isEmpty && lineage.mergedInto.isEmpty {
                     Text("This is the first version of its workflow.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                 } else {
                     if !lineage.ancestors.isEmpty {
                         lineageNodeList(nodes: lineage.ancestors,
@@ -298,12 +298,12 @@ struct MemoryDetailView: View {
             } else if viewModel.detailLoading {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("Loading lineage…").font(.caption).foregroundStyle(.secondary)
+                    Text("Loading lineage…").font(.caption).csForeground(CSColor.textSecondary)
                 }
             } else if let detailError = viewModel.detailError {
                 Text("Lineage unavailable: \(detailError)")
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .csForeground(CSColor.error)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -312,11 +312,11 @@ struct MemoryDetailView: View {
     private func lineageNodeList(nodes: [LineageNode], relationTitle: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(relationTitle)
-                .font(.caption2).foregroundStyle(.tertiary)
+                .font(.caption2).csForeground(CSColor.textTertiary)
             ForEach(nodes, id: \.id) { node in
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(node.status == .success ? Color.green : Color.orange)
+                        .fill(node.status == .success ? Color.cs(CSColor.success) : Color.cs(CSColor.warning))
                         .frame(width: 5, height: 5)
                     Text(node.goal)
                         .font(.caption)
@@ -324,10 +324,10 @@ struct MemoryDetailView: View {
                     Spacer()
                     Text(node.status.title)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     Text(node.createdAt.relativeTime)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(node.goal), \(node.status.title), \(node.createdAt.relativeTime)")
@@ -345,7 +345,7 @@ struct MemoryDetailView: View {
                     Label("Reasoning compressed \(record.compressedAt?.relativeTime ?? "")",
                           systemImage: "doc.zipper")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                     actionButton("Restore full reasoning", symbol: "arrow.uturn.backward",
                                  help: "Restore the original reasoning from the compression archive") {
                         Task { await viewModel.restoreCompressed(record.id) }
@@ -360,7 +360,7 @@ struct MemoryDetailView: View {
             HStack(spacing: 10) {
                 Text("Feedback")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 actionButton("Helpful", symbol: "hand.thumbsup", help: "Accept this memory for future recommendations") {
                     Task { await viewModel.sendFeedback(for: record.id, accepted: true) }
                 }
@@ -372,7 +372,7 @@ struct MemoryDetailView: View {
                 Divider().frame(height: 16)
                 Text("Retention")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 if record.retention == .archived {
                     actionButton("Keep", symbol: "lock.open", help: "Make this memory permanent again") {
                         Task { await viewModel.setRetention(for: record.id, policy: .permanent) }
@@ -392,7 +392,7 @@ struct MemoryDetailView: View {
                 }
             }
             if case .failed(let message) = viewModel.retentionState[record.id] {
-                Text(message).font(.caption).foregroundStyle(.red)
+                Text(message).font(.caption).csForeground(CSColor.error)
             }
         }
     }
@@ -418,12 +418,12 @@ struct MemoryDetailView: View {
         case .done:
             Label("Recorded", systemImage: "checkmark.circle.fill")
                 .font(.caption)
-                .foregroundStyle(.green)
+                .csForeground(CSColor.success)
                 .accessibilityLabel("Feedback recorded")
         case .failed(let message):
             Label("Failed", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.red)
+                .csForeground(CSColor.error)
                 .help(message)
                 .accessibilityLabel("Feedback failed: \(message)")
         }

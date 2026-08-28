@@ -1,30 +1,46 @@
 import SwiftUI
 
-/// Floating glass inspector for the selected graph node. Shows identity,
-/// context, timestamps, and the relationship breakdown of the selection,
-/// plus an action to expand the subgraph around it.
+/// Native contextual inspector for the selected graph node. Shows
+/// identity, status, details, relationships and relevant activity with
+/// clear hierarchy. Slides in from the trailing edge and stays out of
+/// the canvas (RC-9 §12).
 struct GraphInspectorView: View {
     @ObservedObject var viewModel: GraphViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             header
             if let node = viewModel.selectedNode {
-                Divider()
-                identitySection(node)
-                Divider()
-                relationshipSection(node)
-                Divider()
-                actionRow(node)
+                Divider().opacity(0.4)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        identitySection(node)
+                        actionRow(node)
+                        if let workspace = viewModel.workspaceName(for: node) {
+                            metadataRow(icon: "folder", label: "Workspace", value: workspace)
+                        }
+                        relationshipSection(node)
+                        if let metadata = node.metadata.objectValue, !metadata.isEmpty {
+                            metadataSection(metadata)
+                        }
+                        activitySection(node)
+                    }
+                    .padding(16)
+                }
+            } else {
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(width: 280)
+        .frame(width: 320)
         .frame(maxHeight: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .strokeBorder(.quaternary, lineWidth: 0.5))
+        .background(
+            Color.cs(CSColor.surfaceChrome).opacity(0.95),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        )
         .shadow(color: .black.opacity(0.15), radius: 24, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Graph inspector")
@@ -35,10 +51,10 @@ struct GraphInspectorView: View {
             HStack(spacing: 6) {
                 Image(systemName: "sidebar.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text("Inspector")
                     .font(.csEyebrow())
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
             }
@@ -48,122 +64,48 @@ struct GraphInspectorView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .frame(width: 22, height: 22)
-                    .background(.quaternary.opacity(0.4), in: Circle())
+                    .background(
+                        Color.cs(CSColor.textTertiary).opacity(0.10),
+                        in: Circle()
+                    )
             }
             .buttonStyle(.plain)
             .help("Close inspector")
             .accessibilityLabel("Close inspector")
         }
+        .padding(16)
     }
 
     private func identitySection(_ node: KgNode) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: node.nodeType.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(node.nodeType.color)
-                    .frame(width: 18)
+                    .font(.system(size: 18, weight: .semibold))
+                    .csForeground(node.nodeType.colorToken)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Color.cs(node.nodeType.colorToken).opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
                     .accessibilityHidden(true)
-                Text(node.title)
-                    .font(.headline)
-                    .lineLimit(3)
-                    .accessibilityLabel("Name: \(node.title)")
-            }
-            typeBadge(node)
-            if let workspace = viewModel.workspaceName(for: node) {
-                Label(workspace, systemImage: "folder")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Workspace: \(workspace)")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title)
+                        .font(.headline)
+                        .csForeground(CSColor.textPrimary)
+                        .lineLimit(3)
+                        .accessibilityLabel("Name: \(node.title)")
+                    typeBadge(node)
+                }
             }
             if let summary = node.summary, !summary.isEmpty, summary != node.title {
                 Text(summary)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                     .lineLimit(6)
                     .textSelection(.enabled)
                     .accessibilityLabel("Summary: \(summary)")
-            }
-            if let metadata = node.metadata.objectValue, !metadata.isEmpty {
-                metadataBlock(metadata)
-            }
-            HStack(spacing: 12) {
-                if !node.createdAt.isEmpty {
-                    Text("Created \(relative(node.createdAt))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityLabel("Created \(relative(node.createdAt))")
-                }
-                if !node.updatedAt.isEmpty {
-                    Text("Updated \(relative(node.updatedAt))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityLabel("Updated \(relative(node.updatedAt))")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func metadataBlock(_ metadata: [String: JSONValue]) -> some View {
-        ContentCard(cornerRadius: Theme.cornerSmall) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Details", systemImage: "info.circle")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(0.3)
-                ForEach(metadata.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(key)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 88, alignment: .leading)
-                            .accessibilityLabel("\(key)")
-                        Text(metadataString(value))
-                            .font(.caption2)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .textSelection(.enabled)
-                            .accessibilityLabel("\(key): \(metadataString(value))")
-                    }
-                }
-            }
-        }
-    }
-
-    private func relationshipSection(_ node: KgNode) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Relationships", symbol: "point.3.connected.trianglepath.dotted")
-            let breakdown = viewModel.relationshipBreakdown(for: node.id)
-            if breakdown.isEmpty {
-                Text("No relationships — expand to discover more.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("No relationships")
-            } else {
-                ContentCard(cornerRadius: Theme.cornerSmall) {
-                    VStack(spacing: 6) {
-                        ForEach(breakdown, id: \.type) { row in
-                            HStack {
-                                Label(row.type.title, systemImage: row.type.color == .gray ? "link" : "arrow.triangle.branch")
-                                    .font(.caption)
-                                    .foregroundStyle(.primary)
-                                    .accessibilityLabel(row.type.title)
-                                Spacer()
-                                Text("\(row.count)")
-                                    .font(.caption.weight(.semibold).monospacedDigit())
-                                    .foregroundStyle(row.type.color)
-                                    .accessibilityLabel("\(row.count) relationships")
-                            }
-                            if row.type != breakdown.last?.type {
-                                Divider().opacity(0.4)
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -175,7 +117,7 @@ struct GraphInspectorView: View {
             } label: {
                 Label("Expand", systemImage: "point.3.connected.trianglepath.dotted")
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
             .disabled(viewModel.isExpanding)
             .accessibilityLabel("Expand subgraph around \(node.title)")
             .accessibilityHint("Loads relationships connected to this node")
@@ -202,14 +144,152 @@ struct GraphInspectorView: View {
         }
     }
 
+    private func metadataRow(icon: String, label: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .csForeground(CSColor.textSecondary)
+                .frame(width: 16)
+            Text(label)
+                .font(.caption2)
+                .csForeground(CSColor.textTertiary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+            Text(value)
+                .font(.caption)
+                .csForeground(CSColor.textPrimary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func relationshipSection(_ node: KgNode) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Relationships", symbol: "point.3.connected.trianglepath.dotted")
+            let breakdown = viewModel.relationshipBreakdown(for: node.id)
+            if breakdown.isEmpty {
+                Text("No relationships — expand to discover more.")
+                    .font(.callout)
+                    .csForeground(CSColor.textSecondary)
+                    .accessibilityLabel("No relationships")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(breakdown, id: \.type) { row in
+                        HStack {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.cs(row.type.colorToken))
+                                    .frame(width: 6, height: 6)
+                                Text(row.type.title)
+                                    .font(.caption)
+                                    .csForeground(CSColor.textPrimary)
+                            }
+                            .accessibilityLabel(row.type.title)
+                            Spacer()
+                            Text("\(row.count)")
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .csForeground(row.type.colorToken)
+                                .accessibilityLabel("\(row.count) relationships")
+                        }
+                        .padding(.vertical, 5)
+                        if row.type != breakdown.last?.type {
+                            Divider().opacity(0.3)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    Color.cs(CSColor.surfaceElevated).opacity(0.5),
+                    in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                        .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+                )
+            }
+        }
+    }
+
+    private func metadataSection(_ metadata: [String: JSONValue]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Details", symbol: "info.circle")
+            VStack(spacing: 0) {
+                ForEach(metadata.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(key)
+                            .font(.caption2.weight(.medium))
+                            .csForeground(CSColor.textSecondary)
+                            .frame(width: 96, alignment: .leading)
+                        Text(metadataString(value))
+                            .font(.caption2)
+                            .csForeground(CSColor.textPrimary)
+                            .lineLimit(2)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.vertical, 4)
+                    if key != metadata.keys.sorted().last {
+                        Divider().opacity(0.25)
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                Color.cs(CSColor.surfaceElevated).opacity(0.5),
+                in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+            )
+        }
+    }
+
+    private func activitySection(_ node: KgNode) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Relevant activity", symbol: "clock.arrow.circlepath")
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Created")
+                        .font(.caption2)
+                        .csForeground(CSColor.textTertiary)
+                    Spacer()
+                    Text(relative(node.createdAt))
+                        .font(.caption2)
+                        .csForeground(CSColor.textSecondary)
+                }
+                HStack {
+                    Text("Updated")
+                        .font(.caption2)
+                        .csForeground(CSColor.textTertiary)
+                    Spacer()
+                    Text(relative(node.updatedAt))
+                        .font(.caption2)
+                        .csForeground(CSColor.textSecondary)
+                }
+            }
+            .padding(10)
+            .background(
+                Color.cs(CSColor.surfaceElevated).opacity(0.5),
+                in: RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+            )
+        }
+    }
+
     private func typeBadge(_ node: KgNode) -> some View {
         Text(node.nodeType.title)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(node.nodeType.color)
+            .csForeground(node.nodeType.colorToken)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(node.nodeType.color.opacity(0.14),
-                        in: Capsule())
+            .background(
+                Color.cs(node.nodeType.colorToken).opacity(0.14),
+                in: Capsule()
+            )
             .accessibilityLabel("Type: \(node.nodeType.title)")
     }
 
@@ -254,17 +334,5 @@ struct GraphInspectorView: View {
             lines.append("\(row.type.title): \(row.count)")
         }
         return lines.joined(separator: "\n")
-    }
-}
-
-private extension GraphRelationshipType {
-    var color: Color {
-        switch self {
-        case .contains: .gray
-        case .runsIn: .gray
-        case .reportsOn: .orange
-        case .derivedFrom: .purple
-        case .relatedTo: .teal
-        }
     }
 }

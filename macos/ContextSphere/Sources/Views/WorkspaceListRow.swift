@@ -12,7 +12,7 @@ struct WorkspaceListRow: View {
                     .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.accentColor.opacity(0.12))
                 Image(systemName: workspace.status == .active ? "folder.fill" : "archivebox.fill")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
             }
             .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -20,37 +20,38 @@ struct WorkspaceListRow: View {
                     Text(workspace.name)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
-                        .foregroundStyle(.primary)
+                        .csForeground(CSColor.textPrimary)
                     if workspace.status == .archived {
                         Text("Archived")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.tertiary)
+                            .csForeground(CSColor.textTertiary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(.quaternary.opacity(0.4), in: Capsule(style: .continuous))
+                            .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+                                        in: Capsule(style: .continuous))
                     }
                 }
                 if let path = workspace.rootPath, !path.isEmpty {
                     Text(path)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } else if let description = workspace.description, !description.isEmpty {
                     Text(description)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                 } else {
                     Text("No folder set")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .csForeground(CSColor.textTertiary)
                 }
             }
             Spacer(minLength: 6)
             if workspace.status == .active {
                 Circle()
-                    .fill(Color.green)
+                    .fill(Color.cs(CSColor.success))
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
             }
@@ -59,12 +60,12 @@ struct WorkspaceListRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.16)
-                      : (isHovered ? Color.primary.opacity(0.05) : .clear))
+                .fill(isSelected ? Color.cs(CSColor.selectionFill)
+                      : (isHovered ? Color.cs(CSColor.hoverFill) : .clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
-                .strokeBorder(isSelected ? Color.accentColor.opacity(0.35) : .clear, lineWidth: 0.5)
+                .strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : .clear, lineWidth: 0.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
         .onHover { isHovered = $0 }
@@ -81,11 +82,11 @@ struct StatusBadge: View {
         Text(status.rawValue.capitalized)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(status == .active ? Color.green.opacity(0.14) : Color.secondary.opacity(0.12),
+            .background(status == .active ? Color.cs(CSColor.success).opacity(0.14) : Color.cs(CSColor.textSecondary).opacity(0.12),
                         in: Capsule())
-            .foregroundStyle(status == .active ? Color.green : Color.secondary)
+            .foregroundStyle(status == .active ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
             .overlay(
-                Capsule().strokeBorder(status == .active ? Color.green.opacity(0.25) : .clear, lineWidth: 0.5)
+                Capsule().strokeBorder(status == .active ? Color.cs(CSColor.success).opacity(0.25) : .clear, lineWidth: 0.5)
             )
             .accessibilityLabel("Status \(status.rawValue)")
     }
@@ -101,9 +102,10 @@ struct StatTile: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label(label, systemImage: symbol)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .csForeground(CSColor.textSecondary)
                 Text(value)
                     .font(.callout.weight(.semibold))
+                    .csForeground(CSColor.textPrimary)
                     .monospacedDigit()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
