@@ -81,6 +81,15 @@ impl TimelineRecorder {
             })
             .await?;
 
+        // Best-effort local content indexing for filename+content search.
+        // Local-only, workspace-scoped, text <256KB, 10k chars, ignores binaries.
+        // Failure is non-fatal (e.g. file already deleted, not readable).
+        if let (Some(fid), Some(path)) = (file_id, activity.file_path()) {
+            if !matches!(activity, TimelineActivity::FileDeleted { .. }) {
+                Self::maybe_index_content(&self.file_repository, fid, &path).await;
+            }
+        }
+
         // The deletion event is recorded first (its FK references the
         // row); the row itself is then removed so deleted files stop
         // showing up in searches, file lists and duplicate scans. The
@@ -154,7 +163,49 @@ impl TimelineRecorder {
             )));
         }
 
-        self.resolve_file(workspace_id, path).await
+        let file_id = self.resolve_file(workspace_id, path).await?;
+        // Best-effort content indexing for initial scan (local, <256KB, text).
+        Self::maybe_index_content(&self.file_repository, file_id, path).await;
+        Ok(file_id)
+    }
+
+    /// Local-only content preview for FTS5 `search_index.body`.
+    /// - Ignores excluded/vendor paths (shared `is_ignored`).
+    /// - Skips >256KB, empty, or binary (null byte) files.
+    /// - Truncates to 10k chars.
+    /// - Never fails the caller (logs and returns on error).
+    async fn maybe_index_content(
+        file_repository: &crate::repositories::FileRepository,
+        file_id: Uuid,
+        path: &str,
+    ) {
+        use std::path::Path;
+        if crate::watcher::event_handler::is_ignored(Path::new(path)) {
+            return;
+        }
+        let Ok(meta) = tokio::fs::metadata(path).await else {
+            return;
+        };
+        const MAX_BYTES: u64 = 256 * 1024;
+        const MAX_CHARS: usize = 10_000;
+        if meta.len() == 0 || meta.len() > MAX_BYTES {
+            return;
+        }
+        let Ok(bytes) = tokio::fs::read(path).await else {
+            return;
+        };
+        if bytes.contains(&0) {
+            return;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let preview: String = trimmed.chars().take(MAX_CHARS).collect();
+        if let Err(e) = file_repository.update_search_body(file_id, preview).await {
+            tracing::debug!(file_id = %file_id, error = %e, "content indexing failed");
+        }
     }
 }
 
