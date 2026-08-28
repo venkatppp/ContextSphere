@@ -145,35 +145,66 @@ struct LearningView: View {
     private func statsOverview(_ insights: LearningInsights) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Learning statistics", symbol: "chart.bar")
-            HStack(alignment: .top, spacing: 24) {
-                statColumn([
-                    ("Feedback recorded", insights.stats.totalFeedbackCount),
-                    ("Accepted", insights.stats.acceptedCount),
-                    ("Rejected", insights.stats.rejectedCount),
-                ])
-                statColumn([
-                    ("Learned preferences", insights.stats.totalPreferences),
-                    ("Behavioral patterns", insights.stats.totalPatterns),
-                    ("Recommendations", insights.recommendationAccuracy.totalRecommendations),
-                ])
-                VStack(alignment: .leading, spacing: 10) {
-                    SectionHeader(title: "Recommendation accuracy", symbol: "target")
-                    if insights.recommendationAccuracy.totalRecommendations > 0 {
-                        HStack(spacing: 8) {
-                            ProgressView(value: insights.recommendationAccuracy.overallAccuracy)
-                                .accessibilityLabel("Overall recommendation accuracy")
-                            Text(insights.recommendationAccuracy.overallAccuracy.percentString)
-                                .font(.caption.monospacedDigit())
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 24) {
+                    statColumn([
+                        ("Feedback recorded", insights.stats.totalFeedbackCount),
+                        ("Accepted", insights.stats.acceptedCount),
+                        ("Rejected", insights.stats.rejectedCount),
+                    ])
+                    statColumn([
+                        ("Learned preferences", insights.stats.totalPreferences),
+                        ("Behavioral patterns", insights.stats.totalPatterns),
+                        ("Recommendations", insights.recommendationAccuracy.totalRecommendations),
+                    ])
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionHeader(title: "Recommendation accuracy", symbol: "target")
+                        if insights.recommendationAccuracy.totalRecommendations > 0 {
+                            HStack(spacing: 8) {
+                                ProgressView(value: insights.recommendationAccuracy.overallAccuracy)
+                                    .accessibilityLabel("Overall recommendation accuracy")
+                                Text(insights.recommendationAccuracy.overallAccuracy.percentString)
+                                    .font(.caption.monospacedDigit())
+                                    .csForeground(CSColor.textSecondary)
+                                    .accessibilityLabel("Overall accuracy \(insights.recommendationAccuracy.overallAccuracy.percentString)")
+                            }
+                        } else {
+                            Text("No feedback yet — accuracy readings appear once you act on recommendations.")
+                                .font(.callout)
                                 .csForeground(CSColor.textSecondary)
-                                .accessibilityLabel("Overall accuracy \(insights.recommendationAccuracy.overallAccuracy.percentString)")
                         }
-                    } else {
-                        Text("No feedback yet — accuracy readings appear once you act on recommendations.")
-                            .font(.callout)
-                            .csForeground(CSColor.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 24) {
+                        statColumn([
+                            ("Feedback recorded", insights.stats.totalFeedbackCount),
+                            ("Accepted", insights.stats.acceptedCount),
+                            ("Rejected", insights.stats.rejectedCount),
+                        ])
+                        statColumn([
+                            ("Learned preferences", insights.stats.totalPreferences),
+                            ("Behavioral patterns", insights.stats.totalPatterns),
+                            ("Recommendations", insights.recommendationAccuracy.totalRecommendations),
+                        ])
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionHeader(title: "Recommendation accuracy", symbol: "target")
+                        if insights.recommendationAccuracy.totalRecommendations > 0 {
+                            HStack(spacing: 8) {
+                                ProgressView(value: insights.recommendationAccuracy.overallAccuracy)
+                                Text(insights.recommendationAccuracy.overallAccuracy.percentString)
+                                    .font(.caption.monospacedDigit())
+                                    .csForeground(CSColor.textSecondary)
+                            }
+                        } else {
+                            Text("No feedback yet — accuracy readings appear once you act on recommendations.")
+                                .font(.callout)
+                                .csForeground(CSColor.textSecondary)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(16)

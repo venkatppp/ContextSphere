@@ -98,7 +98,7 @@ struct DashboardView: View {
     }
 
     private func twoColumn(for width: CGFloat) -> Bool {
-        width >= 920
+        width >= 900
     }
 
     // MARK: - Empty state
