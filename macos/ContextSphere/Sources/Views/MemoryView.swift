@@ -31,7 +31,8 @@ struct MemoryView: View {
     private var header: some View {
         ScreenHeader("Memory",
                      subtitle: subtitle,
-                     symbol: "brain.head.profile") {
+                     symbol: "brain.head.profile",
+                     eyebrow: "Intelligence") {
             refreshButton
         }
     }
@@ -52,9 +53,10 @@ struct MemoryView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
             }
         }
-        .disabled(viewModel.isFetching)
+        .buttonStyle(.borderless)
         .help("Refresh memory")
         .accessibilityLabel("Refresh memory")
     }
@@ -82,80 +84,29 @@ struct MemoryView: View {
     }
 
     private func errorState(_ message: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(.orange)
-            Text("Memory unavailable").font(.title3.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Button("Retry") {
-                Task { await viewModel.refresh() }
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Retry loading memory")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "Memory unavailable",
+            message: viewModel.lastError ?? message,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { Task { await viewModel.refresh() } })
+        )
     }
 
     /// Encouraging first-run state: the backend simply has nothing to
     /// show yet, not an error. Explains exactly what the system observes.
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
-            Text("ContextSphere hasn't learned enough yet")
-                .font(.title3.weight(.semibold))
-            VStack(spacing: 8) {
-                Text("Memories form when ContextSphere plans and completes work in your workspaces. Each successful run can be reused as a workflow.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 480)
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Create or open a workspace and work with files", systemImage: "folder")
-                    Label("Run a planned execution via the planner (or autonomous session)", systemImage: "sparkles")
-                    Label("Complete or accept a run — it becomes a memory", systemImage: "checkmark.circle")
-                    Label("Give feedback on recommendations to improve learning", systemImage: "hand.thumbsup")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420, alignment: .leading)
-                .padding(.top, 4)
-                Text("Tip: filter by workspace above — a non-matching filter can also look empty. Clear filters or refresh.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            }
-            HStack(spacing: 10) {
-                Button("Refresh") {
-                    Task { await viewModel.refresh() }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .accessibilityLabel("Refresh memory")
-                if viewModel.lastError != nil {
-                    Button("Show error") {
-                        // Last error is shown inline below; this just retries.
-                        Task { await viewModel.refresh() }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-            if let err = viewModel.lastError {
-                Text(err).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420).textSelection(.enabled)
-                    .padding(.top, 6)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "ContextSphere hasn't learned enough yet",
+            message: "Memories form when ContextSphere plans and completes work in your workspaces. Each successful run can be reused as a workflow.",
+            symbol: "brain.head.profile",
+            primaryAction: ("Refresh", { Task { await viewModel.refresh() } }),
+            details: [
+                ("folder", "Create or open a workspace and work with files"),
+                ("sparkles", "Run a planned execution via the planner"),
+                ("checkmark.circle", "Complete or accept a run — it becomes a memory"),
+                ("hand.thumbsup", "Give feedback on recommendations to improve learning"),
+            ]
+        )
     }
 
     // MARK: - Loaded content
@@ -201,19 +152,22 @@ struct MemoryView: View {
     }
 
     private func statTile(value: Int?, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value.map(String.init) ?? "—")
-                .font(.title3.weight(.bold).monospacedDigit())
-                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.caption2.weight(.medium))
+                .font(.csEyebrow())
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
-                .tracking(0.3)
+                .tracking(0.5)
+            Text(value.map(String.init) ?? "—")
+                .font(.csMetric(size: 24))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
+                .accessibilityLabel("\(label): \(value.map(String.init) ?? "unknown")")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value.map(String.init) ?? "unknown")")
     }
 
     private var healthGauges: some View {
@@ -962,57 +916,50 @@ private struct WorkflowFamilyCard: View {
     let family: WorkflowFamily
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(family.name)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
-                Spacer()
-                Text("\(family.memberCount) workflow\(family.memberCount == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if !family.goals.isEmpty {
-                Text(family.goals.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            HStack(spacing: 12) {
-                Label("\(family.totalSuccesses) succeeded", systemImage: "checkmark.circle")
-                    .foregroundStyle(.green)
-                Label("\(family.totalFailures) failed", systemImage: "xmark.circle")
-                    .foregroundStyle(.red)
-                if family.avgConfidence > 0 {
-                    Label("\(family.avgConfidence.percentString) confidence",
-                          systemImage: "waveform.path.ecg")
+        ContentCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(family.name)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(family.memberCount) workflow\(family.memberCount == 1 ? "" : "s")")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            }
-            .font(.caption2)
-            if !family.sharedTools.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(family.sharedTools.prefix(6), id: \.self) { tool in
-                        Text(tool)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.quaternary.opacity(0.35), in: Capsule())
-                    }
-                    .accessibilityHidden(true)
+                if !family.goals.isEmpty {
+                    Text(family.goals.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                .accessibilityLabel("Shared tools: \(family.sharedTools.prefix(6).joined(separator: ", "))")
+                HStack(spacing: 12) {
+                    Label("\(family.totalSuccesses) succeeded", systemImage: "checkmark.circle")
+                        .foregroundStyle(.green)
+                    Label("\(family.totalFailures) failed", systemImage: "xmark.circle")
+                        .foregroundStyle(.red)
+                    if family.avgConfidence > 0 {
+                        Label("\(family.avgConfidence.percentString) confidence",
+                              systemImage: "waveform.path.ecg")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption2)
+                if !family.sharedTools.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(family.sharedTools.prefix(6), id: \.self) { tool in
+                            Text(tool)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.quaternary.opacity(0.35), in: Capsule())
+                        }
+                        .accessibilityHidden(true)
+                    }
+                    .accessibilityLabel("Shared tools: \(family.sharedTools.prefix(6).joined(separator: ", "))")
+                }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
     }
 
     private var accessibilityText: String {
@@ -1056,9 +1003,9 @@ private struct FailurePatternRow: View {
                     .truncationMode(.tail)
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(pattern.patternType.title), \(pattern.description), \(pattern.occurrences) runs")
     }
@@ -1079,57 +1026,50 @@ private struct DuplicateGroupCard: View {
     let workspaceName: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(group.records.first?.goal ?? group.goalFingerprint)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
-                Spacer()
-                Text("\(group.records.count) copies · \(group.duplicateIDs.count) removed by merge")
+        ContentCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(group.records.first?.goal ?? group.goalFingerprint)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text("\(group.records.count) copies · \(group.duplicateIDs.count) removed by merge")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(group.reason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            Text(group.reason)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            ForEach(group.records, id: \.id) { record in
-                HStack(spacing: 6) {
-                    Image(systemName: record.id == group.keepId ? "star.fill" : "doc")
-                        .font(.caption2)
-                        .foregroundStyle(record.id == group.keepId ? Color.yellow : Color.secondary)
-                        .accessibilityHidden(true)
-                    Text(record.status.title)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    if let workspaceName {
-                        Text("· \(workspaceName)")
+                    .lineLimit(2)
+                ForEach(group.records, id: \.id) { record in
+                    HStack(spacing: 6) {
+                        Image(systemName: record.id == group.keepId ? "star.fill" : "doc")
+                            .font(.caption2)
+                            .foregroundStyle(record.id == group.keepId ? Color.yellow : Color.secondary)
+                            .accessibilityHidden(true)
+                        Text(record.status.title)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        if let workspaceName {
+                            Text("· \(workspaceName)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text(record.createdAt.relativeTime)
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                        if record.id == group.keepId {
+                            Text("kept")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
                     }
-                    Spacer()
-                    Text(record.createdAt.relativeTime)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    if record.id == group.keepId {
-                        Text("kept")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.green)
-                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(record.status.title) copy from \(record.createdAt.relativeTime)\(record.id == group.keepId ? ", kept after merge" : "")")
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(record.status.title) copy from \(record.createdAt.relativeTime)\(record.id == group.keepId ? ", kept after merge" : "")")
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 0.5)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Duplicate group: \(group.reason)")
     }
 }

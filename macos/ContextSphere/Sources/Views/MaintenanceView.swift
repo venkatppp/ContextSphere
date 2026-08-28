@@ -36,11 +36,16 @@ struct MaintenanceView: View {
     }
 
     private var header: some View {
-        ScreenHeader("Maintenance", subtitle: viewModel.integrity.map { $0.ok ? "Integrity OK · \(viewModel.backups.count) backups" : "Integrity issues detected" } ?? "Database health and backups", symbol: "wrench.and.screwdriver") {
+        ScreenHeader("Maintenance",
+                     subtitle: viewModel.integrity.map { $0.ok ? "Integrity OK · \(viewModel.backups.count) backups" : "Integrity issues detected" } ?? "Database health and backups",
+                     symbol: "wrench.and.screwdriver",
+                     eyebrow: "System") {
             HStack(spacing: 8) {
                 Button { Task { await viewModel.refresh() } } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
-                }.help("Refresh")
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh")
                 Menu {
                     Button("Run Integrity Check") { Task { await viewModel.refresh() } }
                     Button("Create Backup") { Task { await viewModel.runBackup() } }
@@ -62,18 +67,37 @@ struct MaintenanceView: View {
     }
 
     private func errorState(_ msg: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.orange)
-            Text("Maintenance unavailable").font(.title3.weight(.semibold))
-            Text(humanMaintenanceError(msg)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380).textSelection(.enabled)
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.orange)
+            Text("Maintenance unavailable")
+                .font(.title3.weight(.semibold))
+            Text(humanMaintenanceError(msg))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+                .textSelection(.enabled)
             if humanMaintenanceError(msg) != msg {
-                Text(msg).font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 380).textSelection(.enabled)
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+                    .textSelection(.enabled)
             }
             HStack(spacing: 10) {
-                Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderedProminent).accessibilityLabel("Retry maintenance check")
-                Button("Create Backup") { Task { await viewModel.runBackup() } }.buttonStyle(.bordered).disabled(viewModel.isFetching)
+                Button("Retry") { Task { await viewModel.refresh() } }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Retry maintenance check")
+                Button("Create Backup") { Task { await viewModel.runBackup() } }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isFetching)
             }
-        }.frame(maxWidth: .infinity).padding(32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
     }
 
     private func humanMaintenanceError(_ raw: String) -> String {

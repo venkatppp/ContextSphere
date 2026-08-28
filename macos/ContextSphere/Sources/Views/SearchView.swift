@@ -102,10 +102,12 @@ struct SearchView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             TextField("Search your context…", text: $viewModel.query)
                 .textFieldStyle(.plain)
+                .font(.system(size: 14))
                 .focused($searchFieldFocused)
                 .defaultFocus($searchFieldFocused, true)
                 .onSubmit { viewModel.submit() }
@@ -130,7 +132,7 @@ struct SearchView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
     }
 
     // MARK: - Content
@@ -164,19 +166,32 @@ struct SearchView: View {
     // MARK: - Initial state
 
     private var initialContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 22) {
             recentSearchesSection
             savedSearchesSection
             if viewModel.history.isEmpty && viewModel.savedSearches.isEmpty {
-                greeting
+                EmptyStateView(
+                    title: "Search your context",
+                    message: "Find workspaces and files across everything ContextSphere is watching. Recent searches and saved queries appear here.",
+                    symbol: "magnifyingglass"
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
             }
         }
     }
 
     private var recentSearchesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                SectionHeader(title: "Recent", symbol: "clock.arrow.circlepath")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("Recent")
+                    .font(.csEyebrow())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
                 Spacer()
                 if !viewModel.history.isEmpty {
                     Button("Clear") {
@@ -189,31 +204,10 @@ struct SearchView: View {
                 }
             }
             if !viewModel.history.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)],
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 8)],
                           alignment: .leading, spacing: 8) {
                     ForEach(viewModel.history, id: \.self) { item in
-                        Button {
-                            viewModel.runQuery(item)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "clock")
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityHidden(true)
-                                Text(item)
-                                    .font(.callout)
-                                    .lineLimit(1)
-                                    .foregroundStyle(.primary)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(.regularMaterial,
-                                        in: Capsule())
-                            .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Run search: \(item)")
-                        .accessibilityLabel("Run recent search: \(item)")
+                        recentChip(item)
                     }
                 }
             } else if let historyError = viewModel.historyError {
@@ -228,10 +222,43 @@ struct SearchView: View {
         }
     }
 
+    private func recentChip(_ item: String) -> some View {
+        Button {
+            viewModel.runQuery(item)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(item)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator.opacity(0.4), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .help("Run search: \(item)")
+        .accessibilityLabel("Run recent search: \(item)")
+    }
+
     private var savedSearchesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !viewModel.savedSearches.isEmpty {
-                SectionHeader(title: "Saved", symbol: "bookmark")
+                HStack(spacing: 6) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Saved")
+                        .font(.csEyebrow())
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                }
             }
             if viewModel.savedSearches.isEmpty, let savedError = viewModel.savedError {
                 Label("Saved searches unavailable: \(savedError)", systemImage: "exclamationmark.triangle")
@@ -243,116 +270,90 @@ struct SearchView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(viewModel.savedSearches) { saved in
-                HStack(spacing: 10) {
-                    Image(systemName: "bookmark.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tint)
-                        .accessibilityHidden(true)
-                    Button {
-                        viewModel.runQuery(saved.query)
-                    } label: {
-                        Text(saved.query)
-                            .font(.callout.weight(.medium))
-                            .lineLimit(1)
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Run saved search: \(saved.query)")
-                    .accessibilityLabel("Run saved search: \(saved.query)")
-                    Spacer()
-                    Text(saved.createdAt.relativeTime)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .accessibilityLabel("Saved \(saved.createdAt.relativeTime)")
-                    Button {
-                        Task { await viewModel.deleteSavedSearch(saved.id) }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Delete saved search")
-                    .accessibilityLabel("Delete saved search: \(saved.query)")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(.separator, lineWidth: 0.5))
+                savedRow(saved)
             }
         }
     }
 
-    private var greeting: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 30))
+    private func savedRow(_ saved: SavedSearch) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bookmark.fill")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Button {
+                viewModel.runQuery(saved.query)
+            } label: {
+                Text(saved.query)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+            .help("Run saved search: \(saved.query)")
+            .accessibilityLabel("Run saved search: \(saved.query)")
+            Spacer()
+            Text(saved.createdAt.relativeTime)
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
-            Text("Search your context")
-                .font(.title3.weight(.semibold))
-            Text("Find workspaces and files across everything ContextSphere is watching. Recent searches and saved queries appear here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
+                .accessibilityLabel("Saved \(saved.createdAt.relativeTime)")
+            Button {
+                Task { await viewModel.deleteSavedSearch(saved.id) }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Delete saved search")
+            .accessibilityLabel("Delete saved search: \(saved.query)")
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+                .strokeBorder(.separator.opacity(0.4), lineWidth: 0.5)
+        )
     }
 
     // MARK: - Result states
 
     private var noResultsState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
-            Text("No matching context")
-                .font(.title3.weight(.semibold))
-            Text("Nothing matched “\(viewModel.query)”. Try different keywords.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .accessibilityElement(children: .combine)
+        EmptyStateView(
+            title: "No matching context",
+            message: "Nothing matched “\(viewModel.query)”. Try different keywords.",
+            symbol: "magnifyingglass"
+        )
     }
 
     private func errorState(_ message: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(.orange)
-            Text("Search unavailable")
-                .font(.title3.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Button("Retry") {
-                viewModel.retry()
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Retry search")
-        }
-        .frame(maxWidth: .infinity)
-        .padding(32)
+        EmptyStateView(
+            title: "Search unavailable",
+            message: message,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { viewModel.retry() })
+        )
     }
 
     // MARK: - Results
 
     private var resultsList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(
-                title: "Results",
-                subtitle: "\(viewModel.results.count)",
-                symbol: "magnifyingglass"
-            )
-            LazyVStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("Results")
+                    .font(.csEyebrow())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                Text("· \(viewModel.results.count)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            LazyVStack(alignment: .leading, spacing: 6) {
                 ForEach(viewModel.results) { result in
                     SearchResultRow(
                         result: result,
@@ -455,6 +456,7 @@ struct SearchResultRow: View {
     let action: () -> Void
     var onOpenFile: (() -> Void)? = nil
     var onRevealInFinder: (() -> Void)? = nil
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -490,27 +492,17 @@ struct SearchResultRow: View {
                         rowActionButton("arrow.up.forward.app", "Open") { onOpenFile?() }
                         rowActionButton("folder", "Reveal in Finder") { onRevealInFinder?() }
                     }
+                    .opacity(isHovered || isSelected ? 1 : 0)
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowBackground)
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.14))
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isSelected
-                                  ? AnyShapeStyle(Color.accentColor.opacity(0.5))
-                                  : AnyShapeStyle(.quaternary),
-                                  lineWidth: isSelected ? 1 : 0.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(rowOverlay)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .contextMenu {
             if filePath != nil {
                 Button("Open") { onOpenFile?() }
@@ -543,10 +535,11 @@ struct SearchResultRow: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel("\(label) \(result.title)")
     }
@@ -554,15 +547,15 @@ struct SearchResultRow: View {
     private var titleLine: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(result.title)
-                .font(.callout.weight(.medium))
+                .font(.callout.weight(.semibold))
                 .lineLimit(1)
             Spacer()
             Text(result.entityType.title)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(result.entityType.color)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(.quaternary.opacity(0.6)))
+                .background(result.entityType.color.opacity(0.12), in: Capsule())
         }
     }
 
@@ -574,8 +567,23 @@ struct SearchResultRow: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(.regularMaterial)
+        RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            .fill(rowFill)
+    }
+
+    private var rowFill: AnyShapeStyle {
+        if isSelected { return AnyShapeStyle(Color.accentColor.opacity(0.14)) }
+        if isHovered { return AnyShapeStyle(.regularMaterial) }
+        return AnyShapeStyle(Color.clear)
+    }
+
+    private var rowOverlay: some View {
+        RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
+            .strokeBorder(
+                isSelected ? Color.accentColor.opacity(0.5)
+                : (isHovered ? Color.secondary.opacity(0.3) : .clear),
+                lineWidth: 0.5
+            )
     }
 
     private var accessibilityText: String {

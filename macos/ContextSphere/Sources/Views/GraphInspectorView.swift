@@ -32,14 +32,23 @@ struct GraphInspectorView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Label("Inspector", systemImage: "sidebar.right")
-                .font(.headline)
+            HStack(spacing: 6) {
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("Inspector")
+                    .font(.csEyebrow())
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
             Spacer()
             Button {
                 viewModel.showInspector = false
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
                     .background(.quaternary.opacity(0.4), in: Circle())
             }

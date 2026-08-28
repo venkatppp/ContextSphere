@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Create workspace sheet
+
 struct CreateWorkspaceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
@@ -31,14 +33,15 @@ struct CreateWorkspaceSheet: View {
             actions
         }
         .padding(20)
-        .frame(width: 460)
+        .frame(width: 480)
         .onAppear { focusedField = .name }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("New Workspace")
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
+                .tracking(-0.2)
             Text("A workspace is a context boundary — ContextSphere learns the files, rhythms, and relationships inside it.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -75,14 +78,20 @@ struct CreateWorkspaceSheet: View {
                         .onSubmit { focusedField = .description }
                         .help("Absolute path to the directory this workspace represents. It will be watched automatically.")
                         .accessibilityLabel("Workspace root path")
-                    Button("Browse…") { choosePath() }
+                    Button("Choose…") { choosePath() }
                         .help("Choose a folder")
-                        .accessibilityLabel("Browse for workspace folder")
+                        .accessibilityLabel("Choose workspace folder")
                 }
-                Text("If you choose a folder, ContextSphere will watch it locally and Timeline/Graph will fill as you edit files. Leave empty for a placeholder workspace.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "lock.shield")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("If you choose a folder, ContextSphere will watch it locally. Files stay on this Mac and are never uploaded. Leave empty for a placeholder workspace.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -100,18 +109,6 @@ struct CreateWorkspaceSheet: View {
                     .focused($focusedField, equals: .description)
                     .accessibilityLabel("Workspace description")
             }
-            HStack(spacing: 6) {
-                Image(systemName: "lock.shield")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Text("Your files stay on this Mac. ContextSphere observes locally and never uploads. You can change watch paths anytime in Settings.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.top, 2)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Privacy: Files stay on this Mac and are never uploaded")
         }
     }
 
@@ -125,7 +122,10 @@ struct CreateWorkspaceSheet: View {
                 Task { await create() }
             } label: {
                 if working {
-                    ProgressView().controlSize(.small)
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Creating…")
+                    }
                 } else {
                     Text("Create")
                 }
@@ -191,6 +191,8 @@ struct CreateWorkspaceSheet: View {
     }
 }
 
+// MARK: - Edit workspace sheet
+
 struct EditWorkspaceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
@@ -211,8 +213,9 @@ struct EditWorkspaceSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Rename Workspace")
-                    .font(.title3.weight(.semibold))
+                Text("Edit Workspace")
+                    .font(.title2.weight(.semibold))
+                    .tracking(-0.2)
                 Text("Update the name or description for “\(workspace.name)”.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -247,9 +250,12 @@ struct EditWorkspaceSheet: View {
                 if let path = workspace.rootPath, !path.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Root path")
-                            .font(.callout.weight(.medium))
+                            .font(.csEyebrow())
+                            .foregroundStyle(.tertiary)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
                         Text(path)
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -273,7 +279,10 @@ struct EditWorkspaceSheet: View {
                     Task { await save() }
                 } label: {
                     if working {
-                        ProgressView().controlSize(.small)
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Saving…")
+                        }
                     } else {
                         Text("Save")
                     }
@@ -296,9 +305,11 @@ struct EditWorkspaceSheet: View {
         working = true
         defer { working = false }
         do {
-            var input: [String: Any] = ["name": trimmedName]
-            let trimmedDesc = description.trimmingCharacters(in: .whitespaces)
-            input["description"] = trimmedDesc.isEmpty ? NSNull() : trimmedDesc
+            let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let input: [String: Any] = [
+                "name": trimmedName,
+                "description": trimmedDesc.isEmpty ? NSNull() : trimmedDesc,
+            ]
             let updated: Workspace = try await CoreBridge.shared.request(
                 "update_workspace",
                 params: ["id": workspace.id, "input": input],

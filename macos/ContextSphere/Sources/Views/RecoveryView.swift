@@ -32,11 +32,16 @@ struct RecoveryView: View {
     }
 
     private var header: some View {
-        ScreenHeader("Recovery", subtitle: viewModel.status.map { "\($0.status.capitalized) · score \(String(format: "%.0f", $0.overallScore))" } ?? "System health and recovery", symbol: "heart.text.square") {
+        ScreenHeader("Recovery",
+                     subtitle: viewModel.status.map { "\($0.status.capitalized) · score \(String(format: "%.0f", $0.overallScore))" } ?? "System health and recovery",
+                     symbol: "heart.text.square",
+                     eyebrow: "System") {
             HStack(spacing: 8) {
                 Button { Task { await viewModel.refresh() } } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
-                }.help("Refresh")
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh")
                 Menu {
                     Button("Self-Heal") { showSelfHealConfirm = true }
                     Button("Rollback", role: .destructive) { showRollbackConfirm = true }
@@ -59,12 +64,12 @@ struct RecoveryView: View {
     }
 
     private func errorState(_ msg: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 30)).foregroundStyle(.orange)
-            Text("Recovery unavailable").font(.title3.weight(.semibold))
-            Text(msg).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
-            Button("Retry") { Task { await viewModel.refresh() } }.buttonStyle(.borderedProminent)
-        }.frame(maxWidth: .infinity).padding(32)
+        EmptyStateView(
+            title: "Recovery unavailable",
+            message: msg,
+            symbol: "exclamationmark.triangle",
+            primaryAction: ("Retry", { Task { await viewModel.refresh() } })
+        )
     }
 
     private var loadedContent: some View {
