@@ -31,17 +31,9 @@ struct GraphInspectorView: View {
                 Spacer(minLength: 0)
             }
         }
-        .frame(width: 320)
+        .frame(width: 324)
         .frame(maxHeight: .infinity)
-        .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.95),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.15), radius: 24, y: 8)
+        .lgInspector()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Graph inspector")
     }

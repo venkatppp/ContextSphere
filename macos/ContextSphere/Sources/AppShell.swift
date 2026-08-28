@@ -209,14 +209,16 @@ struct AppShell: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 14)
                 .padding(.bottom, 10)
-            Divider()
-                .opacity(0.4)
+            Rectangle()
+                .fill(Color.cs(CSColor.separator).opacity(0.5))
+                .frame(height: 0.5)
+                .padding(.horizontal, 12)
                 .padding(.bottom, 4)
             List(selection: $router.selection) {
                 ForEach(NavGroup.allCases) { group in
                     Section {
                         ForEach(group.sections) { section in
-                            SidebarRow(section: section)
+                            SidebarRow(section: section, isSelected: router.selection == section)
                                 .tag(section)
                                 .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
                                 .listRowSeparator(.hidden)
@@ -232,7 +234,7 @@ struct AppShell: View {
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 0)
         }
-        .background(palette.surfaceSidebar)
+        .lgSidebarBackground()
     }
 
     private func revealWorkspace(_ id: String) {
@@ -324,33 +326,54 @@ struct AppShell: View {
 
 private struct SidebarRow: View {
     let section: AppSection
+    var isSelected = false
     @Environment(\.csPalette) private var palette
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: section.symbol)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                 .frame(width: 18, alignment: .center)
-                .csForeground(CSColor.textSecondary)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
+                .opacity(isSelected ? 1 : 0.9)
             Text(section.compactTitle)
-                .font(.system(size: 13, weight: .regular))
-                .csForeground(CSColor.textPrimary)
+                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                .tracking(isSelected ? -0.1 : 0)
+                .csForeground(isSelected ? CSColor.textPrimary : CSColor.textPrimary)
             Spacer(minLength: 4)
             if let key = section.shortcutKey {
                 Text("⌘\(String(key.character))")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .csForeground(CSColor.textTertiary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(palette.textTertiary.opacity(0.10),
-                                in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
+                    .padding(.horizontal, 4.5)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        isSelected
+                            ? Color.accentColor.opacity(reduceTransparency ? 0.16 : 0.12)
+                            : palette.textTertiary.opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(isSelected ? Color.accentColor.opacity(0.22) : .clear, lineWidth: 0.5)
+                    )
             }
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? Color.cs(CSColor.sidebarSelectedFill) : .clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : .clear, lineWidth: 0.5)
+        )
         .contentShape(Rectangle())
         .accessibilityLabel(section.title)
         .accessibilityHint(shortcutHint)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var shortcutHint: Text {
@@ -367,16 +390,17 @@ private struct SidebarGroupHeader: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: group.symbol)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 9.5, weight: .semibold))
                 .csForeground(CSColor.textTertiary)
+                .opacity(0.9)
             Text(group.title.uppercased())
                 .font(.csEyebrow(size: 10))
-                .tracking(0.7)
+                .tracking(0.75)
                 .csForeground(CSColor.textTertiary)
             Spacer()
         }
         .padding(.horizontal, 8)
-        .padding(.top, 10)
+        .padding(.top, 12)
         .padding(.bottom, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
@@ -427,37 +451,40 @@ private struct SidebarHeader: View {
             HStack(spacing: 9) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.14))
+                        .fill(Color.accentColor.opacity(0.15))
                     Image(systemName: "folder.fill")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
+                .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(activeWorkspace?.name ?? "No workspace")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .tracking(-0.15)
                         .lineLimit(1)
                         .csForeground(CSColor.textPrimary)
                     Text(headerSubtitle)
-                        .font(.system(size: 10))
+                        .font(.system(size: 10.5))
                         .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 4)
+                Spacer(minLength: 6)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
+                    .opacity(0.85)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .fill(palette.hoverFill)
+                    .fill(palette.hoverFill.opacity(0.9))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .strokeBorder(palette.border, lineWidth: 0.5)
+                    .strokeBorder(palette.border.opacity(0.8), lineWidth: 0.5)
             )
         }
         .menuStyle(.borderlessButton)
@@ -470,37 +497,52 @@ private struct SidebarHeader: View {
 
 // MARK: - Toolbar breadcrumb
 
-/// Top-bar breadcrumb. Sits in the toolbar's principal slot and is fully
-/// styled in the chrome. Workspace is a quiet, secondary piece of
-/// metadata; the active page is the primary identity.
+/// Integrated toolbar hierarchy — not a floating pill. Workspace is
+/// a secondary, quiet context; the active page is the primary
+/// identity. Feels attached to the native toolbar, not floating.
 private struct ToolbarBreadcrumb: View {
     let section: AppSection
     let activeWorkspace: Workspace?
-    @Environment(\.csPalette) private var palette
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if let activeWorkspace {
-                Text(activeWorkspace.name)
-                    .font(.system(size: 12, weight: .regular))
-                    .csForeground(CSColor.textSecondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.85))
+                        .accessibilityHidden(true)
+                    Text(activeWorkspace.name)
+                        .font(.system(size: 12, weight: .regular))
+                        .csForeground(CSColor.textSecondary)
+                        .lineLimit(1)
+                }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 8, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
+                    .opacity(0.6)
+                    .accessibilityHidden(true)
             }
-            Text(section.title)
-                .font(.system(size: 13, weight: .semibold))
-                .csForeground(CSColor.textPrimary)
-                .lineLimit(1)
+            HStack(spacing: 5) {
+                Image(systemName: section.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.cs(CSColor.textSecondary))
+                    .accessibilityHidden(true)
+                Text(section.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .tracking(-0.18)
+                    .csForeground(CSColor.textPrimary)
+                    .lineLimit(1)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
-        .background(
-            palette.surfaceChrome.opacity(0.6),
-            in: Capsule(style: .continuous)
-        )
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(breadcrumbLabel)
+    }
+
+    private var breadcrumbLabel: String {
+        if let ws = activeWorkspace { return "\(ws.name), \(section.title)" }
+        return section.title
     }
 }
 

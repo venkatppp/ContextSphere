@@ -553,18 +553,18 @@ struct ContentCard<Content: View>: View {
     var cornerRadius: CGFloat = Theme.cornerLarge
     var padding: CGFloat = Theme.cardPaddingLarge
     @ViewBuilder var content: Content
-
     var body: some View {
         content
             .padding(padding)
             .background(
-                Color.cs(CSColor.surface).opacity(0.85),
+                Color.cs(CSColor.surface).opacity(0.88),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
+            .shadow(color: .black.opacity(0.04), radius: 10, y: 3)
     }
 }
 
@@ -576,13 +576,14 @@ struct CompactCard<Content: View>: View {
         content
             .padding(Theme.cardPadding)
             .background(
-                Color.cs(CSColor.surface).opacity(0.85),
+                Color.cs(CSColor.surface).opacity(0.88),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
+            .shadow(color: .black.opacity(0.03), radius: 8, y: 2)
     }
 }
 
@@ -600,6 +601,90 @@ struct GlassSection<Content: View>: View {
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
     }
+}
+
+// MARK: - Liquid Glass Chrome (Apple, WWDC 2018 / Liquid Glass)
+
+// Intentional, restrained glass. Navigation / chrome / floating
+// controls are glass; content stays calm. Every surface respects
+// Reduce Transparency / Reduce Motion and remains readable
+// without blur.
+
+struct LGChromeBackground: ViewModifier {
+    var cornerRadius: CGFloat = Theme.cornerRegular
+    var interactive = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        Group {
+            if reduceTransparency {
+                content.background(
+                    Color.cs(CSColor.surfaceChrome),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            } else {
+                content.glassEffect(
+                    interactive ? Glass.regular.interactive() : Glass.regular,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(reduceTransparency ? 0.04 : 0.07), radius: 12, y: 4)
+    }
+}
+
+struct LGInspectorBackground: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        Group {
+            if reduceTransparency {
+                content.background(
+                    Color.cs(CSColor.surfaceChrome),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+            } else {
+                content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.14), radius: 24, y: 8)
+    }
+}
+
+struct LGSidebarBackground: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.csPalette) private var palette
+    func body(content: Content) -> some View {
+        content.background {
+            if reduceTransparency {
+                palette.surfaceSidebar
+            } else {
+                ZStack {
+                    palette.surfaceSidebar.opacity(0.72)
+                    Rectangle().fill(.ultraThinMaterial).opacity(0.92)
+                }
+            }
+        }
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.cs(CSColor.separator).opacity(reduceTransparency ? 0.5 : 0.32))
+                .frame(width: 0.5)
+        }
+    }
+}
+
+extension View {
+    func lgChrome(cornerRadius: CGFloat = Theme.cornerRegular, interactive: Bool = false) -> some View {
+        modifier(LGChromeBackground(cornerRadius: cornerRadius, interactive: interactive))
+    }
+    func lgInspector() -> some View { modifier(LGInspectorBackground()) }
+    func lgSidebarBackground() -> some View { modifier(LGSidebarBackground()) }
 }
 
 // MARK: - Divider
@@ -950,13 +1035,14 @@ struct HeroCard<Content: View>: View {
             .padding(Theme.cardPaddingLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color.cs(CSColor.surfaceHero).opacity(0.92),
+                Color.cs(CSColor.surfaceHero).opacity(0.94),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
+            .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
     }
 }
 

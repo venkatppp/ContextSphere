@@ -228,11 +228,7 @@ struct WorkspacesView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(Color.cs(CSColor.surfaceSidebar))
-        .overlay(
-            Rectangle().fill(Color.cs(CSColor.separator)).frame(width: 0.5),
-            alignment: .trailing
-        )
+        .lgSidebarBackground()
     }
 
     private func rowContextMenu(for workspace: Workspace) -> some View {
