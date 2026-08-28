@@ -85,8 +85,9 @@ struct DashboardView: View {
 
     private func layoutPadding(for width: CGFloat) -> CGFloat {
         if width < 760 { return 16 }
-        if width < 1100 { return 22 }
-        return 32
+        if width < 980 { return 20 }
+        if width < 1200 { return 24 }
+        return 28
     }
 
     private func splitRatio(for width: CGFloat) -> CGFloat {
@@ -97,7 +98,7 @@ struct DashboardView: View {
     }
 
     private func twoColumn(for width: CGFloat) -> Bool {
-        width >= 900
+        width >= 920
     }
 
     // MARK: - Empty state
@@ -247,13 +248,18 @@ struct DashboardView: View {
     private func workspaceIdentity(_ workspace: Workspace) -> some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(Color.accentColor.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.5)
+                    )
                 Image(systemName: "folder.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.tint)
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 42, height: 42)
+            .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
@@ -463,10 +469,11 @@ struct DashboardView: View {
                 .font(.caption.weight(.medium))
         }
         .csForeground(CSColor.textSecondary)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(Color.cs(CSColor.textTertiary).opacity(0.10),
+        .background(Color.cs(CSColor.textTertiary).opacity(0.09),
                     in: Capsule(style: .continuous))
+        .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
     }
 
     // MARK: - Intelligence + Recent Context

@@ -168,15 +168,7 @@ struct GraphScreen: View {
             }
         }
         .padding(5)
-        .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.92),
-            in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous)
-                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        .lgChrome(cornerRadius: Theme.cornerLarge)
     }
 
     // MARK: - Canvas
@@ -399,14 +391,7 @@ struct GraphScreen: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .frame(width: 320)
-            .background(
-                Color.cs(CSColor.surfaceChrome).opacity(0.92),
-                in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
-            )
+            .lgChrome(cornerRadius: Theme.cornerRegular, interactive: true)
             if let e = viewModel.searchError {
                 Text(e)
                     .font(.caption)
@@ -466,12 +451,7 @@ struct GraphScreen: View {
         }
         .frame(width: 320)
         .frame(maxHeight: 320)
-        .background(Color.cs(CSColor.surfaceChrome).opacity(0.95),
-                    in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
-        )
+        .lgChrome(cornerRadius: Theme.cornerRegular)
         .accessibilityLabel("Graph search results")
     }
 
@@ -523,15 +503,7 @@ struct GraphScreen: View {
             }
         }
         .padding(6)
-        .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.92),
-            in: RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous)
-                .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 10, y: 4)
+        .lgChrome(cornerRadius: Theme.cornerRegular)
     }
 
     private func glassControlButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
@@ -539,6 +511,7 @@ struct GraphScreen: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: 28, height: 28)
+                .foregroundStyle(Color.cs(CSColor.textSecondary))
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
@@ -577,10 +550,7 @@ struct GraphScreen: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.92),
-            in: Capsule()
-        )
+        .lgChrome(cornerRadius: 999)
         .accessibilityLabel("\(viewModel.nodes.count) nodes, \(viewModel.visibleEdges.count) relationships")
     }
 
@@ -604,10 +574,7 @@ struct GraphScreen: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(
-            Color.cs(CSColor.surfaceChrome).opacity(0.92),
-            in: Capsule()
-        )
+        .lgChrome(cornerRadius: 999)
     }
 
     // MARK: - State overlay

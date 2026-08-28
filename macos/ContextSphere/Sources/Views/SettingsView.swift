@@ -101,14 +101,14 @@ struct SettingsView: View {
                         .font(.system(size: 10, weight: .medium))
                         .csForeground(CSColor.textTertiary)
                     Text("ContextSphere v\(CoreBridge.shared.backendVersion ?? "—")")
-                        .font(.caption2)
+                        .font(.caption2.monospacedDigit())
                         .csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
             }
         }
-        .background(Color.cs(CSColor.surfaceSidebar))
+        .lgSidebarBackground()
     }
 
     private func categoryRow(_ cat: Category) -> some View {
