@@ -19,6 +19,9 @@ struct PerformanceView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.initialLoadIfNeeded() }
         .confirmationDialog("Apply optimizations?", isPresented: $showOptimizeConfirm, titleVisibility: .visible) {
@@ -32,10 +35,13 @@ struct PerformanceView: View {
     }
 
     private var header: some View {
-        ScreenHeader("Performance",
-                     subtitle: viewModel.startup.map { "Last launch \($0.totalMs) ms · \($0.stages.count) stages" } ?? "What ContextSphere is doing right now",
-                     symbol: "gauge.with.dots.needle.67percent",
-                     eyebrow: "System") {
+        StandardPageHeader(
+            section: .performance,
+            title: "Performance",
+            subtitle: viewModel.startup.map { "Last launch \($0.totalMs) ms · \($0.stages.count) stages" } ?? "What ContextSphere is doing right now",
+            symbol: AppSection.performance.symbol,
+            eyebrow: NavGroup.system.title.uppercased()
+        ) {
             HStack(spacing: 8) {
                 Button {
                     Task { await viewModel.refreshAll() }
@@ -44,9 +50,13 @@ struct PerformanceView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh performance")
+                Button { Task { await viewModel.runBenchmark() } } label: {
+                    Label("Benchmark", systemImage: "speedometer")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(viewModel.isFetching)
                 Menu {
-                    Button("Run Benchmark") { Task { await viewModel.runBenchmark() } }
-                    Divider()
                     Button("Analyze") { applyOptimize = false; showOptimizeConfirm = true }
                     Button("Apply Optimizations") { applyOptimize = true; showOptimizeConfirm = true }
                 } label: {
@@ -84,7 +94,15 @@ struct PerformanceView: View {
             if let profile = viewModel.profile { profileCard(profile) }
             if let opt = viewModel.optimizeResult, !opt.recommendations.isEmpty { optimizeCard(opt) }
             if let err = viewModel.lastError {
-                Text(err).font(.caption).csForeground(CSColor.error).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").csForeground(CSColor.warning)
+                    Text(err).font(.caption).csForeground(CSColor.textSecondary).textSelection(.enabled)
+                    Spacer()
+                    Button("Retry") { Task { await viewModel.refreshAll() } }.buttonStyle(.borderless).controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
             }
         }
     }

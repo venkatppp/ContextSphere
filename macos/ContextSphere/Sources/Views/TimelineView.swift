@@ -23,6 +23,9 @@ struct TimelineView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous))
+                    .frame(maxWidth: Theme.contentMaxWidth)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity)
             }
         }
         .task { await viewModel.initialLoadIfNeeded() }
@@ -76,10 +79,14 @@ struct TimelineView: View {
     // MARK: - Header
 
     private var header: some View {
-        ScreenHeader("Timeline",
-                     subtitle: subtitle,
-                     symbol: "clock",
-                     eyebrow: "Workspace") {
+        StandardPageHeader(
+            section: .timeline,
+            activeWorkspace: viewModel.selectedWorkspace,
+            title: "Timeline",
+            subtitle: subtitle,
+            symbol: AppSection.timeline.symbol,
+            eyebrow: NavGroup.workspace.title.uppercased()
+        ) {
             HStack(spacing: 8) {
                 workspacePicker
                 typePicker

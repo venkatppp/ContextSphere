@@ -22,6 +22,9 @@ struct MemoryView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.initialLoadIfNeeded() }
     }
@@ -29,12 +32,13 @@ struct MemoryView: View {
     // MARK: - Header
 
     private var header: some View {
-        ScreenHeader("Memory",
-                     subtitle: subtitle,
-                     symbol: "brain.head.profile",
-                     eyebrow: "Intelligence") {
-            refreshButton
-        }
+        StandardPageHeader(
+            section: .memory,
+            title: "Memory",
+            subtitle: subtitle,
+            symbol: AppSection.memory.symbol,
+            eyebrow: NavGroup.intelligence.title.uppercased()
+        ) { refreshButton }
     }
 
     private var subtitle: String {

@@ -160,20 +160,12 @@ struct SettingsView: View {
     }
 
     private var detailHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: category.symbol)
-                    .font(.system(size: 22, weight: .semibold))
-                    .csForeground(CSColor.info)
-                Text(category.title)
-                    .font(.csScreenTitle)
-                    .csForeground(CSColor.textPrimary)
-                    .tracking(-0.3)
-            }
-            Text(category.summary)
-                .font(.callout)
-                .csForeground(CSColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            ContentBreadcrumb(section: .settings)
+            ScreenHeader(category.title,
+                         subtitle: category.summary,
+                         symbol: category.symbol,
+                         eyebrow: NavGroup.system.title.uppercased())
         }
         .accessibilityElement(children: .combine)
     }
@@ -385,6 +377,7 @@ struct SettingsView: View {
 
     private var securitySection: some View {
         VStack(alignment: .leading, spacing: 18) {
+            securitySummaryCard
             SettingsCard(title: "Policy",
                          subtitle: "Unset values use the backend defaults",
                          symbol: "lock.shield") {
@@ -410,6 +403,9 @@ struct SettingsView: View {
                                    key: SettingsViewModel.findingsKey,
                                    dirty: viewModel.findingsDirty)
             }
+            if !viewModel.securityRecommendations.isEmpty {
+                securityFindingsCard
+            }
         }
         .onChange(of: viewModel.monitorIntervalSeconds) { _, _ in
             viewModel.scheduleSecuritySave(key: SettingsViewModel.monitorKey,
@@ -422,6 +418,95 @@ struct SettingsView: View {
         .onChange(of: viewModel.findingsRetentionDays) { _, _ in
             viewModel.scheduleSecuritySave(key: SettingsViewModel.findingsKey,
                                            value: viewModel.findingsRetentionDays)
+        }
+    }
+
+    private var securitySummaryCard: some View {
+        SettingsCard(title: "Security posture", subtitle: viewModel.securityScore.map { "\($0.status.capitalized) · score \(String(format: "%.0f", $0.score))" } ?? "Monitoring and findings summary", symbol: "shield.lefthalf.filled") {
+            if let score = viewModel.securityScore {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Circle().fill(score.status == "excellent" || score.status == "good" ? Color.cs(CSColor.success) : score.status == "fair" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).frame(width: 8, height: 8)
+                            Text("\(String(format: "%.0f", score.score)) / 100").font(.system(size: 22, weight: .bold).monospacedDigit()).csForeground(CSColor.textPrimary)
+                            CSStatusBadge(text: score.status.capitalized, kind: score.status == "excellent" || score.status == "good" ? .success : score.status == "fair" ? .warning : .error)
+                        }
+                        Text("\(score.passedChecks) of \(score.totalChecks) checks passed · \(score.failedChecks) failed").font(.caption).csForeground(CSColor.textSecondary)
+                        Text("Checked \(score.scoredAt.relativeTime)").font(.caption2).csForeground(CSColor.textTertiary)
+                    }
+                    Spacer(minLength: 12)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Label("Monitoring every \(viewModel.monitorIntervalSeconds)s", systemImage: "clock.arrow.circlepath")
+                            .font(.caption.weight(.medium)).csForeground(CSColor.textSecondary)
+                        let unresolved = score.unresolved
+                        if unresolved.isEmpty {
+                            Label("No unresolved findings", systemImage: "checkmark.shield.fill").font(.caption).csForeground(CSColor.success)
+                        } else {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("\(unresolved.count) unresolved finding\(unresolved.count == 1 ? "" : "s")").font(.caption.weight(.semibold)).csForeground(CSColor.warning)
+                                ForEach(unresolved.prefix(2), id: \.id) { f in
+                                    Text(f.checkName.replacingOccurrences(of: "_", with: " ").capitalized).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1)
+                                }
+                            }
+                        }
+                        if !viewModel.securityRecommendations.isEmpty {
+                            let open = viewModel.securityRecommendations.filter { $0.status == "open" }.count
+                            if open > 0 {
+                                Text("\(open) actionable recommendation\(open == 1 ? "" : "s")").font(.caption2).csForeground(CSColor.info)
+                            }
+                        }
+                    }
+                }
+                if let err = viewModel.securityStatusError {
+                    Text(err).font(.caption2).csForeground(CSColor.textTertiary)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading security posture…").font(.caption).csForeground(CSColor.textSecondary)
+                    }
+                    HStack(spacing: 8) {
+                        Label("Monitoring every \(viewModel.monitorIntervalSeconds)s", systemImage: "clock.arrow.circlepath").font(.caption).csForeground(CSColor.textSecondary)
+                        Spacer()
+                        Text("Findings will appear after the first monitor pass").font(.caption2).csForeground(CSColor.textTertiary)
+                    }
+                    if let err = viewModel.securityStatusError {
+                        Text(err).font(.caption2).csForeground(CSColor.warning)
+                    }
+                }
+            }
+        }
+    }
+
+    private var securityFindingsCard: some View {
+        SettingsCard(title: "Findings & recommendations", subtitle: "\(viewModel.securityRecommendations.filter { $0.status == "open" }.count) open", symbol: "exclamationmark.shield") {
+            if viewModel.securityRecommendations.isEmpty {
+                Text("No recommendations — your security posture is clean.").font(.callout).csForeground(CSColor.textSecondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(viewModel.securityRecommendations.filter { $0.status == "open" }.prefix(4)) { rec in
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(rec.title).font(.callout.weight(.medium)).lineLimit(1)
+                                    Text(rec.severity.capitalized).font(.caption2.weight(.semibold))
+                                        .foregroundStyle(rec.severity == "critical" ? Color.cs(CSColor.error) : rec.severity == "warning" ? Color.cs(CSColor.warning) : Color.cs(CSColor.info))
+                                        .padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                                }
+                                Text(rec.detail).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 8)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(Color.cs(CSColor.surfaceElevated).opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
+                    }
+                    if viewModel.securityRecommendations.filter({ $0.status == "open" }).count > 4 {
+                        Text("\(viewModel.securityRecommendations.filter({ $0.status == "open" }).count - 4) more recommendations retained").font(.caption2).csForeground(CSColor.textTertiary)
+                    }
+                }
+            }
         }
     }
 
