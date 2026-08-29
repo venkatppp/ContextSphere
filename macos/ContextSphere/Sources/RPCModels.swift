@@ -299,6 +299,60 @@ struct SecurityConfigEntry: Decodable, Identifiable, Hashable {
     var id: String { key }
 }
 
+struct SecurityFinding: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let runId: String
+    let category: String
+    let severity: String
+    let checkName: String
+    let passed: Bool
+    let detail: String
+    let checkedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, severity, passed, detail
+        case runId = "runId"
+        case checkName = "checkName"
+        case checkedAt = "checkedAt"
+    }
+}
+
+struct SecurityScoreReport: Decodable, Hashable {
+    let scoredAt: String
+    let score: Double
+    let status: String
+    let totalChecks: Int
+    let passedChecks: Int
+    let failedChecks: Int
+    let findings: [SecurityFinding]
+
+    enum CodingKeys: String, CodingKey {
+        case score, status, findings
+        case scoredAt = "scoredAt"
+        case totalChecks = "totalChecks"
+        case passedChecks = "passedChecks"
+        case failedChecks = "failedChecks"
+    }
+    var unresolved: [SecurityFinding] { findings.filter { !$0.passed } }
+}
+
+struct SecurityRecommendation: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let rule: String
+    let severity: String
+    let title: String
+    let detail: String
+    let status: String
+    let createdAt: String
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, rule, severity, title, detail, status
+        case createdAt = "createdAt"
+        case updatedAt = "updatedAt"
+    }
+}
+
 // MARK: - Execution memory (RC-6)
 
 /// What kind of execution produced a memory record (`MemoryKind`,

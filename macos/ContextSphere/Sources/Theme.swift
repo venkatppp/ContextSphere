@@ -794,6 +794,137 @@ struct SectionHeader: View {
     }
 }
 
+// MARK: - Page chrome
+
+/// Single breadcrumb row that lives inside the content/header container and
+/// aligns to the content grid. Never floats detached in the toolbar.
+struct ContentBreadcrumb: View {
+    let section: AppSection
+    var activeWorkspace: Workspace? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("ContextSphere")
+                .font(.system(size: 11, weight: .medium))
+                .csForeground(CSColor.textTertiary)
+                .accessibilityHidden(true)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .csForeground(CSColor.textTertiary)
+                .opacity(0.55)
+                .accessibilityHidden(true)
+            if let ws = activeWorkspace {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.85))
+                        .accessibilityHidden(true)
+                    Text(ws.name)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .csForeground(CSColor.textSecondary)
+                        .lineLimit(1)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .csForeground(CSColor.textTertiary)
+                    .opacity(0.55)
+                    .accessibilityHidden(true)
+            }
+            HStack(spacing: 5) {
+                Image(systemName: section.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.cs(CSColor.textSecondary))
+                    .accessibilityHidden(true)
+                Text(section.title)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .tracking(-0.1)
+                    .csForeground(CSColor.textPrimary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(breadcrumbLabel)
+    }
+
+    private var breadcrumbLabel: String {
+        if let ws = activeWorkspace { return "ContextSphere, \(ws.name), \(section.title)" }
+        return "ContextSphere, \(section.title)"
+    }
+}
+
+/// Consistent header chrome used by every page. Eyebrow → icon/title → subtitle
+/// hierarchy, spacing 4/10/16, left-aligned to the content grid inside a soft
+/// glass container. All pages should use this rather than ad-hoc HStacks.
+struct StandardPageHeader<Content: View>: View {
+    let section: AppSection
+    var activeWorkspace: Workspace? = nil
+    let title: String
+    var subtitle: String? = nil
+    var symbol: String? = nil
+    var eyebrow: String? = nil
+    @ViewBuilder var trailing: Content
+
+    init(section: AppSection,
+         activeWorkspace: Workspace? = nil,
+         title: String,
+         subtitle: String? = nil,
+         symbol: String? = nil,
+         eyebrow: String? = nil,
+         @ViewBuilder trailing: () -> Content) {
+        self.section = section
+        self.activeWorkspace = activeWorkspace
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+        self.eyebrow = eyebrow
+        self.trailing = trailing()
+    }
+
+    init(section: AppSection,
+         activeWorkspace: Workspace? = nil,
+         title: String,
+         subtitle: String? = nil,
+         symbol: String? = nil,
+         eyebrow: String? = nil) where Content == EmptyView {
+        self.init(section: section, activeWorkspace: activeWorkspace, title: title, subtitle: subtitle, symbol: symbol, eyebrow: eyebrow) { EmptyView() }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ContentBreadcrumb(section: section, activeWorkspace: activeWorkspace)
+            ScreenHeader(title, subtitle: subtitle, symbol: symbol, eyebrow: eyebrow) { trailing }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Shared scaffold: ScrollView + content grid + safeAreaInset glass header.
+/// Breadcrumb inside `header` is aligned to the same maxWidth grid as `content`.
+struct PageScaffold<Header: View, Content: View>: View {
+    @ViewBuilder var header: Header
+    @ViewBuilder var content: Content
+    var body: some View {
+        ScrollView {
+            content
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+        }
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .safeAreaInset(edge: .top, spacing: 8) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
+        }
+    }
+}
+
 // MARK: - States
 
 struct EmptyStateView: View {

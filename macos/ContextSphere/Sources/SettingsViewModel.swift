@@ -63,6 +63,9 @@ final class SettingsViewModel: ObservableObject {
     private var auditLoaded = 90
     private var findingsLoaded = 30
     private var securityDebounces: [String: Task<Void, Never>] = [:]
+    @Published private(set) var securityScore: SecurityScoreReport?
+    @Published private(set) var securityRecommendations: [SecurityRecommendation] = []
+    @Published private(set) var securityStatusError: String?
 
     // MARK: Dirty state
 
@@ -85,14 +88,38 @@ final class SettingsViewModel: ObservableObject {
                 "list_watch_paths", as: [String].self)
             async let security: [SecurityConfigEntry] = CoreBridge.shared.request(
                 "security_config", as: [SecurityConfigEntry].self)
-            let (loadedThreshold, loadedPaths, loadedSecurity) =
-                try await (threshold, paths, security)
+            async let score: SecurityScoreReport = CoreBridge.shared.request(
+                "security_status", as: SecurityScoreReport.self)
+            async let recs: [SecurityRecommendation] = CoreBridge.shared.request(
+                "security_recommendations", as: [SecurityRecommendation].self)
+            let (loadedThreshold, loadedPaths, loadedSecurity, loadedScore, loadedRecs) =
+                try await (threshold, paths, security, score, recs)
             apply(threshold: loadedThreshold,
                   paths: loadedPaths,
                   security: loadedSecurity)
+            securityScore = loadedScore
+            securityRecommendations = loadedRecs
+            securityStatusError = nil
             phase = .loaded
         } catch {
-            phase = .failed(error.localizedDescription)
+            // If security_status is unavailable on older backends, keep core settings loaded
+            do {
+                async let threshold: Int = CoreBridge.shared.request(
+                    "get_session_inactivity_threshold", as: Int.self)
+                async let paths: [String] = CoreBridge.shared.request(
+                    "list_watch_paths", as: [String].self)
+                async let security: [SecurityConfigEntry] = CoreBridge.shared.request(
+                    "security_config", as: [SecurityConfigEntry].self)
+                let (loadedThreshold, loadedPaths, loadedSecurity) =
+                    try await (threshold, paths, security)
+                apply(threshold: loadedThreshold, paths: loadedPaths, security: loadedSecurity)
+                securityScore = nil
+                securityRecommendations = []
+                securityStatusError = error.localizedDescription
+                phase = .loaded
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
         }
     }
 

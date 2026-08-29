@@ -250,10 +250,6 @@ struct AppShell: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            ToolbarBreadcrumb(section: router.selection ?? .dashboard,
-                              activeWorkspace: activeWorkspace)
-        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 router.showCommandPalette = true

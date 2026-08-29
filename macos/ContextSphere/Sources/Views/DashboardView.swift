@@ -42,7 +42,6 @@ struct DashboardView: View {
                     if workspaces.isEmpty {
                         emptyWorkspaces
                     } else {
-                        greetingHeader
                         currentContextHero(width: width)
                         activityOverview(width: width)
                         if width >= 980 {
@@ -74,9 +73,29 @@ struct DashboardView: View {
                 .padding(.vertical, 18)
             }
             .scrollEdgeEffectStyle(.soft, for: .vertical)
+            .safeAreaInset(edge: .top, spacing: 8) {
+                dashboardHeader
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(maxWidth: Theme.contentMaxWidth)
+                    .padding(.horizontal, dashboardPadding(for: width))
+                    .frame(maxWidth: .infinity)
+            }
         }
         .task { activity.setWorkspaces(workspaces); activity.refresh() }
         .onChange(of: workspaces) { _, new in activity.setWorkspaces(new) }
+    }
+
+    private var dashboardHeader: some View {
+        StandardPageHeader(
+            section: .dashboard,
+            activeWorkspace: currentWorkspace,
+            title: greetingText,
+            subtitle: "Here's what ContextSphere remembers about your work.",
+            symbol: AppSection.dashboard.symbol,
+            eyebrow: NavGroup.workspace.title.uppercased()
+        )
     }
 
     private func dashboardPadding(for width: CGFloat) -> CGFloat {
@@ -103,10 +122,10 @@ struct DashboardView: View {
     private var greetingText: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
-        case 5..<12: return "Good morning, Alex"
-        case 12..<17: return "Good afternoon, Alex"
-        case 17..<22: return "Good evening, Alex"
-        default: return "Good evening, Alex"
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Good evening"
         }
     }
 
@@ -376,18 +395,14 @@ struct DashboardView: View {
     // MARK: - Empty workspaces
 
     private var emptyWorkspaces: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "folder.badge.plus").font(.system(size: 40, weight: .light)).csForeground(CSColor.textTertiary)
-            VStack(spacing: 6) {
-                Text("Create your first workspace").font(.title2.weight(.semibold)).csForeground(CSColor.textPrimary)
-                Text("ContextSphere learns from the work you do inside a workspace. Create one and it will begin tracking context here.")
-                    .font(.callout).csForeground(CSColor.textSecondary).multilineTextAlignment(.center).frame(maxWidth: 440)
-            }
-            Button { AppRouter.shared.newWorkspaceRequest = true; AppRouter.shared.selection = .workspaces } label: { Label("Create Workspace", systemImage: "plus.circle.fill") }
-                .buttonStyle(.borderedProminent).controlSize(.large)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 40)
-        .accessibilityElement(children: .contain)
+        EmptyStateView(
+            title: "Create your first workspace",
+            message: "ContextSphere learns from the work you do inside a workspace. Create one and it will begin tracking context here.",
+            symbol: "folder.badge.plus",
+            primaryAction: ("Create Workspace", { AppRouter.shared.newWorkspaceRequest = true; AppRouter.shared.selection = .workspaces })
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 }
 

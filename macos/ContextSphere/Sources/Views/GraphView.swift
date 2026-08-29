@@ -30,43 +30,51 @@ struct GraphScreen: View {
     private let renderer = CanvasGraphRenderer()
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top: integrated page header
-            graphHeader
-                .padding(.horizontal, 24)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-            // Canvas
-            GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    canvasArea(geo.size)
-                    // Lenses (top-center, compact)
-                    lensBar
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 16)
-                    // Search surface
-                    searchSurface
-                        .padding(20)
-                    if viewModel.isExpanding {
-                        expandingBadge
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            .padding(.bottom, 22)
-                    }
-                    statusBar
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(20)
-                    controls
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        .padding(20)
-                    if viewModel.showInspector {
-                        GraphInspectorView(viewModel: viewModel)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                            .padding(20)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                    stateOverlay
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                canvasArea(geo.size)
+                // Lenses (top-center, compact)
+                lensBar
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 16)
+                // Search surface
+                searchSurface
+                    .padding(20)
+                if viewModel.isExpanding {
+                    expandingBadge
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 22)
                 }
+                statusBar
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(20)
+                controls
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(20)
+                if viewModel.showInspector {
+                    GraphInspectorView(viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(20)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+                stateOverlay
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 8) {
+            StandardPageHeader(
+                section: .graph,
+                activeWorkspace: viewModel.workspaces.first { $0.id == viewModel.selectedWorkspaceId } ?? viewModel.workspaces.first,
+                title: "Knowledge Graph",
+                subtitle: headerSubtitle,
+                symbol: AppSection.graph.symbol,
+                eyebrow: NavGroup.intelligence.title.uppercased()
+            ) { workspacePicker }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85),
                    value: viewModel.positions)

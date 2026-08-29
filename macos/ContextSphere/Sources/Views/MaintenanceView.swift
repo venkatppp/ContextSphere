@@ -19,6 +19,9 @@ struct MaintenanceView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.initialLoadIfNeeded() }
         .confirmationDialog("Restore backup?", isPresented: Binding(get: { showRestoreConfirm != nil }, set: { if !$0 { showRestoreConfirm = nil } }), titleVisibility: .visible) {
@@ -36,19 +39,27 @@ struct MaintenanceView: View {
     }
 
     private var header: some View {
-        ScreenHeader("Maintenance",
-                     subtitle: viewModel.integrity.map { $0.ok ? "Integrity OK · \(viewModel.backups.count) backups" : "Integrity issues detected" } ?? "Database health and backups",
-                     symbol: "wrench.and.screwdriver",
-                     eyebrow: "System") {
+        StandardPageHeader(
+            section: .maintenance,
+            title: "Maintenance",
+            subtitle: viewModel.integrity.map { $0.ok ? "Integrity OK · \(viewModel.backups.count) backups" : "Integrity issues detected" } ?? "Database health and backups",
+            symbol: AppSection.maintenance.symbol,
+            eyebrow: NavGroup.system.title.uppercased()
+        ) {
             HStack(spacing: 8) {
                 Button { Task { await viewModel.refresh() } } label: {
                     if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
+                Button { Task { await viewModel.runBackup() } } label: {
+                    Label("Backup", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(viewModel.isFetching)
                 Menu {
                     Button("Run Integrity Check") { Task { await viewModel.refresh() } }
-                    Button("Create Backup") { Task { await viewModel.runBackup() } }
                     Button("Run Maintenance (Vacuum)") { Task { await viewModel.runOptimize() } }
                 } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
             }
@@ -111,22 +122,23 @@ struct MaintenanceView: View {
     }
 
     private var loadedContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if let integ = viewModel.integrity { integrityCard(integ) }
+        VStack(alignment: .leading, spacing: 16) {
+            // Concise summary row: integrity + backup count + last optimize
+            if let integ = viewModel.integrity { summaryCard(integ) }
             if let pending = viewModel.pendingRestore {
                 pendingCard(pending)
             } else {
-                // Valid empty: no pending restore is normal; show subtle hint, not an error.
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle").csForeground(CSColor.textSecondary)
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.success)
                     Text("No pending restore").font(.caption).csForeground(CSColor.textSecondary)
                     Spacer()
-                    Text("A staged restore appears here and applies on next launch.").font(.caption2).csForeground(CSColor.textTertiary)
+                    Text("A staged restore applies on next launch").font(.caption2).csForeground(CSColor.textTertiary)
                 }
-                .padding(10)
-                .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color.cs(CSColor.surface).opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
             }
-            backupsCard
+            backupsCardCompact
             if let rep = viewModel.lastOptimize { maintenanceResultCard(rep) }
             if let err = viewModel.lastError {
                 HStack(spacing: 8) {
@@ -137,30 +149,40 @@ struct MaintenanceView: View {
                 }
                 .padding(10)
                 .background(Color.cs(CSColor.surface), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
                 .accessibilityLabel("Maintenance warning: \(err)")
             }
         }
     }
 
-    private func integrityCard(_ r: IntegrityReport) -> some View {
+    private func summaryCard(_ r: IntegrityReport) -> some View {
         ContentCard {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Integrity", subtitle: r.ok ? "OK" : "Failed", symbol: r.ok ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.dbPath).font(.caption).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                        Text("Size \(ByteCountFormatter.string(fromByteCount: r.main.databaseSizeBytes, countStyle: .file)) · \(r.main.pageCount) pages · \(r.main.journalMode)").font(.caption2).csForeground(CSColor.textTertiary)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    Circle().fill(r.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error)).frame(width: 10, height: 10)
+                SectionHeader(title: "Database", subtitle: r.ok ? "Healthy" : "Needs attention", symbol: r.ok ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Circle().fill(r.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error)).frame(width: 8, height: 8)
+                            Text(r.ok ? "Integrity OK" : "Integrity issues").font(.caption.weight(.semibold)).csForeground(r.ok ? CSColor.success : CSColor.error)
+                            Text("· \(viewModel.backups.count) backups").font(.caption).csForeground(CSColor.textSecondary)
+                            if let rep = viewModel.lastOptimize {
+                                Text("· last vacuum \(rep.checkedAt.relativeTime)").font(.caption2).csForeground(CSColor.textTertiary)
+                            }
+                        }
+                        Text(r.dbPath).font(.caption2.monospaced()).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Text("\(ByteCountFormatter.string(fromByteCount: r.main.databaseSizeBytes, countStyle: .file)) · \(r.main.pageCount) pages · \(r.main.journalMode) · freelist \(r.main.freelistCount)")
+                            .font(.caption2).csForeground(CSColor.textTertiary)
+                    }
+                    Spacer(minLength: 12)
                 }
-                if !r.main.foreignKeyCheck.isEmpty {
-                    Text("Foreign key issues: \(r.main.foreignKeyCheck.joined(separator: ", "))").font(.caption).csForeground(CSColor.error)
-                }
-                HStack {
-                    Label(r.main.integrity.ok ? "integrity_check OK" : "integrity_check failed", systemImage: r.main.integrity.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.integrity.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
-                    Label(r.main.quickCheck.ok ? "quick_check OK" : "quick_check failed", systemImage: r.main.quickCheck.ok ? "checkmark.circle.fill" : "xmark.circle.fill").font(.caption2).foregroundStyle(r.main.quickCheck.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
-                    Spacer()
-                    Text("Freelist \(r.main.freelistCount)").font(.caption2).csForeground(CSColor.textSecondary)
+                HStack(spacing: 8) {
+                    Label(r.main.integrity.ok ? "integrity_check OK" : "integrity_check failed", systemImage: r.main.integrity.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.caption2).foregroundStyle(r.main.integrity.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
+                    Label(r.main.quickCheck.ok ? "quick_check OK" : "quick_check failed", systemImage: r.main.quickCheck.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.caption2).foregroundStyle(r.main.quickCheck.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
+                    if !r.main.foreignKeyCheck.isEmpty {
+                        Text("· \(r.main.foreignKeyCheck.count) foreign-key issues").font(.caption2).csForeground(CSColor.error)
+                    }
                 }
             }
         }
@@ -177,42 +199,65 @@ struct MaintenanceView: View {
         }
     }
 
-    private var backupsCard: some View {
+    private var backupsCardCompact: some View {
         ContentCard {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Backups", subtitle: "\(viewModel.backups.count)", symbol: "externaldrive")
-                if viewModel.backups.isEmpty {
-                    Text("No backups yet — create one to be able to restore.").font(.callout).csForeground(CSColor.textSecondary)
-                } else {
-                    ForEach(viewModel.backups.prefix(10), id: \.id) { run in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                HStack(spacing: 6) {
-                                    Text(run.kind.capitalized).font(.caption2.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase)
-                                    Text(run.status.capitalized).font(.caption2.weight(.semibold)).foregroundStyle(run.status == "success" ? Color.cs(CSColor.success) : run.status == "failed" ? Color.cs(CSColor.error) : Color.cs(CSColor.warning)).padding(.horizontal, 5).padding(.vertical, 1).background(Color.cs(CSColor.borderSubtle), in: Capsule())
-                                }
-                                Text(run.path.isEmpty ? run.detail : run.path).font(.callout).lineLimit(1).truncationMode(.middle)
-                                Text("\(run.startedAt.relativeTime) · \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file)) · \(run.durationMs) ms").font(.caption2).csForeground(CSColor.textTertiary)
-                            }
-                            Spacer()
-                            if run.kind == "backup" && run.status == "success" {
-                                Button("Restore") { showRestoreConfirm = run.id }.buttonStyle(.bordered).controlSize(.small).tint(Color.cs(CSColor.warning))
-                            }
-                        }
-                        Divider().opacity(0.3)
+                HStack(spacing: 8) {
+                    SectionHeader(title: "Recent backups", subtitle: "\(viewModel.backups.count) total", symbol: "externaldrive")
+                    Spacer()
+                    if !viewModel.backups.isEmpty {
+                        Text("Showing last 5").font(.caption2).csForeground(CSColor.textTertiary)
                     }
                 }
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await viewModel.runBackup() }
-                    } label: { Label("Create Backup", systemImage: "plus.circle.fill") }.buttonStyle(.borderedProminent).controlSize(.small).disabled(viewModel.isFetching)
-                    Button {
-                        Task { await viewModel.runOptimize() }
-                    } label: { Label("Vacuum / Optimize", systemImage: "wand.and.stars") }.buttonStyle(.bordered).controlSize(.small).disabled(viewModel.isFetching)
+                if viewModel.backups.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("No backups yet").font(.callout.weight(.medium)).csForeground(CSColor.textPrimary)
+                        Text("Create one to be able to restore. Backups are validated before a restore is staged.").font(.caption).csForeground(CSColor.textSecondary)
+                        Button { Task { await viewModel.runBackup() } } label: { Label("Create Backup", systemImage: "plus.circle.fill") }
+                            .buttonStyle(.borderedProminent).controlSize(.small).disabled(viewModel.isFetching)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(viewModel.backups.prefix(5), id: \.id) { run in
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(run.kind.capitalized).font(.caption2.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase)
+                                        Text(run.status.capitalized).font(.caption2.weight(.semibold))
+                                            .foregroundStyle(run.status == "success" ? Color.cs(CSColor.success) : run.status == "failed" ? Color.cs(CSColor.error) : Color.cs(CSColor.warning))
+                                            .padding(.horizontal, 5).padding(.vertical, 1).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                                        Text(run.startedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                                        Text("· \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file))").font(.caption2).csForeground(CSColor.textTertiary)
+                                    }
+                                    Text(run.path.isEmpty ? run.detail : run.path).font(.caption).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle)
+                                }
+                                Spacer(minLength: 8)
+                                if run.kind == "backup" && run.status == "success" {
+                                    Button("Restore") { showRestoreConfirm = run.id }
+                                        .buttonStyle(.bordered).controlSize(.small).tint(Color.cs(CSColor.warning))
+                                }
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .background(Color.cs(CSColor.surfaceElevated).opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
+                        }
+                    }
+                    if viewModel.backups.count > 5 {
+                        Text("\(viewModel.backups.count - 5) older backups retained").font(.caption2).csForeground(CSColor.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    HStack(spacing: 8) {
+                        Button { Task { await viewModel.runBackup() } } label: { Label("Create Backup", systemImage: "plus.circle.fill") }
+                            .buttonStyle(.borderedProminent).controlSize(.small).disabled(viewModel.isFetching)
+                        Button { Task { await viewModel.runOptimize() } } label: { Label("Vacuum", systemImage: "wand.and.stars") }
+                            .buttonStyle(.bordered).controlSize(.small).disabled(viewModel.isFetching)
+                    }
                 }
             }
         }
     }
+
+    private var backupsCard: some View { backupsCardCompact }
 
     private func maintenanceResultCard(_ r: MaintenanceReport) -> some View {
         ContentCard {

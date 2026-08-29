@@ -22,7 +22,6 @@ struct ActivityView: View {
                 ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        header
                         controls
                         if viewModel.isLoading && viewModel.overview == nil {
                             LoadingView(label: "Loading activity…")
@@ -46,6 +45,28 @@ struct ActivityView: View {
                     .padding(.vertical, 18)
                 }
                 .scrollEdgeEffectStyle(.soft, for: .vertical)
+                .safeAreaInset(edge: .top, spacing: 8) {
+                    StandardPageHeader(
+                        section: .activity,
+                        activeWorkspace: workspaces.first { $0.status == .active } ?? workspaces.first,
+                        title: "Activity",
+                        subtitle: "ContextSphere reconstructs how you spent your time.",
+                        symbol: AppSection.activity.symbol,
+                        eyebrow: NavGroup.workspace.title.uppercased()
+                    ) {
+                        Button { viewModel.refresh() } label: {
+                            if viewModel.isLoading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Refresh activity").accessibilityLabel("Refresh activity")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(maxWidth: Theme.contentMaxWidth)
+                    .padding(.horizontal, layoutPadding(for: width))
+                    .frame(maxWidth: .infinity)
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 12) }
                 }
 
@@ -73,14 +94,6 @@ struct ActivityView: View {
                 expandedSessions = Set(ov.sessions.map(\.id))
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { viewModel.refresh() } label: {
-                    if viewModel.isLoading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise") }
-                }
-                .help("Refresh activity").accessibilityLabel("Refresh activity")
-            }
-        }
     }
 
     private func selectedApp(from ov: ActivityOverview?) -> ActivityAppUsage? {
@@ -103,20 +116,7 @@ struct ActivityView: View {
         return 28
     }
 
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Activity").font(.csScreenTitle).csForeground(CSColor.textPrimary).tracking(-0.3).accessibilityAddTraits(.isHeader)
-                Spacer()
-            }
-            Text("ContextSphere reconstructs how you spent your time.")
-                .font(.callout).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
+    // MARK: - Header (now via safeAreaInset StandardPageHeader)
 
     private var controls: some View {
         HStack(spacing: 8) {

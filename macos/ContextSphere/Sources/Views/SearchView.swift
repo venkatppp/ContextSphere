@@ -40,6 +40,9 @@ struct SearchView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.loadInitialData() }
         .onChange(of: viewModel.state) { _, newState in
@@ -80,9 +83,13 @@ struct SearchView: View {
     // MARK: - Header
 
     private var header: some View {
-        ScreenHeader("Search",
-                     subtitle: "Find anything across your workspaces and files.",
-                     symbol: "magnifyingglass") {
+        StandardPageHeader(
+            section: .search,
+            title: "Search",
+            subtitle: "Find anything across your workspaces and files.",
+            symbol: AppSection.search.symbol,
+            eyebrow: NavGroup.intelligence.title.uppercased()
+        ) {
             if !viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button {
                     Task { await viewModel.saveCurrentQuery() }
@@ -143,15 +150,9 @@ struct SearchView: View {
         case .idle:
             initialContent
         case .loading:
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Searching your context…")
-                    .font(.callout)
-                    .csForeground(CSColor.textSecondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 48)
-            .accessibilityElement(children: .combine)
+            LoadingView(label: "Searching your context…")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 48)
         case .loaded:
             if viewModel.results.isEmpty {
                 noResultsState

@@ -22,6 +22,9 @@ struct LearningView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
         .task { await viewModel.initialLoadIfNeeded() }
     }
@@ -29,12 +32,13 @@ struct LearningView: View {
     // MARK: - Header
 
     private var header: some View {
-        ScreenHeader("Learning",
-                     subtitle: subtitle,
-                     symbol: "graduationcap",
-                     eyebrow: "Intelligence") {
-            refreshButton
-        }
+        StandardPageHeader(
+            section: .learning,
+            title: "Learning",
+            subtitle: subtitle,
+            symbol: AppSection.learning.symbol,
+            eyebrow: NavGroup.intelligence.title.uppercased()
+        ) { refreshButton }
     }
 
     private var subtitle: String {

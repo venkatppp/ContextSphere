@@ -33,15 +33,6 @@ struct WorkspacesView: View {
     var body: some View {
         workspacesContent
             .background(ContentBackdrop())
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showCreate = true }) {
-                        Label("New Workspace", systemImage: "plus")
-                    }
-                    .help("Create a new workspace")
-                    .accessibilityLabel("Create new workspace")
-                }
-            }
             .onChange(of: selected) { _, newValue in
                 guard let newValue else {
                     detail = nil
@@ -96,24 +87,15 @@ struct WorkspacesView: View {
 
     // MARK: - Header
 
-    private var header: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 18, weight: .semibold))
-                        .csForeground(CSColor.info)
-                    Text("Workspaces")
-                        .font(.csScreenTitle)
-                        .csForeground(CSColor.textPrimary)
-                        .tracking(-0.3)
-                }
-                Text(subtitle)
-                    .font(.callout)
-                    .csForeground(CSColor.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer()
+    private var subtitle: String {
+        if workspaces.isEmpty {
+            return "Organize your work into contexts ContextSphere can understand."
+        }
+        return "Your contexts. Switch, archive, or create new ones."
+    }
+
+    private var headerTrailing: some View {
+        HStack(spacing: 8) {
             if !workspaces.isEmpty {
                 HStack(spacing: 6) {
                     Text("\(activeWorkspaces.count) active")
@@ -136,34 +118,39 @@ struct WorkspacesView: View {
                         )
                 }
             }
+            Button { showCreate = true } label: {
+                Label("New", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .accessibilityLabel("Create new workspace")
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(Color.cs(CSColor.surface))
-        .overlay(
-            Rectangle()
-                .fill(Color.cs(CSColor.separator))
-                .frame(height: 0.5),
-            alignment: .bottom
-        )
-    }
-
-    private var subtitle: String {
-        if workspaces.isEmpty {
-            return "Organize your work into contexts ContextSphere can understand."
-        }
-        return "Your contexts. Switch, archive, or create new ones."
     }
 
     private var workspacesContent: some View {
         VStack(spacing: 0) {
-            header
             HSplitView {
                 masterList
                     .frame(minWidth: 300, idealWidth: 340)
                 detailPane
                     .frame(minWidth: 420)
             }
+        }
+        .safeAreaInset(edge: .top, spacing: 8) {
+            StandardPageHeader(
+                section: .workspaces,
+                activeWorkspace: workspaces.first { $0.status == .active } ?? workspaces.first,
+                title: "Workspaces",
+                subtitle: subtitle,
+                symbol: AppSection.workspaces.symbol,
+                eyebrow: NavGroup.workspace.title.uppercased()
+            ) { headerTrailing }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(maxWidth: Theme.contentMaxWidth)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -279,29 +266,14 @@ struct WorkspacesView: View {
     }
 
     private var masterEmpty: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 30, weight: .light))
-                .csForeground(CSColor.textTertiary)
-            Text("No workspaces yet")
-                .font(.headline)
-            Text("Create your first workspace — ContextSphere will learn from the work you do inside it.")
-                .font(.callout)
-                .csForeground(CSColor.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 260)
-            Button {
-                showCreate = true
-            } label: {
-                Label("Create Workspace", systemImage: "plus.circle.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .padding(.top, 4)
-        }
+        EmptyStateView(
+            title: "No workspaces yet",
+            message: "Create your first workspace — ContextSphere will learn from the work you do inside it.",
+            symbol: "folder.badge.plus",
+            primaryAction: ("Create Workspace", { showCreate = true })
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Detail
