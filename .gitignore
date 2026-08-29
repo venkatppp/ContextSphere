@@ -22,6 +22,8 @@ node_modules
 
 ## macOS native app build output
 macos/ContextSphere/build/
+macos/ContextSphereDemo/
+macos/ContextSphereDemo/build/
 
 ## Local runtime data
 .freebuff/

@@ -5,7 +5,6 @@ use tauri::{Emitter, State};
 use crate::ai::models::{RerankRequest, RerankResult};
 use crate::ai::{AIDiagnostics, DownloadProgress, InferenceStats, ModelInfo};
 use crate::copilot::memory::vector::provider::VectorProvider;
-use crate::semantic::embeddings::EmbeddingProvider;
 
 /// AI state manager (to be added to lib.rs).
 pub struct AIState {
