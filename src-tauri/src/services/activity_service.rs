@@ -226,7 +226,6 @@ impl ActivityService {
 
             let apps_desc = format!("{} applications · {} files · {} web pages", apps, files, web_pages);
             let detail = if apps > 1 { "Mixed work session" } else { "Focused session" }.to_string();
-            let title = format!("SESSION {}", start); // placeholder; workspace name enrichment could be added
 
             // Build timeline events DTOs from sess.events (up to 6)
             let mut event_dtos = Vec::new();
@@ -362,8 +361,8 @@ impl ActivityService {
     async fn build_correlation(
         &self,
         workspace_id: Option<Uuid>,
-        since: DateTime<Utc>,
-        until: DateTime<Utc>,
+        _since: DateTime<Utc>,
+        _until: DateTime<Utc>,
         activity_events: &[ActivityEvent],
         timeline_events: &[crate::models::TimelineEvent],
     ) -> Result<WorkspaceCorrelationDto, DatabaseError> {

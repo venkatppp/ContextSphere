@@ -431,6 +431,7 @@ mod tests {
         assert!(engine.calculate_confidence(100) > 0.90);
     }
 
+    #[allow(dead_code)]
     async fn test_engine() -> (AdaptiveLearningEngine, Arc<LearningRepository>) {
         let (db, _guard) = test_database().await;
         let repo = Arc::new(LearningRepository::new(db.pool().clone()));
