@@ -248,6 +248,27 @@ async fn dispatch_impl(app: &AppHandle, method: &str, params: &Value) -> Result<
         "list_workspace_timeline" => rpc_state!(app, params, crate::timeline::TimelineEngine, crate::commands::timeline::list_workspace_timeline, ("workspace_id": uuid::Uuid, "limit": Option<i64>, "offset": Option<i64>)),
         "get_recent_activity" => rpc_state!(app, params, crate::timeline::TimelineEngine, crate::commands::timeline::get_recent_activity, ("workspace_id": uuid::Uuid)),
 
+        // ----------------------------------------------------------- activity
+        "record_activity_event" => {
+            let workspace_id: Option<uuid::Uuid> = pget(params, "workspace_id")?;
+            let app_name: String = pget(params, "app_name")?;
+            let bundle_id: Option<String> = pget(params, "bundle_id")?;
+            let window_title: Option<String> = pget(params, "window_title")?;
+            let url_domain: Option<String> = pget(params, "url_domain")?;
+            let url_title: Option<String> = pget(params, "url_title")?;
+            let event_type: String = pget(params, "event_type")?;
+            let started_at: String = pget(params, "started_at")?;
+            let ended_at: Option<String> = pget(params, "ended_at")?;
+            let duration_seconds: Option<i64> = pget(params, "duration_seconds")?;
+            let r = crate::commands::activity::record_activity_event(
+                app.state::<crate::services::ActivityService>(),
+                workspace_id, app_name, bundle_id, window_title, url_domain, url_title, event_type, started_at, ended_at, duration_seconds
+            ).await.map_err(|e| RpcError::message(format!("{e}")))?;
+            serde_json::to_value(r).map_err(|e| RpcError::message(e.to_string()))?
+        },
+        "get_activity_overview" => rpc_state!(app, params, crate::services::ActivityService, crate::commands::activity::get_activity_overview, ("workspace_id": Option<uuid::Uuid>, "date_filter": Option<String>, "search_query": Option<String>)),
+        "list_recent_activity_events" => rpc_state!(app, params, crate::services::ActivityService, crate::commands::activity::list_recent_activity_events, ()),
+
         // ------------------------------------------------------------ watcher
         "add_watch_path" => {
             let path: std::path::PathBuf = pget(params, "path")?;

@@ -106,16 +106,17 @@ use predictive::{
     AdaptiveLearning, AutomationEngine, PredictiveEngine, PredictiveRepository, WorkflowEngine,
 };
 use repositories::{
-    ContextIntelRepository, FileRepository, GraphRepository, KgLiveRepository, KgOptRepository,
-    KgRepository, LLMRepository, MLRepository, MaintenanceRepository, PerformanceRepository,
-    RecoveryRepository, SearchRepository, SecurityRepository, SettingsRepository,
-    TimelineRepository, WorkspaceRepository,
+    ActivityRepository, ContextIntelRepository, FileRepository, GraphRepository, KgLiveRepository,
+    KgOptRepository, KgRepository, LLMRepository, MLRepository, MaintenanceRepository,
+    PerformanceRepository, RecoveryRepository, SearchRepository, SecurityRepository,
+    SettingsRepository, TimelineRepository, WorkspaceRepository,
 };
 use search::SearchEngine;
 use security::SecurityEngine;
 use services::{
-    ContextIntelService, ContextService, GraphHealthService, GraphService, KgLiveService,
-    KgOptService, KgService, MLService, SearchService, TimelineService, WorkspaceService,
+    ActivityService, ContextIntelService, ContextService, GraphHealthService, GraphService,
+    KgLiveService, KgOptService, KgService, MLService, SearchService, TimelineService,
+    WorkspaceService,
 };
 use session::SessionEngine;
 use timeline::recorder::TimelineRecorder;
@@ -165,6 +166,7 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             let search_repository = SearchRepository::new(pool.clone());
             let graph_repository = GraphRepository::new(pool.clone());
             let ml_repository = MLRepository::new(pool.clone());
+            let activity_repository = ActivityRepository::new(pool.clone());
             let secret_store = Arc::new(llm::KeyringSecretStore::new());
             let llm_repository = Arc::new(LLMRepository::new(pool.clone(), secret_store.clone()));
             startup_profiler.stage_end();
@@ -180,6 +182,12 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             let search_service = SearchService::new(search_repository.clone());
             let graph_service = GraphService::new(graph_repository.clone());
             let ml_service = MLService::new(ml_repository.clone(), file_repository.clone());
+            let activity_service = ActivityService::new(
+                activity_repository.clone(),
+                timeline_repository.clone(),
+                file_repository.clone(),
+                workspace_repository.clone(),
+            );
             startup_profiler.stage_end();
 
             // --- RC-8 M1: Knowledge Graph Foundation ---
@@ -861,11 +869,13 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             app.manage(search_repository);
             app.manage(graph_repository);
             app.manage(ml_repository);
+            app.manage(activity_repository);
             app.manage(workspace_service);
             app.manage(timeline_service);
             app.manage(search_service);
             app.manage(graph_service);
             app.manage(ml_service);
+            app.manage(activity_service);
             app.manage(context_service);
             app.manage(analytics_engine);
             app.manage(health_engine);
@@ -996,6 +1006,9 @@ pub fn run() {
             commands::workspace::switch_workspace,
             commands::timeline::list_workspace_timeline,
             commands::timeline::get_recent_activity,
+            commands::activity::record_activity_event,
+            commands::activity::get_activity_overview,
+            commands::activity::list_recent_activity_events,
             commands::watcher::add_watch_path,
             commands::watcher::remove_watch_path,
             commands::watcher::list_watch_paths,
