@@ -74,7 +74,7 @@ impl ActivityRepository {
         let rows: Vec<ActivityEventRow> = if let Some(ws) = workspace_id {
             sqlx::query_as(&format!(
                 "SELECT {SELECT_COLUMNS} FROM activity_events
-                 WHERE (workspace_id = ? OR workspace_id IS NULL)
+                 WHERE workspace_id = ?
                    AND started_at >= ? AND started_at <= ?
                  ORDER BY started_at DESC LIMIT ?"
             ))
@@ -120,7 +120,7 @@ impl ActivityRepository {
         let count: i64 = if let Some(ws) = workspace_id {
             sqlx::query_scalar(
                 "SELECT COUNT(DISTINCT app_name) FROM activity_events
-                 WHERE (workspace_id = ? OR workspace_id IS NULL)
+                 WHERE workspace_id = ?
                    AND started_at >= ? AND started_at <= ? AND event_type = 'app_foreground'",
             )
             .bind(ws)
@@ -150,7 +150,7 @@ impl ActivityRepository {
         let count: i64 = if let Some(ws) = workspace_id {
             sqlx::query_scalar(
                 "SELECT COUNT(DISTINCT url_domain) FROM activity_events
-                 WHERE (workspace_id = ? OR workspace_id IS NULL)
+                 WHERE workspace_id = ?
                    AND started_at >= ? AND started_at <= ? AND event_type = 'web_visit' AND url_domain IS NOT NULL",
             )
             .bind(ws)

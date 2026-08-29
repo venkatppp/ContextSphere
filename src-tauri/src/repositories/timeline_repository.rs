@@ -135,6 +135,48 @@ impl TimelineRepository {
         rows.into_iter().map(TimelineEvent::try_from).collect()
     }
 
+    /// Lists events for a workspace within a time window, indexed.
+    pub async fn list_by_workspace_window(
+        &self,
+        workspace_id: Uuid,
+        since: chrono::DateTime<chrono::Utc>,
+        until: chrono::DateTime<chrono::Utc>,
+        limit: i64,
+    ) -> Result<Vec<TimelineEvent>, DatabaseError> {
+        let rows: Vec<TimelineEventRow> = sqlx::query_as(&format!(
+            "SELECT {SELECT_COLUMNS} FROM timeline_events
+             WHERE workspace_id = ? AND occurred_at >= ? AND occurred_at <= ?
+             ORDER BY occurred_at DESC LIMIT ?"
+        ))
+        .bind(workspace_id)
+        .bind(since)
+        .bind(until)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(TimelineEvent::try_from).collect()
+    }
+
+    /// Lists events across all workspaces within a window, indexed.
+    pub async fn list_window(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+        until: chrono::DateTime<chrono::Utc>,
+        limit: i64,
+    ) -> Result<Vec<TimelineEvent>, DatabaseError> {
+        let rows: Vec<TimelineEventRow> = sqlx::query_as(&format!(
+            "SELECT {SELECT_COLUMNS} FROM timeline_events
+             WHERE occurred_at >= ? AND occurred_at <= ?
+             ORDER BY occurred_at DESC LIMIT ?"
+        ))
+        .bind(since)
+        .bind(until)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(TimelineEvent::try_from).collect()
+    }
+
     /// Lists recent events across all workspaces, newest first.
     ///
     /// Used for Smart Resume to find the most recent session regardless
