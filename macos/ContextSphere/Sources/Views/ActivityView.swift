@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Production Activity view — real data from ActivityService via CoreBridge.
 /// Visual direction from macos/ContextSphereDemo demo, but driven by live
@@ -223,10 +224,17 @@ struct ActivityView: View {
 
     private func formatDuration(_ seconds: Int) -> String {
         if seconds <= 0 { return "—" }
+        if seconds < 60 { return "\(seconds)s" }
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
         return "\(m)m"
+    }
+
+    private func formatMinutes(_ minutes: Int, percent: Double) -> String {
+        if minutes == 0 && percent > 0 { return "<1m" }
+        if minutes >= 60 { return "\(minutes/60)h \(minutes%60)m" }
+        return "\(minutes)m"
     }
 
     // MARK: - Main grid
@@ -352,12 +360,31 @@ struct ActivityView: View {
     }
 
     private func webActivityCard(_ ov: ActivityOverview) -> some View {
-        ContentCard {
+        let webPermissionDenied = UserDefaults.standard.bool(forKey: "activity.webPermissionDenied")
+        return ContentCard {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Web Activity", subtitle: ov.webUsages.isEmpty ? "No data" : "\(ov.webUsages.count) domains", symbol: "globe")
-                Text("ContextSphere remembers where you researched something.").font(.caption).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
+                SectionHeader(title: "Web Activity", subtitle: ov.webUsages.isEmpty ? (webPermissionDenied ? "Unavailable" : "No data") : "\(ov.webUsages.count) domains", symbol: "globe")
+                Text("ContextSphere remembers where you researched something — domain and title only.").font(.caption).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
                 if ov.webUsages.isEmpty {
-                    Text("No web activity in this period.").font(.callout).csForeground(CSColor.textSecondary).padding(.vertical, 4)
+                    if webPermissionDenied {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Web activity unavailable — permission not granted", systemImage: "eye.slash").font(.callout.weight(.medium)).csForeground(CSColor.warning)
+                            Text("To enable privacy-first web activity (domain + title only, no URL parameters or content), allow Automation for your browser.").font(.caption).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
+                            Text("System Settings → Privacy & Security → Automation → ContextSphere → Safari / Chrome").font(.caption2.monospaced()).csForeground(CSColor.textTertiary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 8) {
+                                Button("Open System Settings") {
+                                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                }.buttonStyle(.bordered).controlSize(.small)
+                                Button("Dismiss") { UserDefaults.standard.removeObject(forKey: "activity.webPermissionDenied") }.buttonStyle(.plain).font(.caption).csForeground(CSColor.textSecondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine).accessibilityLabel("Web activity unavailable — permission not granted")
+                    } else {
+                        Text("No web activity in this period.").font(.callout).csForeground(CSColor.textSecondary).padding(.vertical, 4)
+                    }
                 } else {
                     let maxM = ov.webUsages.map(\.minutes).max() ?? 1
                     VStack(spacing: 2) {
@@ -680,8 +707,8 @@ private struct ProductionAppRow: View {
         HStack(spacing: 10) {
             ZStack { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.accentColor.opacity(0.14)); Image(systemName: usage.app == "Xcode" ? "hammer.fill" : usage.app == "Safari" ? "safari.fill" : usage.app == "Terminal" ? "terminal.fill" : "app.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.accentColor) }.frame(width: 26, height: 26).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) { Text(usage.displayName).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Spacer(minLength: 4); Text(usage.minutes > 60 ? "\(usage.minutes/60)h \(usage.minutes%60)m" : "\(usage.minutes)m").font(.system(size: 11, weight: .medium).monospacedDigit()).csForeground(CSColor.textSecondary) }
-                GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : 0; ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:5); Capsule().fill(Color.accentColor).frame(width: geo.size.width*frac, height:5) } }.frame(height:5).accessibilityHidden(true)
+                HStack(spacing: 6) { Text(usage.displayName).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Spacer(minLength: 4); Text(displayMinutes).font(.system(size: 11, weight: .medium).monospacedDigit()).csForeground(CSColor.textSecondary) }
+                GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : (usage.percent>0 ? 0.08 : 0); ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:5); Capsule().fill(Color.accentColor).frame(width: geo.size.width*frac, height:5) } }.frame(height:5).accessibilityHidden(true)
             }
             Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(isSelected ? Color.accentColor : Color.clear)
         }
@@ -689,7 +716,12 @@ private struct ProductionAppRow: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isSelected ? Color.cs(CSColor.selectionFill) : Color.clear))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : Color.clear, lineWidth: 0.5))
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine).accessibilityLabel("\(usage.displayName), \(usage.minutes) minutes")
+        .accessibilityElement(children: .combine).accessibilityLabel("\(usage.displayName), \(displayMinutes)")
+    }
+    private var displayMinutes: String {
+        if usage.minutes == 0 && usage.percent > 0 { return "<1m" }
+        if usage.minutes >= 60 { return "\(usage.minutes/60)h \(usage.minutes%60)m" }
+        return "\(usage.minutes)m"
     }
 }
 
