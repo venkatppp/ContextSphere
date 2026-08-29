@@ -1,17 +1,20 @@
 import AppKit
 import Combine
 
-/// Local-first application activity observation.
+/// Local-first application + web activity observation.
 ///
-/// Observes foreground app switches via NSWorkspace (no extra permission).
-/// Each switch closes the previous app interval and opens a new one,
+/// - App: observes foreground switches via NSWorkspace (no permission).
+/// - Web: when the foreground app is a browser (Safari/Chrome/Edge/Firefox),
+///   attempts to fetch the front-tab URL/title via AppleScript. This requires
+///   the user-granted **Automation** permission (System Settings → Privacy &
+///   Security → Automation → ContextSphere → Safari/Chrome). If denied,
+///   web activity stays unavailable honestly — no silent history reading,
+///   no full URL/query strings stored, only `url_domain` + `url_title`.
+///
+/// Each app switch closes the previous app interval and opens a new one,
 /// persisted locally via `record_activity_event` (SQLite, WAL). No telemetry
-/// leaves the device. Web activity is not yet observed — that path is
-/// gated behind explicit permission and remains unavailable honestly.
-///
-/// The monitor is best-effort: if the daemon is not yet ready, the event is
-/// dropped rather than queued indefinitely. This keeps the hot path cheap
-/// and avoids unbounded memory growth.
+/// leaves the device. Best-effort: if the daemon is not ready, the event
+/// is dropped rather than queued.
 @MainActor
 final class ActivityMonitor: ObservableObject {
     static let shared = ActivityMonitor()
@@ -85,6 +88,11 @@ final class ActivityMonitor: ObservableObject {
         lastStartedAt = now
         // Record open interval with nil duration (still active) — not stored until closed,
         // so we only emit closed intervals to avoid storing open-ended rows.
+
+        // Privacy-first web capture: only when foreground is a browser and permission is available.
+        if isBrowserApp(bundleID: newBundle, name: newName) {
+            attemptWebCapture(for: newName, bundleID: newBundle, startedAt: now)
+        }
     }
 
     private func handleSleep() {
@@ -99,9 +107,104 @@ final class ActivityMonitor: ObservableObject {
         lastStartedAt = nil
     }
 
+    private func isBrowserApp(bundleID: String?, name: String) -> Bool {
+        let bid = (bundleID ?? "").lowercased()
+        let n = name.lowercased()
+        return bid.contains("safari") || bid.contains("chrome") || bid.contains("edge") || bid.contains("firefox") || bid.contains("brave")
+            || n == "safari" || n == "google chrome" || n == "microsoft edge" || n == "firefox" || n == "brave browser"
+    }
+
+    private func attemptWebCapture(for appName: String, bundleID: String?, startedAt: Date) {
+        // Throttle: don't hammer AppleScript if we just did
+        let key = "activity.webLastCapture.\(appName)"
+        if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 8 { return }
+
+        Task.detached(priority: .utility) {
+            let result = await self.fetchBrowserURL(appName: appName)
+            await MainActor.run {
+                UserDefaults.standard.set(Date(), forKey: key)
+                switch result {
+                case .success(let (url, title)):
+                    guard let url, let host = URL(string: url)?.host, !host.isEmpty else { return }
+                    // Store only domain + title, no query/path params beyond domain
+                    let domain = host.lowercased()
+                    let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
+                    self.recordWebVisit(browser: appName, bundleID: bundleID, domain: domain, title: cleanTitle, startedAt: startedAt)
+                    UserDefaults.standard.removeObject(forKey: "activity.webPermissionDenied")
+                case .failure(let error):
+                    let msg = error.localizedDescription.lowercased()
+                    if msg.contains("not allowed") || msg.contains("not authorized") || msg.contains("-1743") || msg.contains("1002") {
+                        UserDefaults.standard.set(true, forKey: "activity.webPermissionDenied")
+                        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "activity.webPermissionDeniedAt")
+                    }
+                }
+            }
+        }
+    }
+
+    private enum WebFetchResult {
+        case success(url: String?, title: String?)
+        case failure(Error)
+    }
+
+    private func fetchBrowserURL(appName: String) async -> Result<(String?, String?), Error> {
+        // AppleScript is synchronous and must not block main thread — already on detached utility
+        let source: String
+        switch appName.lowercased() {
+        case "safari":
+            source = "tell application \"Safari\" to get {URL, name} of front document"
+        case "google chrome", "chrome":
+            source = "tell application \"Google Chrome\" to get {URL of active tab of front window, title of active tab of front window}"
+        case "microsoft edge", "edge":
+            source = "tell application \"Microsoft Edge\" to get {URL of active tab of front window, title of active tab of front window}"
+        default:
+            // Brave, Arc, etc. — try Chrome scripting
+            source = "tell application \"\(appName)\" to get {URL of active tab of front window, title of active tab of front window}"
+        }
+        return await withCheckedContinuation { cont in
+            var error: NSDictionary?
+            if let script = NSAppleScript(source: source) {
+                let result = script.executeAndReturnError(&error)
+                if let err = error {
+                    cont.resume(returning: .failure(NSError(domain: "AppleScript", code: -1, userInfo: [NSLocalizedDescriptionKey: err.description])))
+                    return
+                }
+                // Result is a list of 2 items
+                if result.descriptorType == typeAEList, let urlDesc = result.atIndex(1), let titleDesc = result.atIndex(2) {
+                    cont.resume(returning: .success((urlDesc.stringValue, titleDesc.stringValue)))
+                } else {
+                    cont.resume(returning: .success((result.stringValue, nil)))
+                }
+            } else {
+                cont.resume(returning: .failure(NSError(domain: "AppleScript", code: -2, userInfo: [NSLocalizedDescriptionKey: "Could not create script"])))
+            }
+        }
+    }
+
+    private func recordWebVisit(browser: String, bundleID: String?, domain: String, title: String?, startedAt: Date) {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let startedStr = iso.string(from: startedAt)
+        Task {
+            do {
+                let wsId: String? = await fetchActiveWorkspaceId()
+                var params: [String: Any] = [
+                    "app_name": browser,
+                    "event_type": "web_visit",
+                    "started_at": startedStr,
+                    "url_domain": domain,
+                ]
+                if let t = title, !t.isEmpty { params["url_title"] = t }
+                if let bid = bundleID { params["bundle_id"] = bid }
+                if let wid = wsId { params["workspace_id"] = wid }
+                try await CoreBridge.shared.call("record_activity_event", params: params)
+            } catch {}
+        }
+    }
+
     private func record(appName: String, bundleID: String?, startedAt: Date, endedAt: Date, duration: Int) {
-        // Sanitize: we never record window title or URL — only app name/bundle.
-        // Privacy: app names are not sensitive beyond installed apps list.
+        // Sanitize: we never record window title with private content — only app name/bundle.
+        // Web visits are handled separately via recordWebVisit with domain/title only.
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let startedStr = iso.string(from: startedAt)

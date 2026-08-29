@@ -206,6 +206,7 @@ struct DashboardView: View {
 
     private func formatDuration(_ seconds: Int) -> String {
         if seconds <= 0 { return "—" }
+        if seconds < 60 { return "\(seconds)s" }
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
