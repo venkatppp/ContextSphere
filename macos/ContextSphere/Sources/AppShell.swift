@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Navigation model
 
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case dashboard, workspaces, timeline
+    case dashboard, workspaces, timeline, activity
     case graph, search, memory, learning
     case performance, maintenance, recovery, settings
 
@@ -12,7 +12,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var group: NavGroup {
         switch self {
-        case .dashboard, .workspaces, .timeline: .workspace
+        case .dashboard, .workspaces, .timeline, .activity: .workspace
         case .graph, .search, .memory, .learning: .intelligence
         case .performance, .maintenance, .recovery, .settings: .system
         }
@@ -23,6 +23,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .dashboard: "Dashboard"
         case .workspaces: "Workspaces"
         case .timeline: "Timeline"
+        case .activity: "Activity"
         case .graph: "Knowledge Graph"
         case .search: "Search"
         case .memory: "Memory"
@@ -39,6 +40,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .dashboard: "rectangle.grid.2x2"
         case .workspaces: "folder"
         case .timeline: "clock"
+        case .activity: "waveform.path.ecg"
         case .graph: "point.3.connected.trianglepath.dotted"
         case .search: "magnifyingglass"
         case .memory: "brain.head.profile"
@@ -55,10 +57,11 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .dashboard: "1"
         case .workspaces: "2"
         case .timeline: "3"
-        case .graph: "4"
-        case .search: "5"
-        case .memory: "6"
-        case .learning: "7"
+        case .activity: "4"
+        case .graph: "5"
+        case .search: "6"
+        case .memory: "7"
+        case .learning: "8"
         case .performance, .maintenance, .recovery, .settings: nil
         }
     }
@@ -95,7 +98,7 @@ enum NavGroup: String, CaseIterable, Identifiable, Hashable {
 
     var sections: [AppSection] {
         switch self {
-        case .workspace: [.dashboard, .workspaces, .timeline]
+        case .workspace: [.dashboard, .workspaces, .timeline, .activity]
         case .intelligence: [.graph, .search, .memory, .learning]
         case .system: [.performance, .maintenance, .recovery, .settings]
         }
@@ -142,6 +145,7 @@ struct AppShell: View {
     @StateObject private var performance = PerformanceViewModel()
     @StateObject private var maintenance = MaintenanceViewModel()
     @StateObject private var recovery = RecoveryViewModel()
+    @StateObject private var activity = ActivityViewModel()
     @StateObject private var proactiveNotifier = ProactiveNotifier()
     @State private var workspaceReloadTask: Task<Void, Never>?
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
@@ -163,6 +167,7 @@ struct AppShell: View {
                        performance: performance,
                        maintenance: maintenance,
                        recovery: recovery,
+                       activity: activity,
                        onRevealWorkspace: revealWorkspace)
                 .background(ContentBackdrop())
         }
@@ -272,6 +277,7 @@ struct AppShell: View {
             timeline.handle(event: event, payload: payload)
             search.handle(event: event, payload: payload)
             graph.handle(event: event, payload: payload)
+            activity.handle(event: event, payload: payload)
             if event.hasPrefix("workspace:") {
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
@@ -299,6 +305,7 @@ struct AppShell: View {
             }
         }
         CoreBridge.shared.start()
+        ActivityMonitor.shared.start()
         await loadWorkspaces()
     }
 
@@ -314,6 +321,7 @@ struct AppShell: View {
             search.setWorkspaces(workspaces)
             graph.setWorkspaces(workspaces)
             memory.setWorkspaces(workspaces)
+            activity.setWorkspaces(workspaces)
             loaded = true
         } catch {
             loadFailed = error.localizedDescription
@@ -560,6 +568,7 @@ struct DetailHost: View {
     let performance: PerformanceViewModel
     let maintenance: MaintenanceViewModel
     let recovery: RecoveryViewModel
+    let activity: ActivityViewModel
     let onRevealWorkspace: (String) -> Void
 
     var body: some View {
@@ -584,9 +593,10 @@ struct DetailHost: View {
     @ViewBuilder
     private var content: some View {
         switch section {
-        case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace)
+        case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace, activity: activity)
         case .workspaces: WorkspacesView(workspaces: workspaces, onWorkspacesChanged: { AppRouter.shared.reloadRequest = true })
         case .timeline: TimelineView(viewModel: timeline)
+        case .activity: ActivityView(viewModel: activity)
         case .graph: GraphScreen(viewModel: graph)
         case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)
         case .memory: MemoryView(viewModel: memory)

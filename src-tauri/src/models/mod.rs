@@ -18,6 +18,7 @@ pub mod kg_context;
 pub mod kg_live;
 pub mod kg_opt;
 pub mod ml;
+pub mod activity;
 pub mod performance;
 pub mod recovery;
 pub mod search;
@@ -30,6 +31,12 @@ pub use file::{ArtifactType, FileArtifact, NewFile};
 pub use graph::{GraphEdge, GraphEdgeType, GraphNode, GraphStats, GraphView, NodeDetails};
 pub use ml::{Embedding, FileClassification, MLMetadata, NewEmbedding, NewMLMetadata};
 pub use search::{ReindexFileBody, SavedSearch, SearchEntityType, SearchResult, SearchStats};
+pub use activity::{
+    ActivityAppUsageDto, ActivityDaySummary, ActivityDonutSegment, ActivityEvent,
+    ActivityEventType, ActivityFileUsageDto, ActivityOverviewDto, ActivitySessionDto,
+    ActivityTimelineEventDto, ActivityWebUsageDto, NewActivityEvent, RecentMemoryDto,
+    WhatHappenedDto, WorkspaceCorrelationDto,
+};
 pub use timeline::{NewTimelineEvent, TimelineEvent, TimelineEventType};
 pub use workspace::{
     CreateWorkspaceInput, UpdateWorkspaceInput, Workspace, WorkspaceStats, WorkspaceStatus,

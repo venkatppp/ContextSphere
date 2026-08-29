@@ -40,6 +40,8 @@ swiftc \
   Sources/Theme.swift \
   Sources/AppShell.swift \
   Sources/Notifications.swift \
+  Sources/ActivityViewModel.swift \
+  Sources/ActivityMonitor.swift \
   Sources/TimelineViewModel.swift \
   Sources/SearchViewModel.swift \
   Sources/SettingsViewModel.swift \
@@ -75,6 +77,7 @@ swiftc \
   Sources/Views/PerformanceView.swift \
   Sources/Views/MaintenanceView.swift \
   Sources/Views/RecoveryView.swift \
+  Sources/Views/ActivityView.swift \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "==> Assembling bundle"

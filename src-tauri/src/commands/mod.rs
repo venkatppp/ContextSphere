@@ -21,6 +21,7 @@ pub mod learning;
 pub mod llm;
 pub mod maintenance;
 pub mod memory;
+pub mod activity;
 pub mod performance;
 pub mod predictive;
 pub mod proactive;
