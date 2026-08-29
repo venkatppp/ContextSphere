@@ -26,6 +26,13 @@ final class ActivityMonitor: ObservableObject {
     private var isStarted = false
     private var pendingTask: Task<Void, Never>?
 
+    // Web interval tracking — duration-aware, deduplicated, workspace-associated
+    private var lastWebDomain: String?
+    private var lastWebTitle: String?
+    private var lastWebStartedAt: Date?
+    private var lastWebBrowser: String?
+    private var lastWebBundleID: String?
+
     private init() {}
 
     func start() {
@@ -73,7 +80,7 @@ final class ActivityMonitor: ObservableObject {
             return
         }
 
-        // Close previous interval if we have one
+        // Close previous app interval if we have one
         if let prevName = lastAppName, let prevStart = lastStartedAt {
             let duration = now.timeIntervalSince(prevStart)
             // Ignore sub-5-second foreground blips (focus flicker, alt-tab)
@@ -81,13 +88,20 @@ final class ActivityMonitor: ObservableObject {
                 record(appName: prevName, bundleID: lastBundleID, startedAt: prevStart, endedAt: now, duration: Int(duration))
             }
         }
+        // Close previous web interval if browser loses focus or switches
+        if lastWebDomain != nil {
+            let isNewBrowser = isBrowserApp(bundleID: newBundle, name: newName)
+            // If switching away from a browser, or staying in same browser family but capturing new page later,
+            // we close the interval here to calculate correct duration; duplicate handling below will dedup.
+            if !isNewBrowser || newName != lastWebBrowser {
+                closeWebInterval(at: now)
+            }
+        }
 
         // Open new interval
         lastAppName = newName
         lastBundleID = newBundle
         lastStartedAt = now
-        // Record open interval with nil duration (still active) — not stored until closed,
-        // so we only emit closed intervals to avoid storing open-ended rows.
 
         // Privacy-first web capture: only when foreground is a browser and permission is available.
         if isBrowserApp(bundleID: newBundle, name: newName) {
@@ -96,15 +110,30 @@ final class ActivityMonitor: ObservableObject {
     }
 
     private func handleSleep() {
-        guard let prevName = lastAppName, let prevStart = lastStartedAt else { return }
         let now = Date()
-        let duration = now.timeIntervalSince(prevStart)
-        if duration >= 5 {
-            record(appName: prevName, bundleID: lastBundleID, startedAt: prevStart, endedAt: now, duration: Int(duration))
+        if let prevName = lastAppName, let prevStart = lastStartedAt {
+            let duration = now.timeIntervalSince(prevStart)
+            if duration >= 5 {
+                record(appName: prevName, bundleID: lastBundleID, startedAt: prevStart, endedAt: now, duration: Int(duration))
+            }
         }
         lastAppName = nil
         lastBundleID = nil
         lastStartedAt = nil
+        closeWebInterval(at: now)
+    }
+
+    private func closeWebInterval(at now: Date) {
+        guard let domain = lastWebDomain, let started = lastWebStartedAt, let browser = lastWebBrowser else { return }
+        let duration = Int(now.timeIntervalSince(started))
+        if duration >= 5 {
+            recordWebVisit(browser: browser, bundleID: lastWebBundleID, domain: domain, title: lastWebTitle, startedAt: started, endedAt: now, duration: duration)
+        }
+        lastWebDomain = nil
+        lastWebTitle = nil
+        lastWebStartedAt = nil
+        lastWebBrowser = nil
+        lastWebBundleID = nil
     }
 
     private func isBrowserApp(bundleID: String?, name: String) -> Bool {
@@ -115,7 +144,7 @@ final class ActivityMonitor: ObservableObject {
     }
 
     private func attemptWebCapture(for appName: String, bundleID: String?, startedAt: Date) {
-        // Throttle: don't hammer AppleScript if we just did
+        // Throttle: don't hammer AppleScript if we just did (8s per browser)
         let key = "activity.webLastCapture.\(appName)"
         if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 8 { return }
 
@@ -126,10 +155,23 @@ final class ActivityMonitor: ObservableObject {
                 switch result {
                 case .success(let (url, title)):
                     guard let url, let host = URL(string: url)?.host, !host.isEmpty else { return }
-                    // Store only domain + title, no query/path params beyond domain
+                    // Store ONLY domain + title, never query strings / passwords / path params
                     let domain = host.lowercased()
                     let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120).description
-                    self.recordWebVisit(browser: appName, bundleID: bundleID, domain: domain, title: cleanTitle, startedAt: startedAt)
+                    // Deduplicate: same domain+title within 30s is same visit, just extend
+                    if domain == self.lastWebDomain && cleanTitle == (self.lastWebTitle ?? ""), let start = self.lastWebStartedAt, Date().timeIntervalSince(start) < 30 {
+                        return
+                    }
+                    // Close previous web interval before opening new one to calculate correct duration
+                    if self.lastWebDomain != nil {
+                        self.closeWebInterval(at: Date())
+                    }
+                    // Open new interval — persist on close (duration-aware)
+                    self.lastWebDomain = domain
+                    self.lastWebTitle = cleanTitle
+                    self.lastWebStartedAt = Date()
+                    self.lastWebBrowser = appName
+                    self.lastWebBundleID = bundleID
                     UserDefaults.standard.removeObject(forKey: "activity.webPermissionDenied")
                 case .failure(let error):
                     let msg = error.localizedDescription.lowercased()
@@ -181,10 +223,12 @@ final class ActivityMonitor: ObservableObject {
         }
     }
 
-    private func recordWebVisit(browser: String, bundleID: String?, domain: String, title: String?, startedAt: Date) {
+    private func recordWebVisit(browser: String, bundleID: String?, domain: String, title: String?, startedAt: Date, endedAt: Date? = nil, duration: Int? = nil) {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let startedStr = iso.string(from: startedAt)
+        var endedStr: String?
+        if let e = endedAt { endedStr = iso.string(from: e) }
         Task {
             do {
                 let wsId: String? = await fetchActiveWorkspaceId()
@@ -197,6 +241,8 @@ final class ActivityMonitor: ObservableObject {
                 if let t = title, !t.isEmpty { params["url_title"] = t }
                 if let bid = bundleID { params["bundle_id"] = bid }
                 if let wid = wsId { params["workspace_id"] = wid }
+                if let es = endedStr { params["ended_at"] = es }
+                if let d = duration { params["duration_seconds"] = d }
                 try await CoreBridge.shared.call("record_activity_event", params: params)
             } catch {}
         }
