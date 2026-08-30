@@ -159,18 +159,19 @@ impl ContextMemoryRepository {
     ) -> Result<WorkspaceRelationship, DatabaseError> {
         let rel_type_str = relationship_type.as_str();
         let evidence_json = serde_json::to_string(&evidence)?;
+        let now = Utc::now().to_rfc3339();
 
         sqlx::query(
             r#"
             INSERT INTO workspace_relationships_v2 (
                 source_workspace_id, target_workspace_id, relationship_type,
                 strength, evidence, detected_at, last_updated
-            ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_workspace_id, target_workspace_id, relationship_type)
             DO UPDATE SET
                 strength = excluded.strength,
                 evidence = excluded.evidence,
-                last_updated = datetime('now')
+                last_updated = excluded.last_updated
             "#,
         )
         .bind(source_id)
@@ -178,6 +179,8 @@ impl ContextMemoryRepository {
         .bind(rel_type_str)
         .bind(strength)
         .bind(&evidence_json)
+        .bind(&now)
+        .bind(&now)
         .execute(&self.pool)
         .await?;
 

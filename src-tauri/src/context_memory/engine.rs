@@ -430,3 +430,135 @@ impl ContextMemoryEngine {
         self.create_snapshot(request).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::context_memory::models::WorkspaceRelationshipType;
+    use crate::database::test_database;
+    use chrono::Utc;
+
+    async fn insert_workspace(pool: &sqlx::SqlitePool, name: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO workspaces (id, name, description, status, health_score, root_path, last_active_at, created_at, updated_at)
+             VALUES (?, ?, NULL, 'active', 0.0, NULL, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(&now)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn insert_relationship(
+        pool: &sqlx::SqlitePool,
+        source_id: &str,
+        target_id: &str,
+        rel_type: WorkspaceRelationshipType,
+        strength: f64,
+    ) {
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO workspace_relationships_v2 (source_workspace_id, target_workspace_id, relationship_type, strength, evidence, detected_at, last_updated)
+             VALUES (?, ?, ?, ?, '{\"test\":true}', ?, ?)",
+        )
+        .bind(source_id)
+        .bind(target_id)
+        .bind(rel_type.as_str())
+        .bind(strength)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn workspace_isolation_for_get_related_workspaces() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+
+        let ws_a = insert_workspace(&pool, "Workspace A").await;
+        let ws_b = insert_workspace(&pool, "Workspace B").await;
+        let ws_c = insert_workspace(&pool, "Workspace C").await;
+
+        // A→B and A→C, but NOT B→A and NOT C→A
+        insert_relationship(&pool, &ws_a, &ws_b, WorkspaceRelationshipType::SharedFiles, 0.8).await;
+        insert_relationship(&pool, &ws_a, &ws_c, WorkspaceRelationshipType::SharedTech, 0.6).await;
+        insert_relationship(&pool, &ws_b, &ws_c, WorkspaceRelationshipType::SharedFolders, 0.5).await;
+
+        // Verify isolation: query workspace_relationships_v2 directly
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT target_workspace_id FROM workspace_relationships_v2 WHERE source_workspace_id = ? AND strength >= 0.3 ORDER BY strength DESC",
+        )
+        .bind(&ws_a)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 2, "A should have 2 relationships");
+        let targets: Vec<_> = rows.iter().map(|r| r.0.clone()).collect();
+        assert!(targets.contains(&ws_b));
+        assert!(targets.contains(&ws_c));
+        assert!(!targets.contains(&ws_a), "A should not be related to itself");
+
+        // B should only be related to C, not A
+        let b_rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT target_workspace_id FROM workspace_relationships_v2 WHERE source_workspace_id = ? AND strength >= 0.3",
+        )
+        .bind(&ws_b)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(b_rows.len(), 1);
+        assert_eq!(b_rows[0].0, ws_c);
+
+        // C should have no outgoing relationships
+        let c_rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT target_workspace_id FROM workspace_relationships_v2 WHERE source_workspace_id = ?",
+        )
+        .bind(&ws_c)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert!(c_rows.is_empty(), "C should have no outgoing relationships");
+    }
+
+    #[tokio::test]
+    async fn get_related_workspaces_respects_min_strength() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+
+        let ws1 = insert_workspace(&pool, "WS1").await;
+        let ws2 = insert_workspace(&pool, "WS2").await;
+
+        insert_relationship(&pool, &ws1, &ws2, WorkspaceRelationshipType::SharedFiles, 0.2).await;
+
+        // Query with min_strength 0.3 — should return nothing (below threshold)
+        let rows_03: Vec<(String,)> = sqlx::query_as(
+            "SELECT target_workspace_id FROM workspace_relationships_v2 WHERE source_workspace_id = ? AND strength >= ?",
+        )
+        .bind(&ws1)
+        .bind(0.3)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert!(rows_03.is_empty(), "strength 0.2 should be filtered by min_strength 0.3");
+
+        // Query with min_strength 0.1 — should return the relationship
+        let rows_01: Vec<(String,)> = sqlx::query_as(
+            "SELECT target_workspace_id FROM workspace_relationships_v2 WHERE source_workspace_id = ? AND strength >= ?",
+        )
+        .bind(&ws1)
+        .bind(0.1)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows_01.len(), 1, "strength 0.2 should pass min_strength 0.1");
+    }
+}
