@@ -85,6 +85,8 @@ pub struct ResumeContext {
     pub recent_timeline: Vec<TimelineSummary>,
     pub previous_conversation_id: Option<Uuid>,
     pub context_snapshot: Option<String>,
+    /// Related workspace IDs from context memory (workspace-scoped).
+    pub related_workspaces: Vec<String>,
 }
 
 /// Unfinished work item detected.

@@ -11,7 +11,7 @@ use crate::copilot::proactive_detector::ProactiveDetector;
 use crate::copilot::proactive_models::*;
 use crate::errors::DatabaseError;
 use crate::intelligence::recommendation::RecommendationEngine;
-use crate::learning::AdaptiveLearningEngine;
+use crate::learning::{AdaptiveLearningEngine, models::FeedbackAction, models::FeedbackTargetType};
 use crate::predictive::PredictiveEngine;
 use crate::semantic::ContextReasoningEngine;
 use crate::session::SessionEngine;
@@ -23,6 +23,10 @@ pub struct ProactiveEngine {
     timeline_engine: Arc<TimelineEngine>,
     session_engine: Arc<SessionEngine>,
     recommendation_engine: Arc<RecommendationEngine>,
+    /// Context memory for workspace-scoped related workspaces and snapshots.
+    context_memory: Arc<ContextMemoryEngine>,
+    /// Learning engine for feedback-driven adaptation.
+    learning_engine: Arc<AdaptiveLearningEngine>,
 
     // In-memory notification queue
     notifications: Arc<RwLock<Vec<ProactiveNotification>>>,
@@ -70,6 +74,8 @@ impl ProactiveEngine {
             timeline_engine,
             session_engine,
             recommendation_engine,
+            context_memory,
+            learning_engine,
             notifications: Arc::new(RwLock::new(Vec::new())),
             permissions: Arc::new(RwLock::new(Vec::new())),
             planner: Arc::new(RwLock::new(None)),
@@ -197,6 +203,8 @@ impl ProactiveEngine {
             timeline_engine: self.timeline_engine.clone(),
             session_engine: self.session_engine.clone(),
             recommendation_engine: self.recommendation_engine.clone(),
+            context_memory: self.context_memory.clone(),
+            learning_engine: self.learning_engine.clone(),
             notifications: self.notifications.clone(),
             permissions: self.permissions.clone(),
             planner: self.planner.clone(),
@@ -326,21 +334,45 @@ impl ProactiveEngine {
             .collect()
     }
 
-    /// Dismisses a notification.
+    /// Dismisses a notification and records feedback for the learning engine.
+    /// This closes the feedback loop: dismissed notifications inform future recommendations.
     pub async fn dismiss_notification(&self, notification_id: Uuid) -> Result<(), DatabaseError> {
-        let mut notifications = self.notifications.write().await;
-        if let Some(notification) = notifications.iter_mut().find(|n| n.id == notification_id) {
-            notification.dismissed = true;
-        }
+        let (workspace_id, notification_type) = {
+            let mut notifications = self.notifications.write().await;
+            if let Some(notification) = notifications.iter_mut().find(|n| n.id == notification_id) {
+                notification.dismissed = true;
+                (notification.workspace_id, notification.notification_type.clone())
+            } else {
+                return Ok(());
+            }
+        };
+
+        // Record dismissal as negative feedback for learning
+        self.learning_engine
+            .record_feedback(
+                crate::learning::models::FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                notification_id.to_string(),
+                FeedbackAction::Dismissed,
+                serde_json::json!({
+                    "notification_type": format!("{:?}", notification_type),
+                    "workspace_id": workspace_id.map(|id| id.to_string()),
+                }),
+            )
+            .await
+            .ok();
+
         Ok(())
     }
 
     /// Generates a resume context for a workspace.
+    /// Uses Activity 2.0 evidence (timeline) as the authoritative source.
+    /// Context memory and session context enrich but never fabricate activity.
     pub async fn generate_resume_context(
         &self,
         workspace_id: Uuid,
     ) -> Result<ResumeContext, DatabaseError> {
-        // Get recent timeline
+        // Get recent timeline (authoritative Activity 2.0 source)
         let timeline = self
             .timeline_engine
             .recent_events(workspace_id, Some(20), None)
@@ -356,7 +388,7 @@ impl ProactiveEngine {
             })
             .collect();
 
-        // Detect unfinished work
+        // Detect unfinished work (Activity 2.0 evidence)
         let unfinished_work = self.detector.detect_unfinished_work(workspace_id).await?;
 
         // Get open files from timeline
@@ -376,6 +408,37 @@ impl ProactiveEngine {
             .map(|e| e.occurred_at)
             .unwrap_or_else(Utc::now);
 
+        // Get related workspaces from context memory (workspace-scoped)
+        let related_workspaces: Vec<String> = self
+            .context_memory
+            .get_related_workspaces(&workspace_id.to_string(), 0.3, 5)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|rw| rw.workspace_id)
+            .collect();
+
+        // Get latest context snapshot if available
+        let context_snapshot = self
+            .context_memory
+            .get_latest_snapshot(&workspace_id.to_string())
+            .await
+            .ok()
+            .flatten()
+            .map(|s| {
+                let session_str = s
+                    .session_summary
+                    .as_ref()
+                    .map(|v| serde_json::to_string(v).unwrap_or_default())
+                    .unwrap_or_else(|| "N/A".to_string());
+                format!(
+                    "Files: {}, Session: {}, Health: {:?}",
+                    s.active_files.join(", "),
+                    session_str,
+                    s.health_score
+                )
+            });
+
         Ok(ResumeContext {
             workspace_id,
             last_active,
@@ -384,7 +447,8 @@ impl ProactiveEngine {
             active_branch: None,
             recent_timeline,
             previous_conversation_id: None,
-            context_snapshot: None,
+            context_snapshot,
+            related_workspaces,
         })
     }
 
