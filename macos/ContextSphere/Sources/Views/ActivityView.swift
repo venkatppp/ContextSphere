@@ -12,14 +12,30 @@ struct ActivityView: View {
     @State private var selectedWebID: String?
     @State private var whatExpanded = false
     @State private var selectedMemoryID: String?
+    @State private var containerWidth: CGFloat = 1024
 
     private var workspaces: [Workspace] { viewModel.workspaces }
 
     var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            ZStack(alignment: .topTrailing) {
-                ScrollViewReader { proxy in
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                StandardPageHeader(
+                    section: .activity,
+                    activeWorkspace: workspaces.first { $0.status == .active } ?? workspaces.first,
+                    title: "Activity",
+                    subtitle: "ContextSphere reconstructs how you spent your time.",
+                    symbol: AppSection.activity.symbol,
+                    eyebrow: NavGroup.workspace.title.uppercased()
+                ) {
+                    Button { viewModel.refresh() } label: {
+                        if viewModel.isLoading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Refresh activity").accessibilityLabel("Refresh activity")
+                }
+                .padding(.horizontal, layoutPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+                Hairline(opacity: Theme.pageHeaderDividerOpacity)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         controls
@@ -33,7 +49,7 @@ struct ActivityView: View {
                             emptyState(reason: ov.emptyReason)
                         } else if let ov = viewModel.overview {
                             heroMetrics(ov)
-                            mainGrid(width: width, overview: ov).id("grid")
+                            mainGrid(width: containerWidth, overview: ov).id("grid")
                             whatHappenedSection(ov).id("what")
                             recentMemorySection(ov).id("memory")
                         } else {
@@ -41,57 +57,50 @@ struct ActivityView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, layoutPadding(for: width))
-                    .padding(.vertical, 18)
+                    .padding(.horizontal, layoutPadding(for: containerWidth))
+                    .padding(.vertical, 16)
                 }
-                .scrollEdgeEffectStyle(.soft, for: .vertical)
-                .safeAreaInset(edge: .top, spacing: 8) {
-                    StandardPageHeader(
-                        section: .activity,
-                        activeWorkspace: workspaces.first { $0.status == .active } ?? workspaces.first,
-                        title: "Activity",
-                        subtitle: "ContextSphere reconstructs how you spent your time.",
-                        symbol: AppSection.activity.symbol,
-                        eyebrow: NavGroup.workspace.title.uppercased()
-                    ) {
-                        Button { viewModel.refresh() } label: {
-                            if viewModel.isLoading { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Refresh activity").accessibilityLabel("Refresh activity")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .frame(maxWidth: Theme.contentMaxWidth)
-                    .padding(.horizontal, layoutPadding(for: width))
-                    .frame(maxWidth: .infinity)
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 12) }
-                }
-
-                if let app = selectedApp(from: viewModel.overview) {
-                    ActivityAppDetailPanel(usage: app) { withAnimation(Theme.spring(reduceMotion, response: 0.32)) { selectedAppID = nil } }
-                        .padding(.trailing, 16).padding(.top, 12)
-                        .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
-                        .zIndex(10)
-                } else if let web = selectedWeb(from: viewModel.overview) {
-                    ActivityWebDetailPanel(usage: web) { withAnimation(Theme.spring(reduceMotion, response: 0.32)) { selectedWebID = nil } }
-                        .padding(.trailing, 16).padding(.top, 12)
-                        .zIndex(10)
-                }
+                .scrollIndicators(.automatic)
+                .defaultScrollAnchor(.top)
             }
+
+            if let app = selectedApp(from: viewModel.overview) {
+                ActivityAppDetailPanel(usage: app) { withAnimation(Theme.spring(reduceMotion, response: 0.32)) { selectedAppID = nil } }
+                    .padding(.trailing, 16).padding(.top, 12)
+                    .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                    .zIndex(10)
+                    .allowsHitTesting(true)
+            } else if let web = selectedWeb(from: viewModel.overview) {
+                ActivityWebDetailPanel(usage: web) { withAnimation(Theme.spring(reduceMotion, response: 0.32)) { selectedWebID = nil } }
+                    .padding(.trailing, 16).padding(.top, 12)
+                    .zIndex(10)
+                    .allowsHitTesting(true)
+            }
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+            .frame(height: 0)
         }
         .background {
             Button("") { handleEscape() }.keyboardShortcut(.escape, modifiers: []).hidden().accessibilityHidden(true)
         }
-        .animation(Theme.spring(reduceMotion, response: 0.32), value: selectedAppID)
-        .animation(Theme.spring(reduceMotion, response: 0.32), value: selectedWebID)
         .task { viewModel.initialLoadIfNeeded() }
         .onChange(of: viewModel.overview?.day.date) { _, _ in
-            // Expand all sessions by default when new data arrives
+            // Preserve user collapsed state; only expand new sessions, don't collapse existing
             if let ov = viewModel.overview {
-                expandedSessions = Set(ov.sessions.map(\.id))
+                let newIDs = Set(ov.sessions.map(\.id))
+                if expandedSessions.isEmpty {
+                    expandedSessions = newIDs
+                } else {
+                    // Insert any new sessions that appeared (e.g., live update) without wiping user choice
+                    expandedSessions.formUnion(newIDs)
+                    // Remove IDs that no longer exist (e.g., filter change)
+                    expandedSessions = expandedSessions.intersection(newIDs)
+                }
             }
         }
     }
@@ -110,77 +119,97 @@ struct ActivityView: View {
         if !viewModel.searchQuery.isEmpty { viewModel.searchQuery = "" }
     }
     private func layoutPadding(for width: CGFloat) -> CGFloat {
-        if width < 760 { return 16 }
-        if width < 980 { return 20 }
-        if width < 1200 { return 24 }
-        return 28
+        Theme.horizontalPadding(for: width)
     }
 
     // MARK: - Header (now via safeAreaInset StandardPageHeader)
 
     private var controls: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Button { cycleDate(-1) } label: { Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22) }
-                    .buttonStyle(.plain).csForeground(CSColor.textSecondary).help("Previous day").accessibilityLabel("Previous day")
-                Menu {
-                    ForEach(["Today","Yesterday","This Week","Last 7 Days"], id: \.self) { opt in
-                        Button(opt) { viewModel.dateFilter = opt }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "calendar").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary)
-                        Text(viewModel.dateFilter).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary)
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).csForeground(CSColor.textTertiary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
-                    .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
-                }.menuIndicator(.hidden).fixedSize()
-                Button { cycleDate(1) } label: { Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22) }
-                    .buttonStyle(.plain).csForeground(CSColor.textSecondary).help("Next day").accessibilityLabel("Next day")
-            }
-            Spacer(minLength: 8)
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
-                Menu {
-                    Button("All Workspaces") { viewModel.selectedWorkspaceId = nil }
-                    ForEach(workspaces) { ws in Button(ws.name) { viewModel.selectedWorkspaceId = ws.id } }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
-                        Text(selectedWorkspaceName).font(.system(size: 12)).csForeground(CSColor.textPrimary).lineLimit(1)
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).csForeground(CSColor.textTertiary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
-                    .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
-                }.menuIndicator(.hidden).fixedSize()
-                Menu {
-                    ForEach(["This Mac", "All Devices"], id: \.self) { opt in Button(opt) {} }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "desktopcomputer").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
-                        Text("This Mac").font(.system(size: 12)).csForeground(CSColor.textPrimary).lineLimit(1)
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).csForeground(CSColor.textTertiary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
-                    .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
-                }.menuIndicator(.hidden).fixedSize()
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textTertiary).accessibilityHidden(true)
-                    TextField("Search", text: $viewModel.searchQuery).textFieldStyle(.plain).font(.system(size: 12.5)).frame(minWidth: 90, idealWidth: 140, maxWidth: 180)
-                        .accessibilityLabel("Search activity")
-                    if !viewModel.searchQuery.isEmpty {
-                        Button { viewModel.searchQuery = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).csForeground(CSColor.textTertiary) }
-                            .buttonStyle(.plain).accessibilityLabel("Clear search")
-                    }
+                dateSelector
+                Spacer(minLength: 8)
+                workspaceAndDeviceFilters
+                searchFieldCapsule
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    dateSelector
+                    Spacer()
+                    workspaceAndDeviceFilters
+                }
+                searchFieldCapsule
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var dateSelector: some View {
+        HStack(spacing: 4) {
+            Button { cycleDate(-1) } label: { Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22) }
+                .buttonStyle(.plain).csForeground(CSColor.textSecondary).help("Previous day").accessibilityLabel("Previous day")
+            Menu {
+                ForEach(["Today","Yesterday","This Week","Last 7 Days"], id: \.self) { opt in
+                    Button(opt) { viewModel.dateFilter = opt }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary)
+                    Text(viewModel.dateFilter).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
                 .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
+            }.menuIndicator(.hidden).fixedSize()
+            Button { cycleDate(1) } label: { Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22) }
+                .buttonStyle(.plain).csForeground(CSColor.textSecondary).help("Next day").accessibilityLabel("Next day")
+        }
+    }
+
+    private var workspaceAndDeviceFilters: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("All Workspaces") { viewModel.selectedWorkspaceId = nil }
+                ForEach(workspaces) { ws in Button(ws.name) { viewModel.selectedWorkspaceId = ws.id } }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
+                    Text(selectedWorkspaceName).font(.system(size: 12)).csForeground(CSColor.textPrimary).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).csForeground(CSColor.textTertiary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
+                .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
+            }.menuIndicator(.hidden).fixedSize()
+            Menu {
+                ForEach(["This Mac", "All Devices"], id: \.self) { opt in Button(opt) {} }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "desktopcomputer").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
+                    Text("This Mac").font(.system(size: 12)).csForeground(CSColor.textPrimary).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).csForeground(CSColor.textTertiary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
+                .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
+            }.menuIndicator(.hidden).fixedSize()
+        }
+    }
+
+    private var searchFieldCapsule: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).csForeground(CSColor.textTertiary).accessibilityHidden(true)
+            TextField("Search", text: $viewModel.searchQuery).textFieldStyle(.plain).font(.system(size: 12.5)).frame(minWidth: 90, idealWidth: 140, maxWidth: 180)
+                .accessibilityLabel("Search activity")
+            if !viewModel.searchQuery.isEmpty {
+                Button { viewModel.searchQuery = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).csForeground(CSColor.textTertiary) }
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
         }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
+        .overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
     }
 
     private var selectedWorkspaceName: String {
@@ -198,11 +227,19 @@ struct ActivityView: View {
     // MARK: - Hero metrics
 
     private func heroMetrics(_ ov: ActivityOverview) -> some View {
-        HStack(spacing: 10) {
-            metricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
-            metricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
-            metricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
-            metricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                metricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
+                metricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
+                metricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
+                metricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+            }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                metricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
+                metricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
+                metricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
+                metricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+            }
         }
     }
 
@@ -411,12 +448,13 @@ struct ActivityView: View {
                 if ov.donut.isEmpty {
                     Text("No application distribution to show yet.").font(.callout).csForeground(CSColor.textSecondary)
                 } else {
+                    let display = AppColorProvider.displayDonut(ov.donut)
                     HStack(alignment: .center, spacing: 18) {
-                        ProductionDonut(segments: ov.donut, size: 128)
+                        ProductionDonut(segments: display, size: 128)
                         VStack(alignment: .leading, spacing: 7) {
-                            ForEach(ov.donut) { seg in
+                            ForEach(display) { seg in
                                 HStack(spacing: 7) {
-                                    Circle().fill(colorFor(seg.id)).frame(width: 8, height: 8).accessibilityHidden(true)
+                                    Circle().fill(AppColorProvider.color(for: seg)).frame(width: 8, height: 8).accessibilityHidden(true)
                                     Text(seg.label).font(.system(size: 11.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1)
                                     Spacer(minLength: 4)
                                     Text("\(Int((seg.percent*100).rounded()))%").font(.system(size: 11).monospacedDigit()).csForeground(CSColor.textSecondary)
@@ -429,16 +467,6 @@ struct ActivityView: View {
                 }
                 Text("Restrained, native — not a SaaS rainbow.").font(.system(size: 10)).csForeground(CSColor.textTertiary).italic()
             }
-        }
-    }
-
-    private func colorFor(_ id: String) -> Color {
-        switch id.lowercased() {
-        case "xcode": return Color(red: 0.18, green: 0.52, blue: 0.95)
-        case "safari": return Color(red: 0.35, green: 0.65, blue: 0.88)
-        case "terminal": return Color(red: 0.22, green: 0.22, blue: 0.24)
-        case "finder": return Color(red: 0.55, green: 0.62, blue: 0.72)
-        default: return Color(red: 0.75, green: 0.78, blue: 0.84)
         }
     }
 
@@ -471,7 +499,7 @@ struct ActivityView: View {
                                     let frac = maxM > 0 ? CGFloat(pair.1) / CGFloat(maxM) : 0
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height: 4)
-                                        Capsule().fill(Color.accentColor.opacity(0.9)).frame(width: geo.size.width * frac, height: 4)
+                                        Capsule().fill(AppColorProvider.color(for: pair.0).opacity(0.9)).frame(width: geo.size.width * frac, height: 4)
                                     }
                                 }.frame(height: 4)
                                 Text("\(pair.1)m").font(.system(size: 10.5).monospacedDigit()).csForeground(CSColor.textSecondary).frame(width: 42, alignment: .trailing)
@@ -703,14 +731,15 @@ private struct ProductionAppRow: View {
     let usage: ActivityAppUsage
     let maxMinutes: Int
     var isSelected: Bool = false
+    private var appColor: Color { AppColorProvider.color(for: usage.displayName.isEmpty ? usage.app : usage.displayName) }
     var body: some View {
         HStack(spacing: 10) {
-            ZStack { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.accentColor.opacity(0.14)); Image(systemName: usage.app == "Xcode" ? "hammer.fill" : usage.app == "Safari" ? "safari.fill" : usage.app == "Terminal" ? "terminal.fill" : "app.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.accentColor) }.frame(width: 26, height: 26).accessibilityHidden(true)
+            ZStack { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(appColor.opacity(0.14)); Image(systemName: usage.app == "Xcode" ? "hammer.fill" : usage.app == "Safari" ? "safari.fill" : usage.app == "Terminal" ? "terminal.fill" : "app.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(appColor) }.frame(width: 26, height: 26).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) { Text(usage.displayName).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Spacer(minLength: 4); Text(displayMinutes).font(.system(size: 11, weight: .medium).monospacedDigit()).csForeground(CSColor.textSecondary) }
-                GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : (usage.percent>0 ? 0.08 : 0); ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:5); Capsule().fill(Color.accentColor).frame(width: geo.size.width*frac, height:5) } }.frame(height:5).accessibilityHidden(true)
+                GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : (usage.percent>0 ? 0.08 : 0); ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:5); Capsule().fill(appColor).frame(width: geo.size.width*frac, height:5) } }.frame(height:5).accessibilityHidden(true)
             }
-            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(isSelected ? Color.accentColor : Color.clear)
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(isSelected ? appColor : Color.clear)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isSelected ? Color.cs(CSColor.selectionFill) : Color.clear))
@@ -754,31 +783,31 @@ private struct ProductionDonut: View {
             let center = CGPoint(x: sz.width/2, y: sz.height/2); let radius = min(sz.width, sz.height)/2 - 7
             var start = Angle.degrees(-90)
             for seg in segments {
-                let sweep = Angle.degrees(360 * seg.percent); let end = start + sweep
-                var p = Path(); p.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
-                ctx.stroke(p, with: .color(colorFor(seg.id)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                // Skip zero/ultra-tiny artifacts already merged by AppColorProvider
+                guard seg.percent >= 0.005 else { continue }
+                let sweepDegrees = 360 * seg.percent
+                // Avoid a hairline gap from round caps on tiny sweeps
+                let lineCap: CGLineCap = sweepDegrees < 3 ? .butt : .round
+                let sweep = Angle.degrees(sweepDegrees)
+                let end = start + sweep
+                // Add tiny gap between segments for readability (1 degree) unless very small
+                let adjustedEnd = sweepDegrees < 6 ? end : end - Angle.degrees(1)
+                var p = Path(); p.addArc(center: center, radius: radius, startAngle: start, endAngle: adjustedEnd, clockwise: false)
+                ctx.stroke(p, with: .color(AppColorProvider.color(for: seg)), style: StrokeStyle(lineWidth: 14, lineCap: lineCap))
                 start = end
             }
         }.frame(width: size, height: size).accessibilityHidden(true)
-    }
-    private func colorFor(_ id: String) -> Color {
-        switch id.lowercased() {
-        case "xcode": return Color(red: 0.18, green: 0.52, blue: 0.95)
-        case "safari": return Color(red: 0.35, green: 0.65, blue: 0.88)
-        case "terminal": return Color(red: 0.22, green: 0.22, blue: 0.24)
-        case "finder": return Color(red: 0.55, green: 0.62, blue: 0.72)
-        default: return Color(red: 0.75, green: 0.78, blue: 0.84)
-        }
     }
 }
 
 private struct ActivityAppDetailPanel: View {
     let usage: ActivityAppUsage
     var onClose: () -> Void
+    private var appColor: Color { AppColorProvider.color(for: usage.displayName.isEmpty ? usage.app : usage.displayName) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                ZStack { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.accentColor.opacity(0.14)); Image(systemName: "hammer.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.accentColor) }.frame(width: 32, height: 32).accessibilityHidden(true)
+                ZStack { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(appColor.opacity(0.14)); Image(systemName: "hammer.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(appColor) }.frame(width: 32, height: 32).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) { Text(usage.displayName).font(.system(size: 15, weight: .semibold)).csForeground(CSColor.textPrimary); Text("\(usage.minutes)m").font(.system(size: 12, weight: .medium).monospacedDigit()).csForeground(CSColor.textSecondary) }
                 Spacer()
                 Button { onClose() } label: { Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).background(Circle().fill(Color.cs(CSColor.textTertiary).opacity(0.10))) }.buttonStyle(.plain).csForeground(CSColor.textSecondary).keyboardShortcut(.escape, modifiers: []).accessibilityLabel("Close detail")

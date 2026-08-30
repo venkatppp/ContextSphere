@@ -4,10 +4,12 @@ import SwiftUI
 struct ContextSphereApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
-            RootEnvironment {
-                AppShell()
-                    .environmentObject(AppRouter.shared)
-                    .frame(minWidth: 940, minHeight: 640)
+            LaunchRoot {
+                RootEnvironment {
+                    AppShell()
+                        .environmentObject(AppRouter.shared)
+                        .frame(minWidth: 940, minHeight: 640)
+                }
             }
         }
         .defaultSize(width: 1280, height: 860)

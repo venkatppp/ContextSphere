@@ -21,6 +21,7 @@ struct WorkspacesView: View {
     @State private var showArchiveConfirm = false
     @State private var isMutating = false
     @State private var mutationError: String?
+    @State private var containerWidth: CGFloat = 1024
 
     private var activeWorkspaces: [Workspace] {
         workspaces.filter { $0.status == .active }
@@ -129,14 +130,6 @@ struct WorkspacesView: View {
 
     private var workspacesContent: some View {
         VStack(spacing: 0) {
-            HSplitView {
-                masterList
-                    .frame(minWidth: 300, idealWidth: 340)
-                detailPane
-                    .frame(minWidth: 420)
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 8) {
             StandardPageHeader(
                 section: .workspaces,
                 activeWorkspace: workspaces.first { $0.status == .active } ?? workspaces.first,
@@ -145,12 +138,23 @@ struct WorkspacesView: View {
                 symbol: AppSection.workspaces.symbol,
                 eyebrow: NavGroup.workspace.title.uppercased()
             ) { headerTrailing }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            HSplitView {
+                masterList
+                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
+                detailPane
+                    .frame(minWidth: 440)
+            }
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+            .frame(height: 0)
         }
     }
 
@@ -305,7 +309,7 @@ struct WorkspacesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.cs(CSColor.surface).opacity(0.5))
+        .background(Color.cs(CSColor.surface))
     }
 
     private func loadDetail(_ workspace: Workspace) async {

@@ -30,11 +30,10 @@ struct WorkspaceDetailView: View {
                 meta
                 actions
             }
-            .frame(maxWidth: Theme.contentMaxWidth)
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .task(id: workspace.id) {
             await loadHealth()
         }

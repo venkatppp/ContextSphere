@@ -38,6 +38,7 @@ swiftc \
   Sources/CoreBridge.swift \
   Sources/RPCModels.swift \
   Sources/Theme.swift \
+  Sources/AppColors.swift \
   Sources/AppShell.swift \
   Sources/Notifications.swift \
   Sources/ActivityViewModel.swift \

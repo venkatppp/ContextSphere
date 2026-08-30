@@ -16,6 +16,7 @@ struct DashboardView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var whatExpanded = false
+    @State private var containerWidth: CGFloat = 1024
 
     init(workspaces: [Workspace], onRevealWorkspace: @escaping (String) -> Void = { _ in }, activity: ActivityViewModel) {
         self.workspaces = workspaces
@@ -35,16 +36,19 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
+        VStack(spacing: 0) {
+            dashboardHeader
+                .padding(.horizontal, dashboardPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if workspaces.isEmpty {
                         emptyWorkspaces
                     } else {
-                        currentContextHero(width: width)
-                        activityOverview(width: width)
-                        if width >= 980 {
+                        currentContextHero(width: containerWidth)
+                        activityOverview(width: containerWidth)
+                        if containerWidth >= 980 {
                             HStack(alignment: .top, spacing: 16) {
                                 whatHappenedColumn.frame(maxWidth: .infinity)
                                 timelineHeatColumn.frame(maxWidth: .infinity)
@@ -55,7 +59,7 @@ struct DashboardView: View {
                                 timelineHeatColumn
                             }
                         }
-                        if width >= 980 {
+                        if containerWidth >= 980 {
                             HStack(alignment: .top, spacing: 16) {
                                 recentWorkspacesCard.frame(maxWidth: .infinity)
                                 recentMemoryCard.frame(maxWidth: .infinity)
@@ -69,19 +73,19 @@ struct DashboardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, dashboardPadding(for: width))
-                .padding(.vertical, 18)
+                .padding(.horizontal, dashboardPadding(for: containerWidth))
+                .padding(.vertical, 16)
             }
-            .scrollEdgeEffectStyle(.soft, for: .vertical)
-            .safeAreaInset(edge: .top, spacing: 8) {
-                dashboardHeader
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .frame(maxWidth: Theme.contentMaxWidth)
-                    .padding(.horizontal, dashboardPadding(for: width))
-                    .frame(maxWidth: .infinity)
+            .scrollIndicators(.automatic)
+            .defaultScrollAnchor(.top)
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
             }
+            .frame(height: 0)
         }
         .task { activity.setWorkspaces(workspaces); activity.refresh() }
         .onChange(of: workspaces) { _, new in activity.setWorkspaces(new) }
@@ -91,7 +95,7 @@ struct DashboardView: View {
         StandardPageHeader(
             section: .dashboard,
             activeWorkspace: currentWorkspace,
-            title: greetingText,
+            title: "Dashboard",
             subtitle: "Here's what ContextSphere remembers about your work.",
             symbol: AppSection.dashboard.symbol,
             eyebrow: NavGroup.workspace.title.uppercased()
@@ -99,34 +103,7 @@ struct DashboardView: View {
     }
 
     private func dashboardPadding(for width: CGFloat) -> CGFloat {
-        if width < 760 { return 16 }
-        if width < 980 { return 20 }
-        if width < 1200 { return 24 }
-        return 28
-    }
-
-    // MARK: - Greeting
-
-    private var greetingHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(greetingText)
-                .font(.system(size: 22, weight: .semibold)).tracking(-0.4).csForeground(CSColor.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Text("Here's what ContextSphere remembers about your work.")
-                .font(.callout).csForeground(CSColor.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var greetingText: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<12: return "Good morning"
-        case 12..<17: return "Good afternoon"
-        case 17..<22: return "Good evening"
-        default: return "Good evening"
-        }
+        Theme.horizontalPadding(for: width)
     }
 
     // MARK: - Current Context Hero
@@ -184,16 +161,29 @@ struct DashboardView: View {
                     .accessibilityLabel("View activity details")
             }
             if let ov = activity.overview, !ov.isEmpty {
-                HStack(spacing: 10) {
-                    dashboardMetricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
-                    dashboardMetricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
-                    dashboardMetricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
-                    dashboardMetricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        dashboardMetricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
+                        dashboardMetricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
+                        dashboardMetricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
+                        dashboardMetricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        dashboardMetricTile(label: "ACTIVE TIME", value: formatDuration(ov.day.activeSeconds), symbol: "clock.fill")
+                        dashboardMetricTile(label: "FOCUS SESSIONS", value: "\(ov.day.focusSessions)", symbol: "rectangle.stack.fill")
+                        dashboardMetricTile(label: "APPLICATIONS", value: "\(ov.day.applications)", symbol: "app.fill")
+                        dashboardMetricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
+                    }
                 }
                 ActivityMiniHeat()
             } else if activity.isLoading {
-                HStack(spacing: 10) {
-                    ForEach(0..<4, id: \.self) { _ in RoundedRectangle(cornerRadius: 12).fill(Color.cs(CSColor.surface).opacity(0.6)).frame(height: 74).redacted(reason: .placeholder) }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        ForEach(0..<4, id: \.self) { _ in RoundedRectangle(cornerRadius: 12).fill(Color.cs(CSColor.surface).opacity(0.6)).frame(height: 74).redacted(reason: .placeholder) }
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        ForEach(0..<4, id: \.self) { _ in RoundedRectangle(cornerRadius: 12).fill(Color.cs(CSColor.surface).opacity(0.6)).frame(height: 74).redacted(reason: .placeholder) }
+                    }
                 }
             } else {
                 ContentCard {
