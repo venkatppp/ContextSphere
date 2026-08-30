@@ -12,6 +12,7 @@ struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @ObservedObject private var appearance = AppearanceController.shared
     @State private var category: Category = .general
+    @State private var detailWidth: CGFloat = 600
 
     enum Category: String, CaseIterable, Identifiable, Hashable {
         case general, security
@@ -60,7 +61,7 @@ struct SettingsView: View {
     private var content: some View {
         HStack(spacing: 0) {
             categoryList
-                .frame(width: 240)
+                .frame(width: 220)
             Divider().opacity(0.4)
             detailColumn
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,7 +82,7 @@ struct SettingsView: View {
                 Spacer()
             }
             .padding(.horizontal, 14)
-            .padding(.top, 18)
+            .padding(.top, 16)
             .padding(.bottom, 8)
 
             VStack(spacing: 4) {
@@ -93,7 +94,6 @@ struct SettingsView: View {
 
             Spacer()
 
-            // Footer info
             VStack(alignment: .leading, spacing: 4) {
                 Hairline()
                 HStack(spacing: 6) {
@@ -146,27 +146,37 @@ struct SettingsView: View {
     // MARK: - Detail
 
     private var detailColumn: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                detailHeader
-                detailContent
+        VStack(spacing: 0) {
+            detailHeader
+                .padding(.horizontal, Theme.horizontalPadding(for: detailWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    detailContent
+                }
+                .padding(.horizontal, Theme.horizontalPadding(for: detailWidth))
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(maxWidth: 760, alignment: .leading)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .scrollIndicators(.automatic)
+            .defaultScrollAnchor(.top)
         }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .background(Color.cs(CSColor.surface))
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { detailWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in detailWidth = new }
+            }
+        }
     }
 
     private var detailHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ContentBreadcrumb(section: .settings)
-            ScreenHeader(category.title,
-                         subtitle: category.summary,
-                         symbol: category.symbol,
-                         eyebrow: NavGroup.system.title.uppercased())
-        }
+        ScreenHeader(category.title,
+                     subtitle: category.summary,
+                     symbol: category.symbol,
+                     eyebrow: NavGroup.system.title.uppercased())
         .accessibilityElement(children: .combine)
     }
 

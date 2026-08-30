@@ -7,26 +7,31 @@ import AppKit
 struct TimelineView: View {
     @ObservedObject var viewModel: TimelineViewModel
     @FocusState private var focusedEventID: String?
+    @State private var containerWidth: CGFloat = 1024
 
     var body: some View {
-        ScrollViewReader { proxy in
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
             ScrollView {
                 content
-                    .frame(maxWidth: Theme.contentMaxWidth)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .top)
             }
-            .scrollEdgeEffectStyle(.soft, for: .vertical)
-            .safeAreaInset(edge: .top, spacing: 8) {
-                header
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.cornerXLarge, style: .continuous))
-                    .frame(maxWidth: Theme.contentMaxWidth)
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity)
+            .scrollIndicators(.automatic)
+            .defaultScrollAnchor(.top)
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
             }
+            .frame(height: 0)
         }
         .task { await viewModel.initialLoadIfNeeded() }
         .background {
@@ -125,7 +130,8 @@ struct TimelineView: View {
             }
         }
         .pickerStyle(.menu)
-        .fixedSize()
+        .lineLimit(1)
+        .truncationMode(.tail)
         .accessibilityLabel("Filter timeline by workspace")
     }
 
@@ -140,7 +146,7 @@ struct TimelineView: View {
             }
         }
         .pickerStyle(.menu)
-        .fixedSize()
+        .lineLimit(1)
         .accessibilityLabel("Filter timeline by event type")
     }
 

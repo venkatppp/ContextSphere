@@ -26,55 +26,53 @@ struct GraphScreen: View {
     @State private var panAnchor: CGPoint?
     @State private var magnifyBaseZoom: CGFloat?
     @State private var needsFit = true
+    @State private var containerWidth: CGFloat = 1024
 
     private let renderer = CanvasGraphRenderer()
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                canvasArea(geo.size)
-                // Lenses (top-center, compact)
-                lensBar
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 16)
-                // Search surface
-                searchSurface
-                    .padding(20)
-                if viewModel.isExpanding {
-                    expandingBadge
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 22)
-                }
-                statusBar
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(20)
-                controls
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(20)
-                if viewModel.showInspector {
-                    GraphInspectorView(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        .padding(20)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-                stateOverlay
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 8) {
+        VStack(spacing: 0) {
             StandardPageHeader(
                 section: .graph,
                 activeWorkspace: viewModel.workspaces.first { $0.id == viewModel.selectedWorkspaceId } ?? viewModel.workspaces.first,
-                title: "Knowledge Graph",
+                title: "Graph",
                 subtitle: headerSubtitle,
                 symbol: AppSection.graph.symbol,
                 eyebrow: NavGroup.intelligence.title.uppercased()
             ) { workspacePicker }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    canvasArea(geo.size)
+                    // Lenses (top-center, compact)
+                    lensBar
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 16)
+                    // Search surface
+                    searchSurface
+                        .padding(20)
+                    if viewModel.isExpanding {
+                        expandingBadge
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, 22)
+                    }
+                    statusBar
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(20)
+                    controls
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(20)
+                    if viewModel.showInspector {
+                        GraphInspectorView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                            .padding(20)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                    stateOverlay
+                }
+            }
         }
         .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85),
                    value: viewModel.positions)
@@ -94,6 +92,14 @@ struct GraphScreen: View {
         .onChange(of: viewModel.contextFocusID) { _, _ in
             if viewModel.contextFocusID == nil { needsFit = true }
         }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+            .allowsHitTesting(false)
+        }
         // Escape handles BOTH the search field and the selection, in that
         // order. It never leaves the Graph view (§13).
         .background {
@@ -101,30 +107,6 @@ struct GraphScreen: View {
                 .keyboardShortcut(.escape, modifiers: [])
                 .hidden()
                 .accessibilityHidden(true)
-        }
-    }
-
-    // MARK: - Header (integrated)
-
-    private var graphHeader: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 18, weight: .semibold))
-                        .csForeground(CSColor.info)
-                    Text("Knowledge Graph")
-                        .font(.csScreenTitle)
-                        .csForeground(CSColor.textPrimary)
-                        .tracking(-0.3)
-                }
-                Text(headerSubtitle)
-                    .font(.callout)
-                    .csForeground(CSColor.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 12)
-            workspacePicker
         }
     }
 

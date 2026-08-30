@@ -7,24 +7,31 @@ import SwiftUI
 /// provides.
 struct MemoryView: View {
     @ObservedObject var viewModel: MemoryViewModel
+    @State private var containerWidth: CGFloat = 1024
 
     var body: some View {
-        ScrollView {
-            content
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-        }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
-        .safeAreaInset(edge: .top, spacing: 8) {
+        VStack(spacing: 0) {
             header
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            ScrollView {
+                content
+                    .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .scrollIndicators(.automatic)
+            .defaultScrollAnchor(.top)
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+            .frame(height: 0)
         }
         .task { await viewModel.initialLoadIfNeeded() }
     }
@@ -129,12 +136,14 @@ struct MemoryView: View {
     // MARK: - Overview
 
     private var overview: some View {
-        HStack(alignment: .top, spacing: 16) {
-            ContentCard(cornerRadius: Theme.cornerLarge) {
-                statTiles
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 16) {
+                ContentCard(cornerRadius: Theme.cornerLarge) { statTiles }
+                ContentCard(cornerRadius: Theme.cornerLarge) { healthGauges }
             }
-            ContentCard(cornerRadius: Theme.cornerLarge) {
-                healthGauges
+            VStack(alignment: .leading, spacing: 16) {
+                ContentCard(cornerRadius: Theme.cornerLarge) { statTiles }
+                ContentCard(cornerRadius: Theme.cornerLarge) { healthGauges }
             }
         }
     }
@@ -246,81 +255,93 @@ struct MemoryView: View {
     }
 
     private var filterBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .csForeground(CSColor.textSecondary)
-                TextField("Search remembered goals…", text: $viewModel.query)
-                    .textFieldStyle(.plain)
-                    .accessibilityLabel("Search remembered goals")
-                    .onChange(of: viewModel.query) { _, _ in
-                        viewModel.scheduleSearch()
-                    }
-                if !viewModel.query.isEmpty {
-                    Button {
-                        viewModel.query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .csForeground(CSColor.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Clear search")
-                    .accessibilityLabel("Clear search")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                searchFieldCapsule
+                kindPicker
+                outcomePicker
+                if !viewModel.workspaces.isEmpty { workspacePicker }
+                Spacer()
+                if hasActiveFilters {
+                    Button("Clear filters") { viewModel.clearFilters() }
+                        .buttonStyle(.borderless)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.cs(CSColor.hoverFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            Picker("Kind", selection: Binding(
-                get: { viewModel.selectedKind },
-                set: { viewModel.selectedKind = $0; viewModel.filterChange() }
-            )) {
-                Text("All kinds").tag(MemoryKind?.none)
-                ForEach(MemoryKind.allCases, id: \.self) { kind in
-                    Label(kind.title, systemImage: kind.symbol).tag(Optional(kind))
-                }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-            .accessibilityLabel("Filter by memory kind")
-
-            Picker("Outcome", selection: Binding(
-                get: { viewModel.selectedStatus },
-                set: { viewModel.selectedStatus = $0; viewModel.filterChange() }
-            )) {
-                Text("All outcomes").tag(MemoryStatus?.none)
-                ForEach(MemoryStatus.allCases, id: \.self) { status in
-                    Text(status.title).tag(Optional(status))
-                }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-            .accessibilityLabel("Filter by outcome")
-
-            if !viewModel.workspaces.isEmpty {
-                Picker("Workspace", selection: Binding(
-                    get: { viewModel.selectedWorkspaceID },
-                    set: { viewModel.selectedWorkspaceID = $0; viewModel.filterChange() }
-                )) {
-                    Text("All workspaces").tag(String?.none)
-                    ForEach(viewModel.workspaces) { workspace in
-                        Text(workspace.name).tag(Optional(workspace.id))
+            VStack(alignment: .leading, spacing: 8) {
+                searchFieldCapsule
+                HStack(spacing: 8) {
+                    kindPicker
+                    outcomePicker
+                    if !viewModel.workspaces.isEmpty { workspacePicker }
+                    Spacer()
+                    if hasActiveFilters {
+                        Button("Clear filters") { viewModel.clearFilters() }
+                            .buttonStyle(.borderless)
                     }
                 }
-                .pickerStyle(.menu)
-                .fixedSize()
-                .accessibilityLabel("Filter by workspace")
-            }
-
-            Spacer()
-            if viewModel.selectedKind != nil || viewModel.selectedStatus != nil
-                || viewModel.selectedWorkspaceID != nil {
-                Button("Clear filters") { viewModel.clearFilters() }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Clear memory filters")
             }
         }
+    }
+
+    private var hasActiveFilters: Bool {
+        viewModel.selectedKind != nil || viewModel.selectedStatus != nil || viewModel.selectedWorkspaceID != nil
+    }
+
+    private var searchFieldCapsule: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").csForeground(CSColor.textSecondary)
+            TextField("Search remembered goals…", text: $viewModel.query)
+                .textFieldStyle(.plain)
+                .accessibilityLabel("Search remembered goals")
+                .onChange(of: viewModel.query) { _, _ in viewModel.scheduleSearch() }
+            if !viewModel.query.isEmpty {
+                Button { viewModel.query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").csForeground(CSColor.textTertiary)
+                }
+                .buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.cs(CSColor.hoverFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var kindPicker: some View {
+        Picker("Kind", selection: Binding(
+            get: { viewModel.selectedKind },
+            set: { viewModel.selectedKind = $0; viewModel.filterChange() }
+        )) {
+            Text("All kinds").tag(MemoryKind?.none)
+            ForEach(MemoryKind.allCases, id: \.self) { kind in
+                Label(kind.title, systemImage: kind.symbol).tag(Optional(kind))
+            }
+        }
+        .pickerStyle(.menu).fixedSize().accessibilityLabel("Filter by memory kind")
+    }
+
+    private var outcomePicker: some View {
+        Picker("Outcome", selection: Binding(
+            get: { viewModel.selectedStatus },
+            set: { viewModel.selectedStatus = $0; viewModel.filterChange() }
+        )) {
+            Text("All outcomes").tag(MemoryStatus?.none)
+            ForEach(MemoryStatus.allCases, id: \.self) { status in
+                Text(status.title).tag(Optional(status))
+            }
+        }
+        .pickerStyle(.menu).fixedSize().accessibilityLabel("Filter by outcome")
+    }
+
+    private var workspacePicker: some View {
+        Picker("Workspace", selection: Binding(
+            get: { viewModel.selectedWorkspaceID },
+            set: { viewModel.selectedWorkspaceID = $0; viewModel.filterChange() }
+        )) {
+            Text("All workspaces").tag(String?.none)
+            ForEach(viewModel.workspaces) { workspace in
+                Text(workspace.name).tag(Optional(workspace.id))
+            }
+        }
+        .pickerStyle(.menu).fixedSize().accessibilityLabel("Filter by workspace")
     }
 
     private var noMatches: some View {

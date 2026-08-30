@@ -24,7 +24,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .workspaces: "Workspaces"
         case .timeline: "Timeline"
         case .activity: "Activity"
-        case .graph: "Knowledge Graph"
+        case .graph: "Graph"
         case .search: "Search"
         case .memory: "Memory"
         case .learning: "Learning"
@@ -334,37 +334,43 @@ private struct SidebarRow: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: section.symbol)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                .frame(width: 18, alignment: .center)
+                .frame(width: 16, alignment: .center)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
                 .opacity(isSelected ? 1 : 0.9)
             Text(section.compactTitle)
-                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                .font(.system(size: 12.5, weight: isSelected ? .medium : .regular))
                 .tracking(isSelected ? -0.1 : 0)
                 .csForeground(isSelected ? CSColor.textPrimary : CSColor.textPrimary)
-            Spacer(minLength: 4)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.82)
+            Spacer(minLength: 2)
             if let key = section.shortcutKey {
-                Text("⌘\(String(key.character))")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
-                    .padding(.horizontal, 4.5)
-                    .padding(.vertical, 1.5)
-                    .background(
-                        isSelected
-                            ? Color.accentColor.opacity(reduceTransparency ? 0.16 : 0.12)
-                            : palette.textTertiary.opacity(0.09),
-                        in: RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(isSelected ? Color.accentColor.opacity(0.22) : .clear, lineWidth: 0.5)
-                    )
+                ViewThatFits(in: .horizontal) {
+                    Text("⌘\(String(key.character))")
+                        .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                        .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
+                        .padding(.horizontal, 3.5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            isSelected
+                                ? Color.accentColor.opacity(reduceTransparency ? 0.16 : 0.12)
+                                : palette.textTertiary.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .strokeBorder(isSelected ? Color.accentColor.opacity(0.22) : .clear, lineWidth: 0.5)
+                        )
+                    Color.clear.frame(width: 0, height: 0)
+                }
             }
         }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isSelected ? Color.cs(CSColor.sidebarSelectedFill) : .clear)

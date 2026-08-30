@@ -397,8 +397,22 @@ enum Theme {
         static let iconButton: CGFloat = 28
     }
 
-    // MARK: Page header height
-    static let pageHeaderHeight: CGFloat = 56
+    // MARK: Page header metrics (compact native macOS toolbar)
+    static let pageHeaderHeight: CGFloat = 44
+    static let pageHeaderHorizontalPadding: CGFloat = 20
+    static let pageHeaderVerticalPadding: CGFloat = 10
+    static let pageHeaderDividerOpacity: Double = 0.6
+
+    /// Adaptive horizontal padding that scales with the available width,
+    /// matching the Dashboard/Activity tiers so header and content share
+    /// the same grid at every size. Narrow windows stay airy without
+    /// wasting space; large windows breathe instead of crowding.
+    static func horizontalPadding(for width: CGFloat) -> CGFloat {
+        if width < 760 { return 16 }
+        if width < 980 { return 20 }
+        if width < 1200 { return 24 }
+        return 28
+    }
 
     // MARK: Animation
     static func spring(_ reduceMotion: Bool = false,
@@ -411,19 +425,25 @@ enum Theme {
 // MARK: - Typography
 
 extension Font {
-    static let csScreenTitle  = Font.system(size: 24, weight: .semibold, design: .default)
-    static let csSectionTitle = Font.system(size: 17, weight: .semibold, design: .default)
-    static let csCardTitle    = Font.system(size: 15, weight: .semibold, design: .default)
-    static let csBody         = Font.system(size: 13, weight: .regular, design: .default)
-    static let csSecondary    = Font.system(size: 13, weight: .regular, design: .default)
+    static let csScreenTitle  = Font.system(size: 17, weight: .semibold, design: .default)
+    static let csSectionTitle = Font.system(size: 14, weight: .semibold, design: .default)
+    static let csCardTitle    = Font.system(size: 13, weight: .semibold, design: .default)
+    static let csBody         = Font.system(size: 12.5, weight: .regular, design: .default)
+    static let csSecondary    = Font.system(size: 12.5, weight: .regular, design: .default)
     static let csMetadata     = Font.system(size: 11, weight: .regular, design: .default)
-    static let csEyebrowFont: Font = .system(size: 11, weight: .semibold, design: .default)
-    static func csEyebrow(size: CGFloat = 11) -> Font {
+    static let csEyebrowFont: Font = .system(size: 10, weight: .semibold, design: .default)
+    static func csEyebrow(size: CGFloat = 10) -> Font {
         .system(size: size, weight: .semibold, design: .default)
     }
     static func csMetric(size: CGFloat = 28) -> Font {
         .system(size: size, weight: .semibold, design: .rounded)
     }
+    /// Compact page title (native macOS — 17pt semibold, -0.4 tracking).
+    static let csPageTitle = Font.system(size: 17, weight: .semibold, design: .default)
+    /// Eyebrow / kicker (10pt semibold caps, 0.7 tracking).
+    static let csPageEyebrow = Font.system(size: 10, weight: .semibold, design: .default)
+    /// Page subtitle (12.5pt regular secondary).
+    static let csPageSubtitle = Font.system(size: 12.5, weight: .regular, design: .default)
 }
 
 // MARK: - Foreground helpers
@@ -491,6 +511,122 @@ extension ThemePalette {
         case CSColor.sidebarSelectedFill: return sidebarSelectedFill
         case CSColor.sidebarSelectedTint: return sidebarSelectedTint
         default: return textPrimary
+        }
+    }
+}
+
+// MARK: - Launch splash
+
+/// The animation that plays the first time the app opens.
+///
+/// Design intent (Apple, *Designing Fluid Interfaces*): the shell doesn't
+/// pop into existence — it *grows* from the backdrop. The mark starts
+/// soft and below scale, springs to full size with a hint of overshoot, then
+/// the screen dissolves into the interface along the same path it arrived.
+/// Critically damped, no jarring bounce, and fully interruptible — the
+/// transition to the shell begins the instant the hold completes, never
+/// locked behind a fixed timer.
+struct LaunchSplashView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+    @State private var shimmer = false
+
+    var body: some View {
+        ZStack {
+            ContentBackdrop()
+
+            // Subtle rising wash — a single pass, not a loop. Motion that
+            // reverses mid-flight reads as alive; a forever-loop reads as a
+            // screensaver, so it runs once and stops on the shell.
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [.clear,
+                                  Color.accentColor.opacity(0.10),
+                                  .clear],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                )
+                .frame(width: 260)
+                .blur(radius: 24)
+                .offset(y: shimmer ? -26 : 4)
+                .opacity(shimmer ? 0.9 : 0.35)
+
+            VStack(spacing: 16) {
+                mark
+                Text("ContextSphere")
+                    .font(.system(size: 28, weight: .semibold, design: .default))
+                    .tracking(-0.55)
+                    .foregroundStyle(.primary)
+                Text("Context intelligence, distilled")
+                    .font(.system(size: 12, weight: .medium))
+                    .tracking(0.18)
+                    .foregroundStyle(.secondary)
+            }
+            .scaleEffect(appeared ? 1 : 0.93)
+            .opacity(appeared ? 1 : 0)
+        }
+        .onAppear {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.25)
+                                 : .spring(response: 0.52, dampingFraction: 0.80)) {
+                appeared = true
+            }
+            withAnimation(reduceMotion ? .linear(duration: 1)
+                                 : .easeInOut(duration: 1.5)) {
+                shimmer = true
+            }
+        }
+    }
+
+    private var mark: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.primary)
+        }
+        .frame(width: 54, height: 54)
+    }
+}
+
+/// Wraps the app content and plays the launch splash before revealing it.
+/// Owns the cross-fade so the shell can't appear before the splash settles.
+/// Renders the splash inside the same theme environment the shell uses, so
+/// the opening frame matches whatever palette the user has selected.
+struct LaunchRoot<Content: View>: View {
+    @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var reveal = false
+
+    var body: some View {
+        ZStack {
+            if !reveal {
+                LaunchSplashView()
+                    .transition(.opacity)
+            }
+            if reveal {
+                content
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.3)
+                              : .spring(response: 0.40, dampingFraction: 1.0),
+                   value: reveal)
+        .task {
+            // Hold the splash long enough to read, then dissolve into the
+            // shell. The fade is symmetric in both directions (opacity
+            // only) — the shell arrives the same way the splash leaves.
+            try? await Task.sleep(nanoseconds: 950_000_000)
+            withAnimation {
+                reveal = true
+            }
         }
     }
 }
@@ -700,6 +836,11 @@ struct Hairline: View {
 
 // MARK: - Headers
 
+/// Compact, native macOS page header. No card, no glass, no heavy container.
+/// Lives flush in the content area with a subtle hairline below, integrated
+/// into the layout — not floating. Hierarchy: eyebrow (group) → title (with
+/// optional symbol) → subtitle. Trailing actions align on the same row,
+/// vertically centered with the title block.
 struct ScreenHeader<Content: View>: View {
     let title: String
     var subtitle: String?
@@ -725,37 +866,43 @@ struct ScreenHeader<Content: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let eyebrow {
+            VStack(alignment: .leading, spacing: 2) {
+                if let eyebrow, !eyebrow.isEmpty {
                     Text(eyebrow)
-                        .font(.csEyebrow())
+                        .font(.csPageEyebrow)
                         .csForeground(CSColor.textTertiary)
                         .textCase(.uppercase)
-                        .tracking(0.6)
+                        .tracking(0.7)
+                        .lineLimit(1)
                         .accessibilityHidden(true)
                 }
-                HStack(spacing: 10) {
+                HStack(spacing: 7) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 20, weight: .semibold))
-                            .csForeground(CSColor.info)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .csForeground(CSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                     Text(title)
-                        .font(.csScreenTitle)
+                        .font(.csPageTitle)
                         .csForeground(CSColor.textPrimary)
-                        .tracking(-0.3)
+                        .tracking(-0.4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .accessibilityLabel(title)
                 }
-                if let subtitle {
+                if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.callout)
+                        .font(.csPageSubtitle)
                         .csForeground(CSColor.textSecondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: 12)
             trailing
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -768,24 +915,25 @@ struct SectionHeader: View {
     var systemImageColor: Color? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10.5, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.csEyebrow())
+                .font(.csEyebrow(size: 10))
                 .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
-                .tracking(0.6)
-            if let subtitle {
+                .tracking(0.65)
+            if let subtitle, !subtitle.isEmpty {
                 Text("·")
                     .csForeground(CSColor.textTertiary)
                 Text(subtitle)
                     .font(.caption)
                     .csForeground(CSColor.textTertiary)
+                    .lineLimit(1)
             }
             Spacer()
         }
@@ -796,56 +944,14 @@ struct SectionHeader: View {
 
 // MARK: - Page chrome
 
-/// Single breadcrumb row that lives inside the content/header container and
-/// aligns to the content grid. Never floats detached in the toolbar.
+/// Deprecated breadcrumb (kept for API compatibility). The native header no
+/// longer renders a floating "ContextSphere > Workspace > Section" card.
+/// Retained as a no-op so existing call sites compile without change.
 struct ContentBreadcrumb: View {
     let section: AppSection
     var activeWorkspace: Workspace? = nil
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("ContextSphere")
-                .font(.system(size: 11, weight: .medium))
-                .csForeground(CSColor.textTertiary)
-                .accessibilityHidden(true)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
-                .csForeground(CSColor.textTertiary)
-                .opacity(0.55)
-                .accessibilityHidden(true)
-            if let ws = activeWorkspace {
-                HStack(spacing: 4) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.85))
-                        .accessibilityHidden(true)
-                    Text(ws.name)
-                        .font(.system(size: 11.5, weight: .regular))
-                        .csForeground(CSColor.textSecondary)
-                        .lineLimit(1)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .csForeground(CSColor.textTertiary)
-                    .opacity(0.55)
-                    .accessibilityHidden(true)
-            }
-            HStack(spacing: 5) {
-                Image(systemName: section.symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.cs(CSColor.textSecondary))
-                    .accessibilityHidden(true)
-                Text(section.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .tracking(-0.1)
-                    .csForeground(CSColor.textPrimary)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(breadcrumbLabel)
-    }
+    var body: some View { EmptyView() }
 
     private var breadcrumbLabel: String {
         if let ws = activeWorkspace { return "ContextSphere, \(ws.name), \(section.title)" }
@@ -853,9 +959,12 @@ struct ContentBreadcrumb: View {
     }
 }
 
-/// Consistent header chrome used by every page. Eyebrow → icon/title → subtitle
-/// hierarchy, spacing 4/10/16, left-aligned to the content grid inside a soft
-/// glass container. All pages should use this rather than ad-hoc HStacks.
+/// Compact native header used by every page. Replaces the former
+/// rounded glass card: flush, tight, with a hairline separator below.
+/// - Eyebrow: group label (e.g. "WORKSPACE") plus optional workspace name.
+/// - Title: 17pt semibold, with a 13.5pt secondary symbol.
+/// - Subtitle: 12.5pt secondary, single line.
+/// Trailing actions are aligned on the same row.
 struct StandardPageHeader<Content: View>: View {
     let section: AppSection
     var activeWorkspace: Workspace? = nil
@@ -890,37 +999,133 @@ struct StandardPageHeader<Content: View>: View {
         self.init(section: section, activeWorkspace: activeWorkspace, title: title, subtitle: subtitle, symbol: symbol, eyebrow: eyebrow) { EmptyView() }
     }
 
+    /// Effective eyebrow: group label plus workspace context when available,
+    /// rendered as a single compact line.
+    private var effectiveEyebrow: String? {
+        guard let eyebrow, !eyebrow.isEmpty else {
+            // Fall back to workspace name if no group eyebrow supplied
+            return activeWorkspace?.name
+        }
+        if let ws = activeWorkspace, !ws.name.isEmpty {
+            // Show: "WORKSPACE  ·  MyProject" — group stays caps, workspace readable
+            // We upper-case group only; workspace kept as-is but eyebrow view
+            // will upper-case the whole string. To preserve workspace casing we
+            // need custom rendering. Return nil and handle in body when both exist.
+            return nil
+        }
+        return eyebrow
+    }
+
+    private var hasCompositeEyebrow: Bool {
+        eyebrow != nil && activeWorkspace != nil && !(activeWorkspace?.name.isEmpty ?? true)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ContentBreadcrumb(section: section, activeWorkspace: activeWorkspace)
-            ScreenHeader(title, subtitle: subtitle, symbol: symbol, eyebrow: eyebrow) { trailing }
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                if hasCompositeEyebrow, let eyebrow, let ws = activeWorkspace {
+                    HStack(spacing: 5) {
+                        Text(eyebrow)
+                            .font(.csPageEyebrow)
+                            .csForeground(CSColor.textTertiary)
+                            .textCase(.uppercase)
+                            .tracking(0.7)
+                            .lineLimit(1)
+                        Text("·")
+                            .font(.system(size: 10, weight: .medium))
+                            .csForeground(CSColor.textTertiary)
+                        Text(ws.name)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .csForeground(CSColor.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(eyebrow), \(ws.name)")
+                } else if let eyebrow, !eyebrow.isEmpty {
+                    Text(eyebrow)
+                        .font(.csPageEyebrow)
+                        .csForeground(CSColor.textTertiary)
+                        .textCase(.uppercase)
+                        .tracking(0.7)
+                        .lineLimit(1)
+                        .accessibilityHidden(true)
+                } else if let ws = activeWorkspace {
+                    Text(ws.name)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .csForeground(CSColor.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                HStack(spacing: 7) {
+                    if let symbol {
+                        Image(systemName: symbol)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .csForeground(CSColor.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                    Text(title)
+                        .font(.csPageTitle)
+                        .csForeground(CSColor.textPrimary)
+                        .tracking(-0.4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .accessibilityLabel(title)
+                }
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.csPageSubtitle)
+                        .csForeground(CSColor.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 12)
+            trailing
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Shared scaffold: ScrollView + content grid + safeAreaInset glass header.
-/// Breadcrumb inside `header` is aligned to the same maxWidth grid as `content`.
+/// Native page scaffold: header pinned above, subtle hairline, then
+/// scrollable content. No floating glass card, no excessive padding.
+/// Header and content share the same maxWidth grid.
 struct PageScaffold<Header: View, Content: View>: View {
     @ViewBuilder var header: Header
     @ViewBuilder var content: Content
     var body: some View {
-        ScrollView {
-            content
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-        }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
-        .safeAreaInset(edge: .top, spacing: 8) {
+        VStack(spacing: 0) {
             header
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.pageHeaderHorizontalPadding)
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            ScrollView {
+                content
+                    .frame(maxWidth: Theme.contentMaxWidth)
+                    .padding(.horizontal, Theme.pageHeaderHorizontalPadding)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
+            .defaultScrollAnchor(.top)
+        }
+    }
+}
+
+/// Variant for pages that don't scroll the whole body (e.g. split panes).
+/// Header with hairline, then custom content filling remaining space.
+struct PageSplitScaffold<Header: View, Content: View>: View {
+    @ViewBuilder var header: Header
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, Theme.pageHeaderHorizontalPadding)
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            content
         }
     }
 }
@@ -1158,7 +1363,7 @@ struct ToolbarIconButton: View {
 }
 
 struct HeroCard<Content: View>: View {
-    var cornerRadius: CGFloat = Theme.cornerXLarge
+    var cornerRadius: CGFloat = Theme.cornerLarge
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -1166,14 +1371,14 @@ struct HeroCard<Content: View>: View {
             .padding(Theme.cardPaddingLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color.cs(CSColor.surfaceHero).opacity(0.94),
+                Color.cs(CSColor.surface).opacity(0.92),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
-            .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
+            .shadow(color: .black.opacity(0.04), radius: 10, y: 3)
     }
 }
 

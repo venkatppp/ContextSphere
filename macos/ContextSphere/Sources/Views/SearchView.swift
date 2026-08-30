@@ -15,34 +15,41 @@ struct SearchView: View {
 
     @FocusState private var searchFieldFocused: Bool
     @FocusState private var focusedRowID: String?
+    @State private var containerWidth: CGFloat = 1024
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                searchField
-                if let notice = viewModel.notice {
-                    Text(notice)
-                        .font(.callout)
-                        .csForeground(CSColor.textSecondary)
-                        .padding(.horizontal, 4)
-                        .accessibilityLabel(notice)
-                }
-                content
-            }
-            .frame(maxWidth: Theme.contentMaxWidth)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
-        }
-        .scrollEdgeEffectStyle(.soft, for: .vertical)
-        .safeAreaInset(edge: .top, spacing: 8) {
+        VStack(spacing: 0) {
             header
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .frame(maxWidth: Theme.contentMaxWidth)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, Theme.pageHeaderVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Hairline(opacity: Theme.pageHeaderDividerOpacity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    searchField
+                    if let notice = viewModel.notice {
+                        Text(notice)
+                            .font(.callout)
+                            .csForeground(CSColor.textSecondary)
+                            .padding(.horizontal, 4)
+                            .accessibilityLabel(notice)
+                    }
+                    content
+                }
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .scrollIndicators(.automatic)
+            .defaultScrollAnchor(.top)
+        }
+        .overlay {
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+            .frame(height: 0)
         }
         .task { await viewModel.loadInitialData() }
         .onChange(of: viewModel.state) { _, newState in
