@@ -241,7 +241,7 @@ struct MemoryDetailView: View {
             ForEach(plan.tasks, id: \.id) { task in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(task.completed ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                     Text(task.description)
                         .font(.caption)

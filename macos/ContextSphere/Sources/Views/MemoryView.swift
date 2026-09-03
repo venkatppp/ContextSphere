@@ -64,7 +64,7 @@ struct MemoryView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
             }
         }
         .buttonStyle(.borderless)
@@ -172,7 +172,7 @@ struct MemoryView: View {
                 .textCase(.uppercase)
                 .tracking(0.5)
             Text(value.map(String.init) ?? "—")
-                .font(.csMetric(size: 24))
+                .font(.csMetric(size: 26))
                 .csForeground(CSColor.textPrimary)
                 .monospacedDigit()
                 .accessibilityLabel("\(label): \(value.map(String.init) ?? "unknown")")
@@ -848,7 +848,7 @@ private struct MemoryRow: View {
         Button(action: onSelect) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: hit.record.kind.symbol)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(hit.record.status == .success ? Color.cs(CSColor.success) : Color.cs(CSColor.textSecondary))
                     .frame(width: 22)
                     .accessibilityHidden(true)

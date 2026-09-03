@@ -73,10 +73,10 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
                 Text("Categories")
-                    .font(.csEyebrow(size: 10))
+                    .font(.csEyebrow(size: 12))
                     .tracking(0.7)
                     .csForeground(CSColor.textTertiary)
                 Spacer()
@@ -98,7 +98,7 @@ struct SettingsView: View {
                 Hairline()
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .csForeground(CSColor.textTertiary)
                     Text("ContextSphere v\(CoreBridge.shared.backendVersion ?? "—")")
                         .font(.caption2.monospacedDigit())
@@ -118,13 +118,13 @@ struct SettingsView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: cat.symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .frame(width: 18)
                     .csForeground(isSelected
                                   ? CSColor.sidebarSelectedTint
                                   : CSColor.textSecondary)
                 Text(cat.title)
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: 15, weight: isSelected ? .medium : .regular))
                     .csForeground(isSelected
                                   ? CSColor.textPrimary
                                   : CSColor.textPrimary)
@@ -293,32 +293,71 @@ struct SettingsView: View {
                             .csForeground(CSColor.textSecondary)
                     }
                     Spacer()
-                    Picker("Theme", selection: $appearance.mode) {
-                        ForEach(AppearanceMode.allCases) { mode in
-                            Label(mode.title, systemImage: mode.symbol).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 280)
-                    .accessibilityLabel("Theme")
+                    Text(appearance.mode.title)
+                        .font(.caption.weight(.semibold))
+                        .csForeground(CSColor.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.cs(CSColor.borderSubtle)))
+                        .accessibilityLabel("Current theme: \(appearance.mode.title)")
                 }
-                // Visual swatches
+                // Visual swatches — tiles are the primary control (Picker removed to avoid duplication)
                 HStack(alignment: .top, spacing: 12) {
-                    themeSwatch(label: "Dark",
+                    themeTileButton(mode: .dark,
                                 top: Color(red: 0.085, green: 0.090, blue: 0.115),
-                                bottom: Color(red: 0.055, green: 0.060, blue: 0.085),
-                                isActive: appearance.mode == .dark)
-                    themeSwatch(label: "Light",
+                                bottom: Color(red: 0.055, green: 0.060, blue: 0.085))
+                    themeTileButton(mode: .light,
                                 top: Color(red: 0.985, green: 0.988, blue: 0.995),
-                                bottom: Color(red: 0.945, green: 0.955, blue: 0.975),
-                                isActive: appearance.mode == .light)
-                    themeSwatch(label: "System",
+                                bottom: Color(red: 0.945, green: 0.955, blue: 0.975))
+                    themeTileButton(mode: .system,
                                 top: Color(red: 0.55, green: 0.55, blue: 0.58),
-                                bottom: Color(red: 0.30, green: 0.30, blue: 0.34),
-                                isActive: appearance.mode == .system)
+                                bottom: Color(red: 0.30, green: 0.30, blue: 0.34))
                 }
             }
         }
+    }
+
+    private func themeTileButton(mode: AppearanceMode, top: Color, bottom: Color) -> some View {
+        let isActive = appearance.mode == mode
+        return Button {
+            appearance.mode = mode
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                ZStack(alignment: .topLeading) {
+                    LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Capsule().fill(.white.opacity(0.6)).frame(width: 36, height: 4)
+                        Capsule().fill(.white.opacity(0.25)).frame(width: 60, height: 3)
+                        HStack(spacing: 3) {
+                            Circle().fill(.white.opacity(0.4)).frame(width: 8, height: 8)
+                            Capsule().fill(.white.opacity(0.20)).frame(width: 30, height: 3)
+                        }
+                    }
+                    .padding(8)
+                }
+                .frame(width: 100, height: 64)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(isActive ? Color.accentColor : Color.cs(CSColor.border),
+                                      lineWidth: isActive ? 2 : 0.5)
+                )
+                HStack(spacing: 4) {
+                    if isActive {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    Text(mode.title)
+                        .font(.caption2.weight(isActive ? .semibold : .regular))
+                        .csForeground(isActive ? CSColor.sidebarSelectedTint : CSColor.textSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Switch to \(mode.title) theme")
+        .accessibilityLabel("\(mode.title) theme")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private func themeSwatch(label: String, top: Color, bottom: Color, isActive: Bool) -> some View {
@@ -326,7 +365,6 @@ struct SettingsView: View {
             ZStack(alignment: .topLeading) {
                 LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                // Mini content mock
                 VStack(alignment: .leading, spacing: 4) {
                     Capsule().fill(.white.opacity(0.6)).frame(width: 36, height: 4)
                     Capsule().fill(.white.opacity(0.25)).frame(width: 60, height: 3)
@@ -438,7 +476,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Circle().fill(score.status == "excellent" || score.status == "good" ? Color.cs(CSColor.success) : score.status == "fair" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).frame(width: 8, height: 8)
-                            Text("\(String(format: "%.0f", score.score)) / 100").font(.system(size: 22, weight: .bold).monospacedDigit()).csForeground(CSColor.textPrimary)
+                            Text("\(String(format: "%.0f", score.score)) / 100").font(.system(size: 24, weight: .bold).monospacedDigit()).csForeground(CSColor.textPrimary)
                             CSStatusBadge(text: score.status.capitalized, kind: score.status == "excellent" || score.status == "good" ? .success : score.status == "fair" ? .warning : .error)
                         }
                         Text("\(score.passedChecks) of \(score.totalChecks) checks passed · \(score.failedChecks) failed").font(.caption).csForeground(CSColor.textSecondary)
@@ -583,7 +621,7 @@ struct SettingsCard<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .csForeground(CSColor.info)
                 }
                 Text(title)

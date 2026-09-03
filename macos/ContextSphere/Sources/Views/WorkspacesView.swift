@@ -178,10 +178,10 @@ struct WorkspacesView: View {
                         } header: {
                             HStack(spacing: 6) {
                                 Image(systemName: "folder.fill")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .csForeground(CSColor.textTertiary)
                                 Text("Active")
-                                    .font(.csEyebrow(size: 10))
+                                    .font(.csEyebrow(size: 12))
                                     .tracking(0.7)
                                     .csForeground(CSColor.textTertiary)
                                 Spacer()
@@ -202,10 +202,10 @@ struct WorkspacesView: View {
                         } header: {
                             HStack(spacing: 6) {
                                 Image(systemName: "archivebox")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .csForeground(CSColor.textTertiary)
                                 Text("Archived")
-                                    .font(.csEyebrow(size: 10))
+                                    .font(.csEyebrow(size: 12))
                                     .tracking(0.7)
                                     .csForeground(CSColor.textTertiary)
                                 Spacer()

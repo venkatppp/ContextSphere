@@ -137,7 +137,7 @@ struct CanvasGraphRenderer: GraphRenderer {
                 let title = node.displayTitle
                 let label = context.resolve(
                     Text(title)
-                        .font(.system(size: 11,
+                        .font(.system(size: 13,
                                       weight: node.isSelected || node.isFocused
                                         ? .semibold : .regular))
                         .foregroundStyle(Color.cs(CSColor.textPrimary).opacity(node.opacity))

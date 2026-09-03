@@ -11,7 +11,7 @@ struct WorkspaceListRow: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.accentColor.opacity(0.12))
                 Image(systemName: workspace.status == .active ? "folder.fill" : "archivebox.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
             }
             .frame(width: 30, height: 30)
@@ -23,7 +23,7 @@ struct WorkspaceListRow: View {
                         .csForeground(CSColor.textPrimary)
                     if workspace.status == .archived {
                         Text("Archived")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .csForeground(CSColor.textTertiary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)

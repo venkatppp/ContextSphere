@@ -116,12 +116,12 @@ struct SearchView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .csForeground(CSColor.textSecondary)
                 .accessibilityHidden(true)
             TextField("Search your context…", text: $viewModel.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(.system(size: 16))
                 .focused($searchFieldFocused)
                 .defaultFocus($searchFieldFocused, true)
                 .onSubmit { viewModel.submit() }
@@ -193,7 +193,7 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                 Text("Recent")
                     .font(.csEyebrow())
@@ -259,7 +259,7 @@ struct SearchView: View {
             if !viewModel.savedSearches.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "bookmark")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .csForeground(CSColor.textSecondary)
                     Text("Saved")
                         .font(.csEyebrow())
@@ -286,7 +286,7 @@ struct SearchView: View {
     private func savedRow(_ saved: SavedSearch) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "bookmark.fill")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Button {
@@ -349,7 +349,7 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                 Text("Results")
                     .font(.csEyebrow())
@@ -470,7 +470,7 @@ struct SearchResultRow: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: result.entityType.symbol)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(result.entityType.color)
                     .frame(width: 22)
                     .accessibilityHidden(true)
@@ -542,7 +542,7 @@ struct SearchResultRow: View {
             action()
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .frame(width: 26, height: 26)
                 .background(Color.cs(CSColor.borderSubtle), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .contentShape(Rectangle())

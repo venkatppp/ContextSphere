@@ -102,7 +102,7 @@ struct TimelineView: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                     }
                 }
                 .buttonStyle(.borderless)
@@ -263,7 +263,7 @@ struct TimelineView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "rectangle.stack")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .csForeground(CSColor.textSecondary)
                     Text("Sessions")
                         .font(.csEyebrow())
@@ -478,7 +478,7 @@ struct TimelineEventRow: View {
     private var rowHeader: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: event.eventType.symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(event.eventType.color)
                 .accessibilityHidden(true)
             Text(event.displayTitle)

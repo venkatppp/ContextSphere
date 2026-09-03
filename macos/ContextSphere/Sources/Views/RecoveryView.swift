@@ -51,7 +51,7 @@ struct RecoveryView: View {
         ) {
             HStack(spacing: 8) {
                 Button { Task { await viewModel.refresh() } } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
@@ -116,7 +116,7 @@ struct RecoveryView: View {
                 HStack(alignment: .top, spacing: 16) {
                     HStack(spacing: 12) {
                         Text("\(String(format: "%.0f", s.overallScore))")
-                            .font(.system(size: 30, weight: .bold).monospacedDigit())
+                            .font(.system(size: 32, weight: .bold).monospacedDigit())
                             .foregroundStyle(s.status == "healthy" ? Color.cs(CSColor.success) : s.status == "degraded" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Score / 100").font(.caption2).csForeground(CSColor.textSecondary)
@@ -150,7 +150,7 @@ struct RecoveryView: View {
                     let total = viewModel.crashes.count
                     HStack(spacing: 6) {
                         Image(systemName: recoveredCount == total ? "checkmark.seal.fill" : "info.circle.fill")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(recoveredCount == total ? Color.cs(CSColor.success) : Color.cs(CSColor.warning))
                         Text(recoveredCount == total
                              ? "System is healthy because all \(total) past interruptions were recovered via checkpoint."
@@ -162,7 +162,7 @@ struct RecoveryView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
                 } else if let j = viewModel.latestCheckpoint {
                     HStack(spacing: 6) {
-                        Image(systemName: "flag.checkered").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.textSecondary)
+                        Image(systemName: "flag.checkered").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textSecondary)
                         Text("Recovery point is checkpoint #\(j.id) (\(j.state)) — rollback would restore to this state.")
                             .font(.caption).csForeground(CSColor.textSecondary)
                     }
@@ -190,7 +190,7 @@ struct RecoveryView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Health", subtitle: s.status.capitalized, symbol: s.status == "healthy" ? "checkmark.shield.fill" : s.status == "degraded" ? "exclamationmark.shield" : "xmark.shield.fill")
                 HStack(spacing: 16) {
-                    Text("\(String(format: "%.0f", s.overallScore))").font(.system(size: 28, weight: .bold).monospacedDigit()).foregroundStyle(s.status == "healthy" ? Color.cs(CSColor.success) : s.status == "degraded" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
+                    Text("\(String(format: "%.0f", s.overallScore))").font(.system(size: 30, weight: .bold).monospacedDigit()).foregroundStyle(s.status == "healthy" ? Color.cs(CSColor.success) : s.status == "degraded" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Score / 100").font(.caption2).csForeground(CSColor.textSecondary)
                         Text(s.capturedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
@@ -250,7 +250,7 @@ struct RecoveryView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(crashColor(c).opacity(0.14))
-                                    Image(systemName: crashSymbol(c)).font(.system(size: 11, weight: .semibold)).foregroundStyle(crashColor(c))
+                                    Image(systemName: crashSymbol(c)).font(.system(size: 13, weight: .semibold)).foregroundStyle(crashColor(c))
                                 }.frame(width: 28, height: 28)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
