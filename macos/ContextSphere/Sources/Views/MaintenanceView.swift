@@ -55,7 +55,7 @@ struct MaintenanceView: View {
         ) {
             HStack(spacing: 8) {
                 Button { Task { await viewModel.refresh() } } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
@@ -87,7 +87,7 @@ struct MaintenanceView: View {
     private func errorState(_ msg: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 32, weight: .light))
+                .font(.system(size: 34, weight: .light))
                 .csForeground(CSColor.warning)
             Text("Maintenance unavailable")
                 .font(.title3.weight(.semibold))
@@ -136,7 +136,7 @@ struct MaintenanceView: View {
                 pendingCard(pending)
             } else {
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.success)
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.success)
                     Text("No pending restore").font(.caption).csForeground(CSColor.textSecondary)
                     Spacer()
                     Text("A staged restore applies on next launch").font(.caption2).csForeground(CSColor.textTertiary)

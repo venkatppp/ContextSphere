@@ -53,7 +53,7 @@ struct PerformanceView: View {
                 Button {
                     Task { await viewModel.refreshAll() }
                 } label: {
-                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .medium)) }
+                    if viewModel.isFetching { ProgressView().controlSize(.small) } else { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh performance")

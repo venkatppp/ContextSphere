@@ -425,25 +425,25 @@ enum Theme {
 // MARK: - Typography
 
 extension Font {
-    static let csScreenTitle  = Font.system(size: 17, weight: .semibold, design: .default)
-    static let csSectionTitle = Font.system(size: 14, weight: .semibold, design: .default)
-    static let csCardTitle    = Font.system(size: 13, weight: .semibold, design: .default)
-    static let csBody         = Font.system(size: 12.5, weight: .regular, design: .default)
-    static let csSecondary    = Font.system(size: 12.5, weight: .regular, design: .default)
-    static let csMetadata     = Font.system(size: 11, weight: .regular, design: .default)
-    static let csEyebrowFont: Font = .system(size: 10, weight: .semibold, design: .default)
-    static func csEyebrow(size: CGFloat = 10) -> Font {
+    static let csScreenTitle  = Font.system(size: 19, weight: .semibold, design: .default)
+    static let csSectionTitle = Font.system(size: 16, weight: .semibold, design: .default)
+    static let csCardTitle    = Font.system(size: 15, weight: .semibold, design: .default)
+    static let csBody         = Font.system(size: 14.5, weight: .regular, design: .default)
+    static let csSecondary    = Font.system(size: 14.5, weight: .regular, design: .default)
+    static let csMetadata     = Font.system(size: 13, weight: .regular, design: .default)
+    static let csEyebrowFont: Font = .system(size: 12, weight: .semibold, design: .default)
+    static func csEyebrow(size: CGFloat = 12) -> Font {
         .system(size: size, weight: .semibold, design: .default)
     }
-    static func csMetric(size: CGFloat = 28) -> Font {
+    static func csMetric(size: CGFloat = 30) -> Font {
         .system(size: size, weight: .semibold, design: .rounded)
     }
     /// Compact page title (native macOS — 17pt semibold, -0.4 tracking).
-    static let csPageTitle = Font.system(size: 17, weight: .semibold, design: .default)
+    static let csPageTitle = Font.system(size: 19, weight: .semibold, design: .default)
     /// Eyebrow / kicker (10pt semibold caps, 0.7 tracking).
-    static let csPageEyebrow = Font.system(size: 10, weight: .semibold, design: .default)
+    static let csPageEyebrow = Font.system(size: 12, weight: .semibold, design: .default)
     /// Page subtitle (12.5pt regular secondary).
-    static let csPageSubtitle = Font.system(size: 12.5, weight: .regular, design: .default)
+    static let csPageSubtitle = Font.system(size: 14.5, weight: .regular, design: .default)
 }
 
 // MARK: - Foreground helpers
@@ -556,11 +556,11 @@ struct LaunchSplashView: View {
             VStack(spacing: 16) {
                 mark
                 Text("ContextSphere")
-                    .font(.system(size: 28, weight: .semibold, design: .default))
+                    .font(.system(size: 30, weight: .semibold, design: .default))
                     .tracking(-0.55)
                     .foregroundStyle(.primary)
                 Text("Context intelligence, distilled")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .tracking(0.18)
                     .foregroundStyle(.secondary)
             }
@@ -589,7 +589,7 @@ struct LaunchSplashView: View {
                 }
                 .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.primary)
         }
         .frame(width: 54, height: 54)
@@ -879,7 +879,7 @@ struct ScreenHeader<Content: View>: View {
                 HStack(spacing: 7) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 13.5, weight: .semibold))
+                            .font(.system(size: 15.5, weight: .semibold))
                             .csForeground(CSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
@@ -918,12 +918,12 @@ struct SectionHeader: View {
         HStack(spacing: 7) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.csEyebrow(size: 10))
+                .font(.csEyebrow(size: 12))
                 .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.65)
@@ -1032,10 +1032,10 @@ struct StandardPageHeader<Content: View>: View {
                             .tracking(0.7)
                             .lineLimit(1)
                         Text("·")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .csForeground(CSColor.textTertiary)
                         Text(ws.name)
-                            .font(.system(size: 10.5, weight: .medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .csForeground(CSColor.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -1052,7 +1052,7 @@ struct StandardPageHeader<Content: View>: View {
                         .accessibilityHidden(true)
                 } else if let ws = activeWorkspace {
                     Text(ws.name)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -1060,7 +1060,7 @@ struct StandardPageHeader<Content: View>: View {
                 HStack(spacing: 7) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 13.5, weight: .semibold))
+                            .font(.system(size: 15.5, weight: .semibold))
                             .csForeground(CSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
@@ -1143,7 +1143,7 @@ struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: symbol)
-                .font(.system(size: 36, weight: .light))
+                .font(.system(size: 38, weight: .light))
                 .csForeground(CSColor.textTertiary)
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
@@ -1259,7 +1259,7 @@ struct CSStatusBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage ?? kind.symbol)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
             Text(text)
                 .font(.caption2.weight(.semibold))
         }
@@ -1281,7 +1281,7 @@ struct MetaChip: View {
         HStack(spacing: 3) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             Text(text)
                 .font(.caption2)
@@ -1304,7 +1304,7 @@ struct CSStatTile: View {
             HStack(spacing: 6) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .csForeground(CSColor.textSecondary)
                         .accessibilityHidden(true)
                 }
@@ -1315,7 +1315,7 @@ struct CSStatTile: View {
                     .tracking(0.5)
             }
             Text(value)
-                .font(.csMetric(size: 24))
+                .font(.csMetric(size: 26))
                 .csForeground(CSColor.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -1324,7 +1324,7 @@ struct CSStatTile: View {
             if let trend {
                 HStack(spacing: 2) {
                     Image(systemName: trend.isPositive ? "arrow.up.right" : "arrow.down.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                     Text(trend.text)
                         .font(.caption2)
                 }
@@ -1352,7 +1352,7 @@ struct ToolbarIconButton: View {
     var body: some View {
         Button(role: role, action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .frame(width: 22, height: 22)
         }
         .buttonStyle(.borderless)
@@ -1393,7 +1393,7 @@ struct PillButton: View {
             HStack(spacing: 4) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 Text(title)
                     .font(.caption.weight(.medium))
@@ -1454,7 +1454,7 @@ struct StatusBanner: View {
         let token = style.token
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: style.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .csForeground(token)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {

@@ -42,7 +42,7 @@ struct GraphInspectorView: View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "sidebar.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                 Text("Inspector")
                     .font(.csEyebrow())
@@ -55,7 +55,7 @@ struct GraphInspectorView: View {
                 viewModel.showInspector = false
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                     .frame(width: 22, height: 22)
                     .background(
@@ -74,7 +74,7 @@ struct GraphInspectorView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: node.nodeType.symbol)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .csForeground(node.nodeType.colorToken)
                     .frame(width: 32, height: 32)
                     .background(
@@ -139,7 +139,7 @@ struct GraphInspectorView: View {
     private func metadataRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .csForeground(CSColor.textSecondary)
                 .frame(width: 16)
             Text(label)

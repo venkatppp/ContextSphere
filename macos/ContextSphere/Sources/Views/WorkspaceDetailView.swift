@@ -53,7 +53,7 @@ struct WorkspaceDetailView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "text.alignleft")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .csForeground(CSColor.textSecondary)
                     Text("Description")
                         .font(.csEyebrow())
@@ -86,7 +86,7 @@ struct WorkspaceDetailView: View {
                 if let report = healthReport {
                     HStack(spacing: 16) {
                         Text("\(Int((report.overallScore * 100).rounded()))")
-                            .font(.system(size: 30, weight: .bold).monospacedDigit())
+                            .font(.system(size: 32, weight: .bold).monospacedDigit())
                             .foregroundStyle(healthColor(report.overallScore))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("of 100")
@@ -188,7 +188,7 @@ struct WorkspaceDetailView: View {
                     .fill(Color.accentColor.opacity(0.14))
                     .frame(width: 48, height: 48)
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.tint)
             }
             .accessibilityHidden(true)
@@ -228,7 +228,7 @@ struct WorkspaceDetailView: View {
                         .csForeground(CSColor.textSecondary)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(Int(workspace.healthScore))")
-                            .font(.system(size: 28, weight: .bold).monospacedDigit())
+                            .font(.system(size: 30, weight: .bold).monospacedDigit())
                             .foregroundStyle(healthColor)
                         Text("%")
                             .font(.caption.weight(.semibold))

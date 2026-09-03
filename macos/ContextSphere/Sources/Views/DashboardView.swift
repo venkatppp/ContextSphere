@@ -99,7 +99,65 @@ struct DashboardView: View {
             subtitle: "Here's what ContextSphere remembers about your work.",
             symbol: AppSection.dashboard.symbol,
             eyebrow: NavGroup.workspace.title.uppercased()
-        )
+        ) {
+            dashboardSwitchControl
+        }
+    }
+
+    private var dashboardSwitchControl: some View {
+        Menu {
+            if !workspaces.isEmpty {
+                ForEach(workspaces.prefix(8)) { workspace in
+                    Button {
+                        Task { await switchTo(workspace) }
+                    } label: {
+                        Label(workspace.name,
+                              systemImage: workspace.status == .active
+                                ? "checkmark.circle.fill"
+                                : "folder")
+                    }
+                }
+                Divider()
+                Button("All Workspaces…") {
+                    AppRouter.shared.selection = .workspaces
+                }
+            } else {
+                Button("Create your first workspace") {
+                    AppRouter.shared.selection = .workspaces
+                    AppRouter.shared.newWorkspaceRequest = true
+                }
+            }
+        } label: {
+            Label("Switch Workspace", systemImage: "rectangle.2.swap")
+                .font(.system(size: 15, weight: .medium))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.16))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.28), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Switch Workspace")
+        .accessibilityHint("Opens workspace switcher")
+        .help("Switch active workspace")
+    }
+
+    private func switchTo(_ workspace: Workspace) async {
+        do {
+            try await CoreBridge.shared.call("switch_workspace", params: ["id": workspace.id])
+            await MainActor.run {
+                AppRouter.shared.reloadRequest = true
+            }
+        } catch {
+        }
     }
 
     private func dashboardPadding(for width: CGFloat) -> CGFloat {
@@ -114,7 +172,7 @@ struct DashboardView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.accentColor.opacity(0.14))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.5))
-                    Image(systemName: "folder.fill").font(.system(size: 20, weight: .semibold)).foregroundStyle(Color.accentColor)
+                    Image(systemName: "folder.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 44, height: 44).shadow(color: .black.opacity(0.06), radius: 6, y: 2).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
@@ -200,10 +258,10 @@ struct DashboardView: View {
     private func dashboardMetricTile(label: String, value: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).csForeground(CSColor.textTertiary).opacity(0.9).accessibilityHidden(true)
-                Text(label).font(.system(size: 10, weight: .semibold)).tracking(0.6).csForeground(CSColor.textTertiary).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.8)
+                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary).opacity(0.9).accessibilityHidden(true)
+                Text(label).font(.system(size: 12, weight: .semibold)).tracking(0.6).csForeground(CSColor.textTertiary).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.8)
             }
-            Text(value).font(.csMetric(size: 26)).csForeground(CSColor.textPrimary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.csMetric(size: 28)).csForeground(CSColor.textPrimary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14).padding(.vertical, 14)
@@ -231,32 +289,32 @@ struct DashboardView: View {
                 ContentCard {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
-                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
-                            Text("WHAT HAPPENED?").font(.csEyebrow(size: 11)).tracking(0.6).csForeground(CSColor.textPrimary).textCase(.uppercase)
+                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+                            Text("WHAT HAPPENED?").font(.csEyebrow(size: 13)).tracking(0.6).csForeground(CSColor.textPrimary).textCase(.uppercase)
                             Spacer()
                             Text(wh.dateLabel).font(.caption2.weight(.medium)).csForeground(CSColor.textSecondary).padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)))
                         }
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(wh.title).font(.system(size: 15, weight: .semibold)).tracking(-0.2).csForeground(CSColor.textPrimary).fixedSize(horizontal: false, vertical: true)
+                            Text(wh.title).font(.system(size: 17, weight: .semibold)).tracking(-0.2).csForeground(CSColor.textPrimary).fixedSize(horizontal: false, vertical: true)
                             Text(wh.summary).font(.callout).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                         HStack(spacing: 14) {
-                            VStack(alignment: .leading, spacing: 4) { Text("APPS").font(.system(size: 9, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text(wh.apps.map { $0.joined(separator: " ") }.joined(separator: " · ")).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2) }
+                            VStack(alignment: .leading, spacing: 4) { Text("APPS").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text(wh.apps.map { $0.joined(separator: " ") }.joined(separator: " · ")).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2) }
                             Spacer()
-                            VStack(alignment: .leading, spacing: 4) { Text("FILES").font(.system(size: 9, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.files)").font(.system(size: 15, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
-                            VStack(alignment: .leading, spacing: 4) { Text("SESSIONS").font(.system(size: 9, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.sessions)").font(.system(size: 15, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
+                            VStack(alignment: .leading, spacing: 4) { Text("FILES").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.files)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
+                            VStack(alignment: .leading, spacing: 4) { Text("SESSIONS").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.sessions)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.cs(CSColor.surfaceElevated).opacity(0.7)))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
                         if let outcome = wh.outcome {
                             VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) { Image(systemName: "checkmark.seal.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.cs(CSColor.success)).accessibilityHidden(true); Text("Outcome").font(.caption.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5) }
+                                HStack(spacing: 6) { Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cs(CSColor.success)).accessibilityHidden(true); Text("Outcome").font(.caption.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5) }
                                 Text(outcome).font(.callout).csForeground(CSColor.textPrimary)
                             }
                         } else {
                             VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) { Image(systemName: "info.circle").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textSecondary)).accessibilityHidden(true); Text("Note").font(.caption.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5) }
+                                HStack(spacing: 6) { Image(systemName: "info.circle").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textSecondary)).accessibilityHidden(true); Text("Note").font(.caption.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5) }
                                 Text("ContextSphere found activity related to \(wh.workspace), but there is not enough evidence to determine what was completed.").font(.callout).csForeground(CSColor.textSecondary)
                             }
                         }
@@ -291,7 +349,7 @@ struct DashboardView: View {
                                     Text(session.timeRange).font(.caption2.weight(.semibold).monospacedDigit()).csForeground(CSColor.textSecondary)
                                 }
                                 Text(session.title.capitalized).font(.caption2).csForeground(CSColor.textPrimary).lineLimit(1)
-                                Text("\(session.events.count) events").font(.system(size: 10)).csForeground(CSColor.textTertiary)
+                                Text("\(session.events.count) events").font(.system(size: 12)).csForeground(CSColor.textTertiary)
                             }
                             .padding(.horizontal, 10).padding(.vertical, 8)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.cs(CSColor.surfaceElevated).opacity(0.8)))
@@ -332,10 +390,10 @@ struct DashboardView: View {
                     ForEach(workspaces.prefix(3)) { ws in
                         HStack(spacing: 10) {
                             ZStack { RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ws.status == .active ? Color.accentColor.opacity(0.14) : Color.cs(CSColor.textTertiary).opacity(0.10))
-                                Image(systemName: "folder.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(ws.status == .active ? Color.accentColor : Color.cs(CSColor.textSecondary))
+                                Image(systemName: "folder.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(ws.status == .active ? Color.accentColor : Color.cs(CSColor.textSecondary))
                             }.frame(width: 28, height: 28).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 1) {
-                                HStack(spacing: 6) { Text(ws.name).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary); if ws.status == .active { CSStatusBadge(text: "Active", kind: .success) } }
+                                HStack(spacing: 6) { Text(ws.name).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary); if ws.status == .active { CSStatusBadge(text: "Active", kind: .success) } }
                                 Text(ws.lastActiveAt).font(.caption2).csForeground(CSColor.textTertiary).lineLimit(1)
                             }
                             Spacer()
@@ -362,9 +420,9 @@ struct DashboardView: View {
                         ForEach(ov.recentMemory) { item in
                             HStack(spacing: 12) {
                                 ZStack { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.cs(CSColor.textTertiary).opacity(0.10))
-                                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textSecondary))
+                                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textSecondary))
                                 }.frame(width: 28, height: 28).accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) { Text(item.title).font(.system(size: 12.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Text(item.subtitle).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1) }
+                                VStack(alignment: .leading, spacing: 2) { Text(item.title).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Text(item.subtitle).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1) }
                                 Spacer(minLength: 8)
                                 Text(item.dateLabel).font(.caption2.weight(.medium)).csForeground(CSColor.textTertiary)
                             }
@@ -401,7 +459,7 @@ private struct ActivityMiniHeat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 3) { ForEach(Array(blocks.enumerated()), id: \.offset) { _, v in RoundedRectangle(cornerRadius: 2, style: .continuous).fill(v == 0 ? Color.cs(CSColor.textTertiary).opacity(0.10) : Color.accentColor.opacity(0.18 + v * 0.72)).frame(height: 18) } }.frame(height: 18).accessibilityHidden(true)
-            HStack { Text("09:00").font(.system(size: 10).monospacedDigit()).csForeground(CSColor.textTertiary); Spacer(); Text("12:00").font(.system(size: 10).monospacedDigit()).csForeground(CSColor.textTertiary); Spacer(); Text("17:00").font(.system(size: 10).monospacedDigit()).csForeground(CSColor.textTertiary) }
+            HStack { Text("09:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary); Spacer(); Text("12:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary); Spacer(); Text("17:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary) }
         }
         .padding(.horizontal, 2)
         .accessibilityLabel("Activity intensity across today, from 09:00 to 17:00")

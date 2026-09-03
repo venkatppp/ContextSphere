@@ -127,7 +127,7 @@ struct GraphScreen: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: lens.symbol)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Text(lens.title)
                             .font(.caption.weight(.medium))
                     }
@@ -352,12 +352,12 @@ struct GraphScreen: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
                 TextField("Find in context…", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: 15))
                     .focused($searchFieldFocused)
                     .onSubmit { viewModel.submitSearch() }
                     .accessibilityLabel("Search graph nodes")
@@ -407,7 +407,7 @@ struct GraphScreen: View {
                     Button { viewModel.focusSearchResult(node) } label: {
                         HStack(spacing: 8) {
                             Image(systemName: node.nodeType.symbol)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                                 .csForeground(CSColor.textSecondary)
                                 .frame(width: 16)
                                 .accessibilityHidden(true)
@@ -499,7 +499,7 @@ struct GraphScreen: View {
     private func glassControlButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .frame(width: 28, height: 28)
                 .foregroundStyle(Color.cs(CSColor.textSecondary))
         }
@@ -578,7 +578,7 @@ struct GraphScreen: View {
         case .failed(let m):
             VStack(spacing: 14) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 32, weight: .light))
+                    .font(.system(size: 34, weight: .light))
                     .csForeground(CSColor.warning)
                 Text("Graph unavailable").font(.title3.weight(.semibold))
                     .csForeground(CSColor.textPrimary)

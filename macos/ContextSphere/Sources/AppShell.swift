@@ -336,12 +336,12 @@ private struct SidebarRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: section.symbol)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
                 .frame(width: 16, alignment: .center)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
                 .opacity(isSelected ? 1 : 0.9)
             Text(section.compactTitle)
-                .font(.system(size: 12.5, weight: isSelected ? .medium : .regular))
+                .font(.system(size: 14.5, weight: isSelected ? .medium : .regular))
                 .tracking(isSelected ? -0.1 : 0)
                 .csForeground(isSelected ? CSColor.textPrimary : CSColor.textPrimary)
                 .lineLimit(1)
@@ -351,7 +351,7 @@ private struct SidebarRow: View {
             if let key = section.shortcutKey {
                 ViewThatFits(in: .horizontal) {
                     Text("⌘\(String(key.character))")
-                        .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                         .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
                         .padding(.horizontal, 3.5)
                         .padding(.vertical, 1.5)
@@ -399,11 +399,11 @@ private struct SidebarGroupHeader: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: group.symbol)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 11.5, weight: .semibold))
                 .csForeground(CSColor.textTertiary)
                 .opacity(0.9)
             Text(group.title.uppercased())
-                .font(.csEyebrow(size: 10))
+                .font(.csEyebrow(size: 12))
                 .tracking(0.75)
                 .csForeground(CSColor.textTertiary)
             Spacer()
@@ -462,7 +462,7 @@ private struct SidebarHeader: View {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(Color.accentColor.opacity(0.15))
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .frame(width: 26, height: 26)
@@ -470,18 +470,18 @@ private struct SidebarHeader: View {
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(activeWorkspace?.name ?? "No workspace")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: 14.5, weight: .semibold))
                         .tracking(-0.15)
                         .lineLimit(1)
                         .csForeground(CSColor.textPrimary)
                     Text(headerSubtitle)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 12.5))
                         .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
                     .opacity(0.85)
             }
@@ -518,27 +518,27 @@ private struct ToolbarBreadcrumb: View {
             if let activeWorkspace {
                 HStack(spacing: 5) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.85))
                         .accessibilityHidden(true)
                     Text(activeWorkspace.name)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: 14, weight: .regular))
                         .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
                     .opacity(0.6)
                     .accessibilityHidden(true)
             }
             HStack(spacing: 5) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.cs(CSColor.textSecondary))
                     .accessibilityHidden(true)
                 Text(section.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .tracking(-0.18)
                     .csForeground(CSColor.textPrimary)
                     .lineLimit(1)
@@ -679,12 +679,12 @@ struct CommandPaletteView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .csForeground(CSColor.textSecondary)
                 .accessibilityHidden(true)
             TextField("Jump to anything…", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15))
+                .font(.system(size: 17))
                 .focused($fieldFocused)
                 .accessibilityLabel("Command palette")
             if !query.isEmpty {
@@ -743,16 +743,16 @@ struct CommandPaletteView: View {
     private func row(for item: Selection) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol(for: item))
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(selected(item) ? Color.accentColor : Color.cs(CSColor.textSecondary))
                 .frame(width: 20)
             Text(title(for: item))
-                .font(.system(size: 13))
+                .font(.system(size: 15))
                 .csForeground(CSColor.textPrimary)
             Spacer()
             if case .section(let section) = item, let shortcut = section.shortcutKey {
                 Text("⌘\(String(shortcut.character))")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .csForeground(CSColor.textTertiary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)

@@ -64,7 +64,7 @@ struct LearningView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
             }
         }
         .buttonStyle(.borderless)
