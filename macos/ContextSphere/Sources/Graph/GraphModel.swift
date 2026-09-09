@@ -77,9 +77,25 @@ struct GraphVisualizationModel {
     let workspaceLens: WorkspaceLens
     /// Adjacency for fast BFS / degree lookups.
     let adjacency: [String: Set<String>]
+    /// O(1) indexed lookup computed once at model creation
+    let nodeByID: [String: VisualNode]
 
-    var nodeByID: [String: VisualNode] {
-        Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+    init(nodes: [VisualNode],
+         edges: [VisualEdge],
+         clusters: [VisualCluster],
+         workspaceLens: WorkspaceLens,
+         adjacency: [String: Set<String>]) {
+        self.nodes = nodes
+        self.edges = edges
+        self.clusters = clusters
+        self.workspaceLens = workspaceLens
+        self.adjacency = adjacency
+        var map: [String: VisualNode] = [:]
+        map.reserveCapacity(nodes.count)
+        for n in nodes {
+            map[n.id] = n
+        }
+        self.nodeByID = map
     }
 
     /// Nodes sorted by importance descending (for semantic zoom).

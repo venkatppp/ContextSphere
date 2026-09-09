@@ -13,6 +13,7 @@ struct SearchView: View {
     /// Switches the app to the Workspaces section (existing navigation).
     let onRevealWorkspace: (String) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var searchFieldFocused: Bool
     @FocusState private var focusedRowID: String?
     @State private var containerWidth: CGFloat = 1024
@@ -35,6 +36,7 @@ struct SearchView: View {
                             .accessibilityLabel(notice)
                     }
                     content
+                        .animation(Theme.quick(reduceMotion), value: viewModel.state)
                 }
                 .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
                 .padding(.vertical, 16)
@@ -470,6 +472,7 @@ struct SearchResultRow: View {
     let action: () -> Void
     var onOpenFile: (() -> Void)? = nil
     var onRevealInFinder: (() -> Void)? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     var body: some View {
@@ -513,6 +516,8 @@ struct SearchResultRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowBackground)
             .overlay(rowOverlay)
+            .animation(Theme.quick(reduceMotion), value: isSelected)
+            .animation(Theme.quick(reduceMotion), value: isHovered)
             .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRegular, style: .continuous))
         }
         .buttonStyle(.plain)

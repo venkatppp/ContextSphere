@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkspaceListRow: View {
     let workspace: Workspace
     var isSelected = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     private var isArchived: Bool { workspace.status == .archived }
@@ -77,6 +78,8 @@ struct WorkspaceListRow: View {
             RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous)
                 .strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : .clear, lineWidth: 0.5)
         )
+        .animation(Theme.quick(reduceMotion), value: isSelected)
+        .animation(Theme.quick(reduceMotion), value: isHovered)
         .contentShape(RoundedRectangle(cornerRadius: Theme.cornerSmall, style: .continuous))
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)

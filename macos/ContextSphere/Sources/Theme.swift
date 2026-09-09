@@ -419,32 +419,62 @@ enum Theme {
     /// Centralized motion tokens for ContextSphere. All animations communicate
     /// CONTEXT → RELATIONSHIP → HIERARCHY → STATE → FEEDBACK, never decoration.
     enum Motion {
-        /// Immediate feedback: button press, hover, micro-interactions (0.18s)
-        static let instant: Double = 0.18
-        /// Quick state changes: selection, focus, toggle (0.25s)
-        static let quick: Double = 0.25
-        /// Standard transitions: panel appearance, content swap (0.35s)
-        static let standard: Double = 0.35
-        /// Deliberate spatial changes: navigation, workspace switch (0.48s)
-        static let spatial: Double = 0.48
-        /// Spring physics: natural, fluid motion
-        static let springResponse: Double = 0.40
-        static let springDamping: Double = 0.78
-        /// Spring for spatial transitions (slightly more deliberate)
-        static let spatialSpringResponse: Double = 0.52
-        static let spatialSpringDamping: Double = 0.82
+        /// Immediate feedback: button press, hover, micro-interactions (0.15s)
+        static let instant: Double = 0.15
+        /// Quick state changes: selection, focus, toggle (0.22s)
+        static let quick: Double = 0.22
+        /// Standard transitions: panel appearance, content swap (0.32s)
+        static let standard: Double = 0.32
+        /// Deliberate spatial changes: navigation, workspace switch (0.42s)
+        static let spatial: Double = 0.42
+
+        /// Direct manipulation & graph camera: responsive, natural spring
+        static let springResponse: Double = 0.30
+        static let springDamping: Double = 0.82
+
+        /// Snappy micro-spring: selection indicators, pills, segmented tabs
+        static let snappySpringResponse: Double = 0.24
+        static let snappySpringDamping: Double = 0.80
+
+        /// Interactive spring for gesture tracking & drag release
+        static let interactiveSpringResponse: Double = 0.28
+        static let interactiveSpringDamping: Double = 0.84
+
+        /// Spatial spring for full-page / workspace transitions
+        static let spatialSpringResponse: Double = 0.38
+        static let spatialSpringDamping: Double = 0.88
     }
 
-    /// Standard spring animation with Reduce Motion support.
+    /// Standard responsive spring animation with Reduce Motion support.
     static func spring(_ reduceMotion: Bool = false,
                        response: Double = Motion.springResponse,
                        damping: Double = Motion.springDamping) -> Animation {
-        reduceMotion ? .easeInOut(duration: Motion.standard) : .spring(response: response, dampingFraction: damping)
+        reduceMotion ? .easeInOut(duration: Motion.quick) : .spring(response: response, dampingFraction: damping)
     }
 
-    /// Quick easing animation for immediate state feedback.
+    /// Snappy spring for micro-interactions, selection pills, and badge toggles.
+    static func snappy(_ reduceMotion: Bool = false) -> Animation {
+        reduceMotion ? .easeInOut(duration: Motion.instant) : .spring(response: Motion.snappySpringResponse, dampingFraction: Motion.snappySpringDamping)
+    }
+
+    /// Interactive spring for gestures and drag tracking.
+    static func interactive(_ reduceMotion: Bool = false) -> Animation {
+        reduceMotion ? .easeOut(duration: Motion.instant) : .spring(response: Motion.interactiveSpringResponse, dampingFraction: Motion.interactiveSpringDamping)
+    }
+
+    /// Quick easing animation for immediate state feedback (hover, button click).
     static func quick(_ reduceMotion: Bool = false) -> Animation {
         reduceMotion ? .easeInOut(duration: Motion.instant) : .easeOut(duration: Motion.quick)
+    }
+
+    /// Smooth ease-out for entering elements and overlays.
+    static func easeOut(_ reduceMotion: Bool = false, duration: Double = Motion.quick) -> Animation {
+        reduceMotion ? .linear(duration: Motion.instant) : .easeOut(duration: duration)
+    }
+
+    /// Smooth ease-in-out for state transitions.
+    static func easeInOut(_ reduceMotion: Bool = false, duration: Double = Motion.standard) -> Animation {
+        reduceMotion ? .linear(duration: Motion.instant) : .easeInOut(duration: duration)
     }
 
     /// Spatial transition for navigation and workspace changes.
@@ -750,14 +780,13 @@ private struct CosmicAtmosphere: View {
                 // Asset available: render as positioned atmospheric foundation.
                 // Dark mode: 0.72 — vivid enough to establish identity but calm.
                 // Light mode: 0.28 — gentle tint, never overpowers white content.
-                GeometryReader { geo in
-                    Image(nsImage: cosmicImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .opacity(colorScheme == .dark ? 0.72 : 0.28)
-                }
+                // Rendered without GeometryReader to eliminate layout pass overhead and jitter.
+                Image(nsImage: cosmicImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .opacity(colorScheme == .dark ? 0.72 : 0.28)
             } else {
                 // Fallback: deep-space gradient that evokes cosmic depth without the image.
                 LinearGradient(

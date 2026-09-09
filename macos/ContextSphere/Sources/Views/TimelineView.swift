@@ -6,6 +6,7 @@ import AppKit
 /// and event type, with live updates from `timeline:event_added`.
 struct TimelineView: View {
     @ObservedObject var viewModel: TimelineViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focusedEventID: String?
     @State private var containerWidth: CGFloat = 1024
 
@@ -28,6 +29,7 @@ struct TimelineView: View {
             Hairline(opacity: Theme.pageHeaderDividerOpacity)
             ScrollView {
                 content
+                    .animation(Theme.quick(reduceMotion), value: viewModel.state)
                     .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -398,6 +400,7 @@ struct TimelineEventRow: View {
     let isLast: Bool
     var isFocused: Bool = false
     var onOpen: ((String) -> Void)? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     private var primaryPath: String? {
@@ -460,6 +463,8 @@ struct TimelineEventRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowBackground)
             .overlay(rowOverlay)
+            .animation(Theme.quick(reduceMotion), value: isHovered)
+            .animation(Theme.quick(reduceMotion), value: isFocused)
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

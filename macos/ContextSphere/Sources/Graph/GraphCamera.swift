@@ -86,7 +86,7 @@ final class GraphCamera: ObservableObject {
     func focus(on world: CGPoint, zoom targetZoom: CGFloat? = nil, animated: Bool = true) {
         let z = targetZoom.map { min(max($0, minZoom), maxZoom) } ?? max(zoom, 1.2)
         if animated {
-            withAnimation(.spring(response: Theme.Motion.springResponse, dampingFraction: Theme.Motion.springDamping)) {
+            withAnimation(Theme.spring()) {
                 self.center = world
                 self.zoom = z
             }
@@ -111,7 +111,7 @@ final class GraphCamera: ObservableObject {
         let clamped = min(max(targetZoom, minZoom), maxZoom)
         let targetCenter = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
         if animated {
-            withAnimation(.easeOut(duration: Theme.Motion.standard)) {
+            withAnimation(Theme.spatial()) {
                 self.center = targetCenter
                 self.zoom = clamped
             }
