@@ -58,6 +58,95 @@ pub enum ProactiveActionType {
 }
 
 impl ProactiveAction {
+    /// Single authoritative runnable contract — mirrors the Swift
+    /// `ProactiveActionType.isSupported` + required-args check.
+    /// A ProactiveAction is runnable ONLY if its type maps to a real
+    /// ToolRegistry tool, required arguments exist with correct types, and
+    /// the target workspace (if any) is a valid UUID. Used both to filter
+    /// before presentation (no blue Run for un-runnable) and again before
+    /// execution (never call ToolExecutor with malformed args).
+    pub fn is_runnable(&self) -> bool {
+        self.validate_runnable().is_ok()
+    }
+
+    pub fn validate_runnable(&self) -> Result<(), String> {
+        match &self.action_type {
+            ProactiveActionType::ResumeWorkspace { workspace_id } => {
+                if workspace_id.trim().is_empty() {
+                    return Err("missing required argument 'workspace_id'".into());
+                }
+                Uuid::parse_str(workspace_id)
+                    .map(|_| ())
+                    .map_err(|_| "invalid workspace_id UUID".to_string())?;
+                Ok(())
+            }
+            ProactiveActionType::OpenRecentFile { path } => {
+                if path.trim().is_empty() {
+                    return Err("missing required argument 'path'".into());
+                }
+                Ok(())
+            }
+            ProactiveActionType::OpenWorkspace { workspace_id } => {
+                if workspace_id.trim().is_empty() {
+                    return Err("missing required argument 'workspace_id'".into());
+                }
+                Uuid::parse_str(workspace_id)
+                    .map(|_| ())
+                    .map_err(|_| "invalid workspace_id UUID".to_string())?;
+                Ok(())
+            }
+            ProactiveActionType::ReviewRelatedWork { workspace_id } => {
+                if workspace_id.trim().is_empty() {
+                    return Err("missing required argument 'workspace_id'".into());
+                }
+                Uuid::parse_str(workspace_id)
+                    .map(|_| ())
+                    .map_err(|_| "invalid workspace_id UUID".to_string())?;
+                Ok(())
+            }
+            ProactiveActionType::SearchContext { query } => {
+                if query.trim().is_empty() {
+                    return Err("missing required argument 'query'".into());
+                }
+                Ok(())
+            }
+            ProactiveActionType::ExecuteCommand { command, args } => {
+                if command.trim().is_empty() {
+                    return Err("missing required argument 'command'".into());
+                }
+                // Allow-list check — must be a real tool.
+                let allowed = crate::copilot::tools::ToolExecutor::get_available_tools()
+                    .iter()
+                    .any(|t| t.name == command.as_str());
+                if !allowed {
+                    return Err(format!("tool '{}' not in allowlist", command));
+                }
+                // `resume_workspace` must use the typed `ResumeWorkspace`
+                // variant, not generic ExecuteCommand, otherwise the tool
+                // receives `{"args": ["<uuid>"]}` not `{"workspace_id": "<uuid>"}`.
+                if command == "resume_workspace" {
+                    return Err(
+                        "resume_workspace must use typed ResumeWorkspace, not generic ExecuteCommand"
+                            .into(),
+                    );
+                }
+                // For other generic commands, ensure args are at least present
+                // if the tool expects them — generic validation is permissive,
+                // the ToolExecutor's own `validate_arguments` is the final gate.
+                let _ = args;
+                Ok(())
+            }
+            ProactiveActionType::Navigate { path } => {
+                if path.trim().is_empty() {
+                    return Err("missing required argument 'path'".into());
+                }
+                // navigate is not in ToolRegistry — never runnable
+                Err("tool 'navigate' not in allowlist".into())
+            }
+            ProactiveActionType::NoOp => Ok(()),
+        }
+    }
+
     /// Deterministic id from workspace + trigger + action_type + target.
     pub fn deterministic_id(
         workspace_id: Option<Uuid>,

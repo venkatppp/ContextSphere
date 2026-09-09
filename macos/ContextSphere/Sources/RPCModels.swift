@@ -1788,16 +1788,31 @@ extension ProactiveActionType {
         }
     }
 
-    /// Whether this action maps to a real ToolRegistry executor (plus `noop`).
-    /// Mirrors `ToolExecutor::get_available_tools` allow-list. `navigate` and
-    /// `unknown` are not executable and must be suppressed before presentation.
+    /// Whether this action maps to a real ToolRegistry executor (plus `noop`)
+    /// and has all required arguments with correct types. Mirrors the Rust
+    /// `ProactiveAction::validate_runnable` contract — a visible Run must
+    /// always be able to execute (or correctly request confirmation).
     var isSupported: Bool {
         switch self {
-        case .resumeWorkspace, .openRecentFile, .openWorkspace,
-             .reviewRelatedWork, .searchContext, .noOp:
+        case .resumeWorkspace(let wid):
+            return !wid.trimmingCharacters(in: .whitespaces).isEmpty && UUID(uuidString: wid) != nil
+        case .openRecentFile(let p):
+            return !p.trimmingCharacters(in: .whitespaces).isEmpty
+        case .openWorkspace(let wid):
+            return !wid.trimmingCharacters(in: .whitespaces).isEmpty && UUID(uuidString: wid) != nil
+        case .reviewRelatedWork(let wid):
+            return !wid.trimmingCharacters(in: .whitespaces).isEmpty && UUID(uuidString: wid) != nil
+        case .searchContext(let q):
+            return !q.trimmingCharacters(in: .whitespaces).isEmpty
+        case .noOp:
             return true
         case .executeCommand(let c, _):
-            return Self.allowedTools.contains(c)
+            // `resume_workspace` must use the typed `resumeWorkspace` variant
+            // (which carries `workspace_id` as `{"workspace_id":"<uuid>"}`).
+            // Generic `{"args":["<uuid>"]}` would be `missing required argument`.
+            if c == "resume_workspace" { return false }
+            guard Self.allowedTools.contains(c) else { return false }
+            return !c.trimmingCharacters(in: .whitespaces).isEmpty
         case .navigate, .unknown:
             return false
         }
