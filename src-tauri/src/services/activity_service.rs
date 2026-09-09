@@ -97,6 +97,8 @@ impl ActivityService {
         let app_usages = Self::build_app_usages(&filtered_activity);
         let web_usages = Self::build_web_usages(&filtered_activity);
         let donut = Self::build_donut(&app_usages, &filtered_activity);
+        let hourly_activity =
+            Self::build_hourly_activity(&filtered_activity, &filtered_timeline, since, until);
 
         // Workspace correlation
         let correlation = self.build_correlation(workspace_id, since, until, &filtered_activity, &filtered_timeline).await?;
@@ -124,6 +126,7 @@ impl ActivityService {
             correlation,
             what_happened,
             recent_memory,
+            hourly_activity,
             is_empty,
             empty_reason,
         })
@@ -356,6 +359,207 @@ impl ActivityService {
             percent: u.percent,
             minutes: u.minutes,
         }).collect()
+    }
+
+    fn build_hourly_activity(
+        activity_events: &[ActivityEvent],
+        timeline_events: &[crate::models::TimelineEvent],
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> crate::models::activity::HourlyActivityDto {
+        use crate::models::activity::{HourlyActivityDto, HourlyBucketDto};
+        use chrono::Timelike;
+
+        // Collect all relevant timestamps for range calculation
+        let mut timestamps: Vec<DateTime<Utc>> = Vec::new();
+        for ev in activity_events {
+            timestamps.push(ev.started_at);
+            if let Some(end) = ev.ended_at {
+                timestamps.push(end);
+            } else if let Some(dur) = ev.duration_seconds {
+                timestamps.push(ev.started_at + chrono::Duration::seconds(dur));
+            }
+        }
+        for ev in timeline_events {
+            timestamps.push(ev.occurred_at);
+        }
+
+        if timestamps.is_empty() {
+            return HourlyActivityDto {
+                buckets: Vec::new(),
+                start_label: String::new(),
+                end_label: String::new(),
+                total_active_seconds: 0,
+                max_active_seconds: 0,
+            };
+        }
+
+        // Determine earliest and latest meaningful activity
+        let earliest = *timestamps.iter().min().unwrap();
+        let latest = *timestamps.iter().max().unwrap();
+
+        // Round to logical hour boundaries without arbitrary fixed padding.
+        let activity_span = latest - earliest;
+        let (start_hour, range_end) = if activity_span < chrono::Duration::minutes(30) {
+            // For very short activity, check if rounded window is already 2 hours.
+            // e.g., 05:54-06:07 → floor 05:00, ceil 07:00 (2h) → keep as is.
+            // Single event at 06:00 → floor 06:00, ceil 06:00 (0h) → center 2h window 05:00-07:00.
+            let s_floor = Utc.from_utc_datetime(&earliest.naive_utc().date().and_hms_opt(earliest.hour(), 0, 0).unwrap());
+            let e_ceil_naive = latest.naive_utc().date().and_hms_opt(latest.hour(), 0, 0).unwrap();
+            let mut e_ceil = Utc.from_utc_datetime(&e_ceil_naive);
+            if latest.minute() > 0 || latest.second() > 0 || latest.nanosecond() > 0 {
+                e_ceil = e_ceil + chrono::Duration::hours(1);
+            }
+            let span_hours = (e_ceil - s_floor).num_hours();
+            if span_hours >= 2 {
+                (s_floor, e_ceil)
+            } else {
+                // Center a 2-hour window around the activity
+                let center = earliest + activity_span / 2;
+                let start = (center - chrono::Duration::hours(1)).max(since).with_timezone(&Utc);
+                let end = (center + chrono::Duration::hours(1)).min(until).with_timezone(&Utc);
+                let s = Utc.from_utc_datetime(&start.naive_utc().date().and_hms_opt(start.hour(), 0, 0).unwrap());
+                let e_naive = end.naive_utc().date().and_hms_opt(end.hour(), 0, 0).unwrap();
+                let mut e = Utc.from_utc_datetime(&e_naive);
+                if end.minute() > 0 || end.second() > 0 || end.nanosecond() > 0 {
+                    e = e + chrono::Duration::hours(1);
+                }
+                let e = if e <= s { s + chrono::Duration::hours(2) } else { e };
+                (s, e)
+            }
+        } else {
+            // Normal: just round earliest down and latest up
+            let s = Utc.from_utc_datetime(&earliest.naive_utc().date().and_hms_opt(earliest.hour(), 0, 0).unwrap());
+            let e_naive = latest.naive_utc().date().and_hms_opt(latest.hour(), 0, 0).unwrap();
+            let mut e = Utc.from_utc_datetime(&e_naive);
+            if latest.minute() > 0 || latest.second() > 0 || latest.nanosecond() > 0 {
+                e = e + chrono::Duration::hours(1);
+            }
+            let e = e.min(until);
+            let e = if e <= s { s + chrono::Duration::hours(1) } else { e };
+            (s, e)
+        };
+        // Clamp to day window
+        let start_hour = start_hour.max(since);
+        let mut range_end = range_end.min(until);
+        if range_end <= start_hour {
+            range_end = start_hour + chrono::Duration::hours(1);
+        }
+
+        // Generate hourly buckets
+        let mut buckets: Vec<HourlyBucketDto> = Vec::new();
+        let mut total_active: i64 = 0;
+        let mut max_active: i64 = 0;
+
+        // Pre-calculate per-bucket active_seconds and event_count
+        // Use a map hour -> (active_seconds, event_count)
+        let mut bucket_map: std::collections::HashMap<i32, (i64, i64)> = std::collections::HashMap::new();
+        // Process activity events: allocate duration to overlapping hours
+        for ev in activity_events {
+            if let Some(dur) = ev.duration_seconds {
+                if dur <= 0 {
+                    continue;
+                }
+                let ev_start = ev.started_at;
+                let ev_end = ev.ended_at.unwrap_or(ev_start + chrono::Duration::seconds(dur));
+                let mut cursor = ev_start;
+                while cursor < ev_end {
+                    let hour_start = Utc.from_utc_datetime(&cursor.naive_utc().date().and_hms_opt(cursor.hour(), 0, 0).unwrap());
+                    let hour_end = hour_start + chrono::Duration::hours(1);
+                    let overlap_start = cursor.max(hour_start);
+                    let overlap_end = ev_end.min(hour_end);
+                    if overlap_end > overlap_start {
+                        let secs = (overlap_end - overlap_start).num_seconds();
+                        let h = hour_start.hour() as i32;
+                        let entry = bucket_map.entry(h).or_insert((0, 0));
+                        entry.0 += secs;
+                    }
+                    cursor = hour_end;
+                }
+            } else {
+                // No duration, count as 1 event in its hour
+                let h = ev.started_at.hour() as i32;
+                let entry = bucket_map.entry(h).or_insert((0, 0));
+                entry.1 += 1;
+            }
+        }
+        // Process timeline events: count per hour, intensity contribution only
+        // when no measurable activity duration exists in that hour. This
+        // preserves the primary signal (actual active_seconds) and prevents
+        // timeline events (60s each previously) from materially distorting
+        // intensity when real durations are present. A small 10s signal per
+        // timeline event is justified as minimal visible intensity (<1% of
+        // a 30m real activity) and ensures short sessions with only timeline
+        // events still show.
+        // Snapshot hours that already have real activity to avoid double-count.
+        let hours_with_real_activity: std::collections::HashSet<i32> = bucket_map
+            .iter()
+            .filter(|(_, (secs, _))| *secs > 0)
+            .map(|(h, _)| *h)
+            .collect();
+        for ev in timeline_events {
+            let h = ev.occurred_at.hour() as i32;
+            let entry = bucket_map.entry(h).or_insert((0, 0));
+            entry.1 += 1;
+            if !hours_with_real_activity.contains(&h) {
+                // No real activity in this hour — use small per-event signal
+                entry.0 += 10;
+            }
+        }
+
+        // Now generate buckets for the calculated range
+        let mut max_bucket_secs: i64 = 0;
+        let mut temp_buckets: Vec<(i32, String, i64, i64)> = Vec::new();
+        let mut current = start_hour;
+        while current < range_end {
+            let h = current.hour() as i32;
+            let label = format!("{:02}:00", h);
+            let (secs, cnt) = bucket_map.get(&h).cloned().unwrap_or((0, 0));
+            // Clamp active_seconds to max 3600 per hour
+            let secs = secs.min(3600);
+            temp_buckets.push((h, label, secs, cnt));
+            if secs > max_bucket_secs {
+                max_bucket_secs = secs;
+            }
+            total_active += secs;
+            current = current + chrono::Duration::hours(1);
+        }
+        if max_bucket_secs == 0 {
+            max_bucket_secs = 1; // avoid div0, intensities will be 0
+        }
+        for (h, label, secs, cnt) in temp_buckets {
+            let intensity = (secs as f64 / max_bucket_secs as f64).clamp(0.0, 1.0);
+            // Deterministic: no random, purely derived from data
+            buckets.push(HourlyBucketDto {
+                hour: h,
+                label,
+                active_seconds: secs,
+                event_count: cnt,
+                intensity,
+            });
+            if secs > max_active {
+                max_active = secs;
+            }
+        }
+
+        let start_label = if buckets.is_empty() {
+            String::new()
+        } else {
+            format!("{:02}:00", start_hour.hour())
+        };
+        let end_label = if buckets.is_empty() {
+            String::new()
+        } else {
+            format!("{:02}:00", range_end.hour())
+        };
+
+        HourlyActivityDto {
+            buckets,
+            start_label,
+            end_label,
+            total_active_seconds: total_active,
+            max_active_seconds: max_active,
+        }
     }
 
     async fn build_correlation(
@@ -1001,5 +1205,298 @@ mod tests {
         // Should be bounded, not panic, and day totals remain reasonable
         assert!(ov.day.applications <= 5);
         assert!(ov.app_usages.len() <= 5);
+    }
+
+    #[tokio::test]
+    async fn hourly_intensity_real_activity_non_zero() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let at_10 = Utc.from_utc_datetime(&today.and_hms_opt(10, 15, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_10,
+            ended_at: Some(at_10 + chrono::Duration::minutes(30)),
+            duration_seconds: Some(1800),
+            metadata: None,
+        }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert!(!ov.hourly_activity.buckets.is_empty(), "hourly buckets must exist when there is activity");
+        let has_nonzero = ov.hourly_activity.buckets.iter().any(|b| b.intensity > 0.0);
+        assert!(has_nonzero, "real activity must produce non-zero intensity");
+        let empty = ov.hourly_activity.buckets.iter().filter(|b| b.intensity == 0.0).count();
+        // At least one bucket should be non-zero, others may be zero
+        assert!(empty < ov.hourly_activity.buckets.len() || ov.hourly_activity.buckets.len() == 1);
+    }
+
+    #[tokio::test]
+    async fn hourly_intensity_empty_hours_zero() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let at_09 = Utc.from_utc_datetime(&today.and_hms_opt(9, 0, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_09,
+            ended_at: Some(at_09 + chrono::Duration::minutes(15)),
+            duration_seconds: Some(900),
+            metadata: None,
+        }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        // Find a bucket far from 09:00 (e.g., 14:00) should be zero if no activity there
+        let far_bucket = ov.hourly_activity.buckets.iter().find(|b| b.hour == 14);
+        if let Some(b) = far_bucket {
+            assert_eq!(b.intensity, 0.0, "empty hour must be zero");
+            assert_eq!(b.active_seconds, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn hourly_intensity_normalization_deterministic() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let at_10 = Utc.from_utc_datetime(&today.and_hms_opt(10, 0, 0).unwrap());
+        let at_11 = Utc.from_utc_datetime(&today.and_hms_opt(11, 0, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_10,
+            ended_at: Some(at_10 + chrono::Duration::minutes(60)),
+            duration_seconds: Some(3600),
+            metadata: None,
+        }).await.unwrap();
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Safari".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_11,
+            ended_at: Some(at_11 + chrono::Duration::minutes(30)),
+            duration_seconds: Some(1800),
+            metadata: None,
+        }).await.unwrap();
+        let ov1 = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        let ov2 = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert_eq!(ov1.hourly_activity.buckets, ov2.hourly_activity.buckets, "intensity must be deterministic");
+        let max_intensity = ov1.hourly_activity.buckets.iter().map(|b| b.intensity).fold(0.0, f64::max);
+        assert!((max_intensity - 1.0).abs() < 1e-6, "max intensity must be 1.0");
+    }
+
+    #[tokio::test]
+    async fn hourly_range_short_session_0554_0607() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let start = Utc.from_utc_datetime(&today.and_hms_opt(5, 54, 0).unwrap());
+        let end = Utc.from_utc_datetime(&today.and_hms_opt(6, 7, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: start,
+            ended_at: Some(end),
+            duration_seconds: Some(13 * 60),
+            metadata: None,
+        }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert!(ov.hourly_activity.buckets.len() >= 2, "short session should have at least 2 buckets");
+        assert_eq!(ov.hourly_activity.start_label, "05:00", "short session 05:54 should start at 05:00");
+        assert_eq!(ov.hourly_activity.end_label, "07:00", "short session ending 06:07 should end at 07:00");
+        let b06 = ov.hourly_activity.buckets.iter().find(|b| b.hour == 6).expect("06:00 bucket must exist");
+        assert!(b06.intensity > 0.0, "06:00 bucket must have non-zero intensity");
+        assert!(b06.active_seconds > 0);
+        // Must not be hard-coded 09:00-17:00
+        assert_ne!(ov.hourly_activity.start_label, "09:00");
+        assert_ne!(ov.hourly_activity.end_label, "17:00");
+    }
+
+    #[tokio::test]
+    async fn hourly_range_long_day() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let start = Utc.from_utc_datetime(&today.and_hms_opt(8, 20, 0).unwrap());
+        let end = Utc.from_utc_datetime(&today.and_hms_opt(14, 45, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: start,
+            ended_at: Some(end),
+            duration_seconds: Some(((end - start).num_seconds()) as i64),
+            metadata: None,
+        }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert_eq!(ov.hourly_activity.start_label, "08:00");
+        assert_eq!(ov.hourly_activity.end_label, "15:00");
+        assert!(ov.hourly_activity.buckets.len() >= 7);
+        let labels: Vec<String> = ov.hourly_activity.buckets.iter().map(|b| b.label.clone()).collect();
+        let sorted = {
+            let mut s = labels.clone();
+            s.sort();
+            s
+        };
+        assert_eq!(labels, sorted, "labels must be chronological");
+    }
+
+    #[tokio::test]
+    async fn hourly_no_activity_sensible_empty() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert!(ov.hourly_activity.buckets.is_empty(), "no activity must produce empty buckets");
+        assert_eq!(ov.hourly_activity.start_label, "");
+        assert_eq!(ov.hourly_activity.end_label, "");
+        assert_eq!(ov.hourly_activity.total_active_seconds, 0);
+    }
+
+    #[tokio::test]
+    async fn hourly_workspace_isolation() {
+        let (svc, ws_a, ws_b, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let at_10 = Utc.from_utc_datetime(&today.and_hms_opt(10, 0, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws_a),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_10,
+            ended_at: Some(at_10 + chrono::Duration::minutes(30)),
+            duration_seconds: Some(1800),
+            metadata: None,
+        }).await.unwrap();
+        let ov_a = svc.get_overview(Some(ws_a), Some("Today".into()), None).await.unwrap();
+        let ov_b = svc.get_overview(Some(ws_b), Some("Today".into()), None).await.unwrap();
+        assert!(!ov_a.hourly_activity.buckets.is_empty());
+        assert!(ov_b.hourly_activity.buckets.is_empty(), "other workspace must not see activity");
+    }
+
+    #[tokio::test]
+    async fn hourly_selected_date_respected() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let yesterday = today - chrono::Duration::days(1);
+        let at_yesterday = Utc.from_utc_datetime(&yesterday.and_hms_opt(10, 0, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_yesterday,
+            ended_at: Some(at_yesterday + chrono::Duration::minutes(20)),
+            duration_seconds: Some(1200),
+            metadata: None,
+        }).await.unwrap();
+        let ov_today = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        let ov_yesterday = svc.get_overview(Some(ws), Some("Yesterday".into()), None).await.unwrap();
+        assert!(ov_today.hourly_activity.buckets.is_empty(), "today should have no buckets for yesterday event");
+        assert!(!ov_yesterday.hourly_activity.buckets.is_empty(), "yesterday should have buckets");
+    }
+
+    #[tokio::test]
+    async fn hourly_events_at_hour_boundary_correct_bucket() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let at_06 = Utc.from_utc_datetime(&today.and_hms_opt(6, 0, 0).unwrap());
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.rs".into(), content_hash: None, file_identifier: None }).await.unwrap();
+        svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: at_06, metadata: None }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        let b06 = ov.hourly_activity.buckets.iter().find(|b| b.hour == 6).expect("06:00 bucket must exist for event at 06:00");
+        assert!(b06.event_count >= 1);
+        assert!(b06.intensity > 0.0);
+        // Ensure 05:00 exists but may be empty (if no other activity, 05:00 bucket should exist due to padding but be zero before 06:00)
+        // The range for single event at 06:00 should be 05:00-07:00 (padded)
+        assert_eq!(ov.hourly_activity.start_label, "05:00");
+        assert_eq!(ov.hourly_activity.end_label, "07:00");
+    }
+
+    #[tokio::test]
+    async fn hourly_no_negative_duration() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        for b in &ov.hourly_activity.buckets {
+            assert!(b.active_seconds >= 0);
+            assert!(b.intensity >= 0.0 && b.intensity <= 1.0);
+            assert!(b.event_count >= 0);
+        }
+        // Even with no activity, no panic and labels chronological
+        let today = Utc::now().date_naive();
+        let at_10 = Utc.from_utc_datetime(&today.and_hms_opt(10, 0, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: at_10,
+            ended_at: Some(at_10 + chrono::Duration::minutes(10)),
+            duration_seconds: Some(600),
+            metadata: None,
+        }).await.unwrap();
+        let ov2 = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        for b in &ov2.hourly_activity.buckets {
+            assert!(b.active_seconds >= 0);
+        }
+        let labels: Vec<String> = ov2.hourly_activity.buckets.iter().map(|b| b.label.clone()).collect();
+        let mut sorted = labels.clone();
+        sorted.sort();
+        assert_eq!(labels, sorted);
+    }
+
+    #[tokio::test]
+    async fn hourly_bucket_count_matches_range() {
+        let (svc, ws, _, _guard) = make_service().await;
+        let today = Utc::now().date_naive();
+        let start = Utc.from_utc_datetime(&today.and_hms_opt(10, 5, 0).unwrap());
+        let end = Utc.from_utc_datetime(&today.and_hms_opt(18, 40, 0).unwrap());
+        svc.record(NewActivityEvent {
+            workspace_id: Some(ws),
+            app_name: "Xcode".into(),
+            bundle_id: None,
+            window_title: None,
+            url_domain: None,
+            url_title: None,
+            event_type: ActivityEventType::AppForeground,
+            started_at: start,
+            ended_at: Some(end),
+            duration_seconds: Some(((end - start).num_seconds()) as i64),
+            metadata: None,
+        }).await.unwrap();
+        let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
+        assert_eq!(ov.hourly_activity.start_label, "10:00");
+        assert_eq!(ov.hourly_activity.end_label, "19:00");
+        // 10:00 to 19:00 is 9 buckets
+        assert_eq!(ov.hourly_activity.buckets.len(), 9);
     }
 }

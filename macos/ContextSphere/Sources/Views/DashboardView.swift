@@ -241,7 +241,7 @@ struct DashboardView: View {
                         dashboardMetricTile(label: "WEBSITES", value: "\(ov.day.websites)", symbol: "globe")
                     }
                 }
-                ActivityMiniHeat()
+                ActivityMiniHeat(hourlyActivity: ov.hourlyActivity)
             } else if activity.isLoading {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
@@ -461,63 +461,100 @@ struct DashboardView: View {
     }
 }
 
-/// Compact daily-intensity strip rendered below the KPI tiles.
-///
-/// The Rust core does not yet expose per-hour activity buckets over the
-/// bridge, so this strip currently renders an honest "no per-hour data
-/// yet" hint rather than a hard-coded blue pattern. Once the core ships
-/// `hourBuckets`, the wire call can fill `intensity` with normalized
-/// values in [0, 1] and the strip will render them. Until then, no
-/// decorative data is shown — consistent with the rest of the
-/// Dashboard's "no fake numbers" stance.
+/// Compact daily-intensity strip rendered below the KPI tiles — now
+/// backed by real `HourlyActivity` from `ActivityService::build_hourly_activity`.
+/// Buckets are hourly, intensity 0..1 normalized, labels are logical hour
+/// boundaries derived from actual activity window (e.g., 05:00–07:00 for
+/// 05:54–06:07), never hard-coded 09:00–17:00.
 private struct ActivityMiniHeat: View {
-    /// Reserved for the eventual per-hour wire field. Empty until the
-    /// backend ships it; the strip stays quiet until then.
-    var intensity: [Double] = []
+    var hourlyActivity: HourlyActivity? = nil
+    @State private var hoveredIndex: Int? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if intensity.isEmpty {
+            if let ha = hourlyActivity, !ha.buckets.isEmpty {
                 HStack(spacing: 3) {
-                    ForEach(0..<20, id: \.self) { _ in
+                    ForEach(0..<ha.buckets.count, id: \.self) { idx in
+                        let bucket = ha.buckets[idx]
+                        let isHovered = hoveredIndex == idx
+                        let fillColor: Color = bucket.intensity == 0
+                            ? Color.cs(CSColor.textTertiary).opacity(0.10)
+                            : Color.accentColor.opacity(0.18 + bucket.intensity * 0.72)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(Color.cs(CSColor.textTertiary).opacity(0.08))
-                            .frame(height: 18)
+                            .fill(fillColor)
+                            .frame(height: isHovered ? 20 : 18)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .strokeBorder(isHovered ? Color.accentColor.opacity(0.35) : .clear, lineWidth: 0.5)
+                            )
+                            .onHover { hovering in
+                                hoveredIndex = hovering ? idx : nil
+                            }
+                            .help("\(bucket.label) — \(formatActive(bucket.activeSeconds)) — \(bucket.eventCount) events")
+                            .accessibilityLabel("\(bucket.label), \(Int(bucket.intensity * 100))% intensity")
                     }
                 }
-                .frame(height: 18)
-                .accessibilityHidden(true)
+                .frame(height: 20)
+                .accessibilityHidden(false)
+                .accessibilityLabel("Hourly activity from \(ha.startLabel) to \(ha.endLabel)")
+                // Logical time-range labels — never hard-coded 09:00/17:00
                 HStack {
-                    Text("09:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
-                    Spacer()
-                    Text("Per-hour intensity will appear here").font(.system(size: 11)).csForeground(CSColor.textTertiary)
-                    Spacer()
-                    Text("17:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
+                    if ha.buckets.count <= 6 {
+                        // Few buckets: show every label
+                        ForEach(ha.buckets) { b in
+                            Text(b.label)
+                                .font(.system(size: 11).monospacedDigit())
+                                .csForeground(CSColor.textTertiary)
+                            if b.id != ha.buckets.last?.id {
+                                Spacer()
+                            }
+                        }
+                    } else {
+                        // Many buckets: show start, middle, end to avoid overlap
+                        Text(ha.startLabel).font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
+                        Spacer()
+                        if let mid = ha.buckets.dropFirst(ha.buckets.count / 3).first {
+                            Text(mid.label).font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
+                            Spacer()
+                        }
+                        Text(ha.endLabel).font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
+                    }
+                }
+                if let idx = hoveredIndex, idx < ha.buckets.count {
+                    let b = ha.buckets[idx]
+                    Text("\(b.label) — \(formatActive(b.activeSeconds)) — \(b.eventCount) events")
+                        .font(.system(size: 11))
+                        .csForeground(CSColor.textSecondary)
+                        .transition(.opacity)
                 }
             } else {
+                // No hourly data yet — honest empty, not fake 09:00–17:00
                 HStack(spacing: 3) {
-                    ForEach(Array(intensity.enumerated()), id: \.offset) { _, v in
+                    ForEach(0..<12, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(v == 0
-                                  ? Color.cs(CSColor.textTertiary).opacity(0.10)
-                                  : Color.accentColor.opacity(0.18 + v * 0.72))
+                            .fill(Color.cs(CSColor.textTertiary).opacity(0.06))
                             .frame(height: 18)
                     }
                 }
                 .frame(height: 18)
                 .accessibilityHidden(true)
                 HStack {
-                    Text("09:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
+                    Text("No hourly activity yet").font(.system(size: 11)).csForeground(CSColor.textTertiary)
                     Spacer()
-                    Text("12:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
-                    Spacer()
-                    Text("17:00").font(.system(size: 12).monospacedDigit()).csForeground(CSColor.textTertiary)
                 }
             }
         }
         .padding(.horizontal, 2)
-        .accessibilityLabel(intensity.isEmpty
-                            ? "Per-hour activity intensity not yet available"
-                            : "Activity intensity across today, from 09:00 to 17:00")
+        .animation(.easeInOut(duration: 0.15), value: hoveredIndex)
+    }
+
+    private func formatActive(_ secs: Int) -> String {
+        if secs <= 0 { return "0 min" }
+        if secs < 60 { return "\(secs)s" }
+        let m = secs / 60
+        if m < 60 { return "\(m) min" }
+        let h = m / 60
+        let rem = m % 60
+        return rem == 0 ? "\(h)h" : "\(h)h \(rem)m"
     }
 }
