@@ -171,12 +171,10 @@ struct AppShell: View {
                            activity: activity,
                            onRevealWorkspace: revealWorkspace)
                     .background(ContentBackdrop())
-                if let payload = proactiveNotifier.latest, !payload.actionable.isEmpty {
-                    ProactiveActionBanner(payload: payload)
-                        .padding(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 16))
-                        .transition(AnyTransition.opacity)
-                        .zIndex(10)
-                }
+                ProactiveSuggestionTray(notifier: proactiveNotifier)
+                    .padding(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 16))
+                    .transition(AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(10)
             }
         }
         .navigationSplitViewStyle(.balanced)

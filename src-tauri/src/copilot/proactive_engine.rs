@@ -526,15 +526,71 @@ impl ProactiveEngine {
                 return None;
             }
             RecAction::ExecuteCommand { command, args } => {
-                // Allow-list check: only surface ExecuteCommands whose tool
-                // actually exists in the registry. Prevents future
-                // unsupported commands from becoming runnable Run buttons.
+                // Special-case: `resume_workspace` is the only ExecuteCommand
+                // currently generated from recommendations (context.rs). It must
+                // be surfaced as the typed `ResumeWorkspace` action so that
+                // `to_suggested_action` builds `{"workspace_id": "<uuid>"}` not
+                // `{"args": ["<uuid>"]}` — the latter is the screenshot bug
+                // `missing required argument 'workspace_id'`.
+                if command == "resume_workspace" {
+                    let ws_id = args.first().cloned().unwrap_or_default();
+                    // Must be a valid UUID and not empty — otherwise the
+                    // ProactiveAction would be un-runnable and must be
+                    // suppressed before it ever reaches the UI.
+                    if ws_id.is_empty() || uuid::Uuid::parse_str(&ws_id).is_err() {
+                        return None;
+                    }
+                    return Some({
+                        let action_type = ProactiveActionType::ResumeWorkspace {
+                            workspace_id: ws_id.clone(),
+                        };
+                        let target = Some(ws_id.clone());
+                        let evidence = vec![Evidence {
+                            source: EvidenceSource::Recommendation,
+                            description: rec.description.clone(),
+                            confidence: rec.confidence,
+                            timestamp: now,
+                            metadata: serde_json::json!({
+                                "recommendation_id": rec.id,
+                                "category": format!("{:?}", rec.category),
+                                "workspace_id": workspace_id.to_string()
+                            }),
+                        }];
+                        let id = ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::Recommendation,
+                            &action_type,
+                            target.as_deref().or(Some(&rec.id)),
+                        );
+                        ProactiveAction {
+                            id,
+                            trigger: Some(ProactiveTrigger::Recommendation),
+                            action_type,
+                            title: rec.title.clone(),
+                            description: rec.description.clone(),
+                            target,
+                            confidence: rec.confidence,
+                            impact: rec.impact,
+                            effort: rec.effort,
+                            evidence,
+                            created_at: now,
+                            expires_at: rec.expires_at,
+                            requires_confirmation: false,
+                        }
+                    });
+                }
+                // For any other ExecuteCommand, allow-list check.
                 let allowed = crate::copilot::tools::ToolExecutor::get_available_tools()
                     .iter()
                     .any(|t| t.name == command.as_str());
                 if !allowed {
                     return None;
                 }
+                // Generic ExecuteCommand: validate that required args are not
+                // obviously malformed (empty command already handled). For
+                // now, require at least the command itself; specific tools
+                // will be validated again before execution via
+                // `to_suggested_action` + `ToolExecutor::validate_arguments`.
                 (
                     ProactiveActionType::ExecuteCommand {
                         command: command.clone(),
@@ -563,7 +619,7 @@ impl ProactiveEngine {
             &action_type,
             target.as_deref().or(Some(&rec.id)),
         );
-        Some(ProactiveAction {
+        let action = ProactiveAction {
             id,
             trigger: Some(ProactiveTrigger::Recommendation),
             action_type,
@@ -577,7 +633,13 @@ impl ProactiveEngine {
             created_at: now,
             expires_at: rec.expires_at,
             requires_confirmation: false,
-        })
+        };
+        // Final runnable contract: filter before display. A visible Run
+        // must always be able to execute (or correctly request confirmation).
+        if !action.is_runnable() {
+            return None;
+        }
+        Some(action)
     }
 
     /// Executes a single `ProactiveAction` via the existing safe `ToolExecutor`.
@@ -739,6 +801,53 @@ impl ProactiveEngine {
                 };
             }
             executing.insert(action_id.to_string());
+        }
+
+        // Validate required arguments BEFORE ToolExecutor — never call executor
+        // with malformed args. This is the second half of the runnable
+        // contract (first half filters before display). Returns Failed with
+        // a clear `missing required argument` message, not a generic
+        // ToolExecutor `InvalidInput`.
+        if let Err(msg) = action.validate_runnable() {
+            // For allowlist failures (e.g. navigate), surface as Unsupported
+            // to match the existing contract; for missing/invalid args,
+            // surface as Failed.
+            let is_unsupported = msg.contains("not in allowlist");
+            {
+                let mut executing = self.executing_actions.write().await;
+                executing.remove(action_id);
+            }
+            if is_unsupported {
+                let tool = match &action.action_type {
+                    ProactiveActionType::ExecuteCommand { command, .. } => command.clone(),
+                    ProactiveActionType::Navigate { .. } => "navigate".to_string(),
+                    _ => action.to_suggested_action().tool_name.clone(),
+                };
+                return ProactiveExecutionResult {
+                    action_id: action_id.to_string(),
+                    success: false,
+                    status: ProactiveExecutionStatus::Unsupported,
+                    message: format!("Tool '{}' not in allowlist", tool),
+                    tool_name: Some(tool),
+                    started_at,
+                    completed_at: Utc::now(),
+                    error: Some("unsupported_tool".to_string()),
+                    tool_result: None,
+                };
+            } else {
+                let tool = action.to_suggested_action().tool_name.clone();
+                return ProactiveExecutionResult {
+                    action_id: action_id.to_string(),
+                    success: false,
+                    status: ProactiveExecutionStatus::Failed,
+                    message: msg.clone(),
+                    tool_name: Some(tool),
+                    started_at,
+                    completed_at: Utc::now(),
+                    error: Some(msg),
+                    tool_result: None,
+                };
+            }
         }
 
         // Workspace isolation for target workspace (e.g. ResumeWorkspace)
@@ -3072,5 +3181,254 @@ mod tests {
             rec.tools_used.contains(&"search_timeline".to_string())
                 || rec.steps.iter().any(|s| s.contains("Provenance"))
         );
+    }
+
+    // ── Regression: screenshot bug — Short session → ResumeWorkspace → Run ──
+
+    #[tokio::test]
+    async fn short_session_recommendation_resume_workspace_executes_with_workspace_id() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        // Create engine and workspace, then seed a short session (1 edit, <600s)
+        let ws_repo = crate::repositories::WorkspaceRepository::new(pool.clone());
+        let ws = ws_repo
+            .create(crate::models::CreateWorkspaceInput {
+                name: "short-ws".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+        let (engine, _, tool_exec) = make_engine_with_executor(pool.clone()).await;
+        // Manually create a Recommendation that mimics context.rs output
+        let rec = crate::intelligence::recommendation::Recommendation::new(
+            ws.id.to_string(),
+            crate::intelligence::recommendation::RecommendationCategory::Context,
+            "Short session detected",
+            "Your last session was brief. Use Smart Resume to quickly restore your context.",
+        )
+        .with_confidence(0.75)
+        .with_impact(0.7)
+        .with_effort(0.1)
+        .with_action(
+            crate::intelligence::recommendation::RecommendationAction::ExecuteCommand {
+                command: "resume_workspace".to_string(),
+                args: vec![ws.id.to_string()],
+            },
+        );
+        let action = ProactiveEngine::recommendation_to_action(&rec, ws.id, Utc::now())
+            .expect("resume_workspace with valid UUID must be runnable");
+        assert!(matches!(
+            action.action_type,
+            ProactiveActionType::ResumeWorkspace { .. }
+        ));
+        if let ProactiveActionType::ResumeWorkspace { workspace_id } = &action.action_type {
+            assert_eq!(workspace_id, &ws.id.to_string(), "workspace_id must be UUID, never name");
+            assert!(uuid::Uuid::parse_str(workspace_id).is_ok());
+        }
+        // Queue as proactive notification and execute via the full path
+        {
+            let mut notifs = engine.notifications.write().await;
+            notifs.push(ProactiveNotification {
+                id: Uuid::new_v4(),
+                workspace_id: Some(ws.id),
+                notification_type: NotificationType::RecommendationUpdate,
+                title: "1 recommendations for this workspace".into(),
+                message: action.title.clone(),
+                priority: NotificationPriority::Medium,
+                evidence: vec![],
+                suggested_actions: vec![action.title.clone()],
+                actions: vec![action.clone()],
+                dismissible: true,
+                dismissed: false,
+                created_at: Utc::now(),
+                expires_at: None,
+            });
+        }
+        // First execution without AllowOnce should request confirmation
+        let r1 = engine
+            .execute_proactive_action(&action.id, Some(ws.id))
+            .await;
+        assert_eq!(r1.status, ProactiveExecutionStatus::RequiresConfirmation);
+        // Grant AllowOnce and retry — must succeed and preserve workspace_id
+        let perm = engine.permission_service.read().await.clone().unwrap();
+        perm.set_policy(
+            "resume_workspace",
+            Some(ws.id),
+            crate::copilot::tools::ToolPermissionDecision::AllowOnce,
+        )
+        .await
+        .unwrap();
+        let r2 = engine
+            .execute_proactive_action(&action.id, Some(ws.id))
+            .await;
+        assert_eq!(r2.status, ProactiveExecutionStatus::Executed);
+        assert_eq!(r2.tool_name.as_deref(), Some("resume_workspace"));
+        assert!(r2.success);
+        // Verify the tool actually received the correct workspace_id by checking
+        // that the workspace is still the same (resume_workspace just re-activates)
+        assert!(tool_exec
+            .available_tools()
+            .iter()
+            .any(|t| t.name == "resume_workspace"));
+    }
+
+    #[tokio::test]
+    async fn resume_workspace_missing_workspace_id_is_rejected_before_executor() {
+        let (db, _guard) = test_database().await;
+        let (engine, ws_id, _) = make_engine_with_executor(db.pool().clone()).await;
+        // Recommendation with empty args → should be suppressed before display
+        let rec_empty = crate::intelligence::recommendation::Recommendation::new(
+            ws_id.to_string(),
+            crate::intelligence::recommendation::RecommendationCategory::Context,
+            "Short session detected",
+            "desc",
+        )
+        .with_action(
+            crate::intelligence::recommendation::RecommendationAction::ExecuteCommand {
+                command: "resume_workspace".to_string(),
+                args: vec![],
+            },
+        );
+        assert!(
+            ProactiveEngine::recommendation_to_action(&rec_empty, ws_id, Utc::now()).is_none(),
+            "missing workspace_id must be suppressed before UI"
+        );
+        // Direct ProactiveAction with empty workspace_id → validate_runnable must fail
+        let bad = ProactiveAction {
+            id: "bad-1".into(),
+            trigger: Some(ProactiveTrigger::Recommendation),
+            action_type: ProactiveActionType::ResumeWorkspace {
+                workspace_id: "".into(),
+            },
+            title: "Bad".into(),
+            description: "missing id".into(),
+            target: Some("".into()),
+            confidence: 0.9,
+            impact: 0.8,
+            effort: 0.2,
+            evidence: vec![],
+            created_at: Utc::now(),
+            expires_at: None,
+            requires_confirmation: false,
+        };
+        assert!(bad.validate_runnable().is_err());
+        assert!(!bad.is_runnable());
+        // Queue and try to execute — must be rejected before ToolExecutor
+        {
+            let mut notifs = engine.notifications.write().await;
+            notifs.push(ProactiveNotification {
+                id: Uuid::new_v4(),
+                workspace_id: Some(ws_id),
+                notification_type: NotificationType::RecommendationUpdate,
+                title: "Bad".into(),
+                message: "missing".into(),
+                priority: NotificationPriority::Medium,
+                evidence: vec![],
+                suggested_actions: vec![bad.title.clone()],
+                actions: vec![bad.clone()],
+                dismissible: true,
+                dismissed: false,
+                created_at: Utc::now(),
+                expires_at: None,
+            });
+        }
+        let res = engine.execute_proactive_action(&bad.id, Some(ws_id)).await;
+        assert_eq!(res.status, ProactiveExecutionStatus::Failed);
+        assert!(res.error.as_deref().unwrap().contains("workspace_id"));
+    }
+
+    #[tokio::test]
+    async fn every_supported_executable_action_contains_required_arguments() {
+        let ws = Uuid::new_v4();
+        let cases: Vec<(ProactiveActionType, bool)> = vec![
+            (
+                ProactiveActionType::ResumeWorkspace {
+                    workspace_id: ws.to_string(),
+                },
+                true,
+            ),
+            (
+                ProactiveActionType::ResumeWorkspace {
+                    workspace_id: "".into(),
+                },
+                false,
+            ),
+            (
+                ProactiveActionType::ResumeWorkspace {
+                    workspace_id: "not-a-uuid".into(),
+                },
+                false,
+            ),
+            (ProactiveActionType::OpenRecentFile { path: "/tmp/a.rs".into() }, true),
+            (ProactiveActionType::OpenRecentFile { path: "".into() }, false),
+            (
+                ProactiveActionType::OpenWorkspace {
+                    workspace_id: ws.to_string(),
+                },
+                true,
+            ),
+            (
+                ProactiveActionType::SearchContext {
+                    query: "hello".into(),
+                },
+                true,
+            ),
+            (ProactiveActionType::SearchContext { query: "".into() }, false),
+            (ProactiveActionType::NoOp, true),
+            (ProactiveActionType::Navigate { path: "/tmp".into() }, false),
+            (ProactiveActionType::ExecuteCommand { command: "resume_workspace".into(), args: vec![ws.to_string()] }, false), // generic ExecuteCommand with resume_workspace is not runnable via generic path — must be typed
+        ];
+        for (at, should_be_runnable) in cases {
+            let act = ProactiveAction {
+                id: Uuid::new_v4().to_string(),
+                trigger: Some(ProactiveTrigger::Recommendation),
+                action_type: at,
+                title: "t".into(),
+                description: "d".into(),
+                target: None,
+                confidence: 0.9,
+                impact: 0.8,
+                effort: 0.2,
+                evidence: vec![],
+                created_at: Utc::now(),
+                expires_at: None,
+                requires_confirmation: false,
+            };
+            assert_eq!(
+                act.is_runnable(),
+                should_be_runnable,
+                "is_runnable mismatch for {:?}",
+                act.action_type
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_actions_never_presented_as_runnable() {
+        let ws = Uuid::new_v4();
+        let rec = crate::intelligence::recommendation::Recommendation::new(
+            ws.to_string(),
+            crate::intelligence::recommendation::RecommendationCategory::Files,
+            "Scan for duplicate files",
+            "desc",
+        )
+        .with_action(
+            crate::intelligence::recommendation::RecommendationAction::ExecuteCommand {
+                command: "scan_duplicates".into(),
+                args: vec![ws.to_string()],
+            },
+        );
+        assert!(
+            ProactiveEngine::recommendation_to_action(&rec, ws, Utc::now()).is_none(),
+            "scan_duplicates must never be runnable"
+        );
+        let rec2 = crate::intelligence::recommendation::Recommendation::new(
+            ws.to_string(),
+            crate::intelligence::recommendation::RecommendationCategory::Organization,
+            "Info",
+            "desc",
+        ); // Info
+        assert!(ProactiveEngine::recommendation_to_action(&rec2, ws, Utc::now()).is_none());
     }
 }

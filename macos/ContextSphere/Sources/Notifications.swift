@@ -77,6 +77,28 @@ final class ProactiveNotifier: ObservableObject {
             return false
         }
     }
+
+    /// Dismisses the current in-app tray without deleting the underlying
+    /// notification from the backend — collapse vs dismiss are separate.
+    /// Collapse hides temporarily; this dismiss clears the tray and calls
+    /// `copilot_dismiss_notification` so the backend marks it dismissed.
+    func dismissCurrent() async {
+        guard let payload = latest else { return }
+        latest = nil
+        deliveredIds.remove(payload.id)
+        do {
+            try await CoreBridge.shared.call(
+                "copilot_dismiss_notification",
+                params: ["notification_id": payload.id]
+            )
+        } catch {
+            // Non-fatal: the UI already cleared, backend will expire it.
+        }
+    }
+
+    func clearTray() {
+        latest = nil
+    }
 }
 
 // MARK: - Proactive Action Banner (Phase D, minimal)
@@ -87,12 +109,16 @@ final class ProactiveNotifier: ObservableObject {
 /// that goes through `CoreBridge.executeProactiveAction` → `ToolExecutor`.
 struct ProactiveActionBanner: View {
     let payload: ProactiveNotificationPayload
+    var onCollapse: (() -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
     @State private var executingId: String?
     @State private var resultMessage: String?
     @State private var showConfirmation: ProactiveAction?
 
-    init(payload: ProactiveNotificationPayload) {
+    init(payload: ProactiveNotificationPayload, onCollapse: (() -> Void)? = nil, onDismiss: (() -> Void)? = nil) {
         self.payload = payload
+        self.onCollapse = onCollapse
+        self.onDismiss = onDismiss
     }
 
     var body: some View {
@@ -112,6 +138,34 @@ struct ProactiveActionBanner: View {
                         Spacer()
                         Text(payload.notificationType.replacingOccurrences(of: "_", with: " ").capitalized)
                             .font(.caption2).csForeground(CSColor.textTertiary)
+                        if onCollapse != nil {
+                            Button {
+                                onCollapse?()
+                            } label: {
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .csForeground(CSColor.textTertiary)
+                                    .frame(width: 22, height: 22)
+                                    .background(Circle().fill(Color.cs(CSColor.textTertiary).opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Collapse suggestions")
+                            .accessibilityLabel("Collapse suggestions")
+                        }
+                        if onDismiss != nil {
+                            Button {
+                                onDismiss?()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .csForeground(CSColor.textTertiary)
+                                    .frame(width: 22, height: 22)
+                                    .background(Circle().fill(Color.cs(CSColor.textTertiary).opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Dismiss suggestion")
+                            .accessibilityLabel("Dismiss suggestion")
+                        }
                     }
                     Text(payload.message).font(.callout).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(visible, id: \.id) { action in
@@ -208,11 +262,11 @@ struct ProactiveActionBanner: View {
             switch result.status {
             case "executed":
                 resultMessage = "✓ \(result.message)"
-            case "requiresConfirmation":
+            case "requires_confirmation":
                 // Prompt for permission then retry
                 showConfirmation = action
                 resultMessage = "Requires confirmation — tap Confirm."
-            case "permissionDenied":
+            case "permission_denied":
                 resultMessage = "Permission denied for \(result.toolName ?? "tool")"
             case "expired", "dismissed":
                 resultMessage = result.message
@@ -221,9 +275,9 @@ struct ProactiveActionBanner: View {
                 // treat as a non-user-facing diagnostic (log) with a generic UI.
                 // Never expose "Unsupported action: Scan for duplicate files".
                 resultMessage = "This action is not available."
-            case "notFound":
+            case "not_found":
                 resultMessage = "Action not found — it may have expired."
-            case "workspaceMismatch":
+            case "workspace_mismatch":
                 resultMessage = "Workspace mismatch — action belongs to another workspace."
             case "failed":
                 resultMessage = result.error ?? result.message
@@ -233,6 +287,82 @@ struct ProactiveActionBanner: View {
         } catch {
             resultMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Collapsible Suggestion Tray
+
+/// Compact, collapsible container for the proactive banner.
+/// Expanded: full `ProactiveActionBanner` anchored top-right.
+/// Collapsed: small pill trigger with icon + count, tap to re-expand.
+/// Collapse is local UI state only — it never dismisses the underlying
+/// `ProactiveNotification`. Dismiss is a separate explicit action.
+struct ProactiveSuggestionTray: View {
+    @ObservedObject var notifier: ProactiveNotifier
+    @State private var isCollapsed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if let payload = notifier.latest, !payload.actionable.isEmpty {
+                let visible = payload.actionable.filter { $0.actionType.isSupported }
+                if visible.isEmpty {
+                    EmptyView()
+                } else if isCollapsed {
+                    collapsedView(count: visible.count, payload: payload)
+                } else {
+                    ProactiveActionBanner(
+                        payload: payload,
+                        onCollapse: { withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = true } },
+                        onDismiss: {
+                            Task { await notifier.dismissCurrent() }
+                        }
+                    )
+                    .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                }
+            }
+        }
+        .onChange(of: notifier.latest?.id) { old, new in
+            // New suggestion should re-expand so the user sees it; collapse
+            // is explicitly local and transient.
+            if new != nil, new != old {
+                withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = false }
+            }
+        }
+    }
+
+    private func collapsedView(count: Int, payload: ProactiveNotificationPayload) -> some View {
+        Button {
+            withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = false }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(count == 1 ? "1 suggestion" : "\(count) suggestions")
+                    .font(.system(size: 13, weight: .semibold))
+                    .csForeground(CSColor.textPrimary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .csForeground(CSColor.textTertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(Color.cs(CSColor.surface).opacity(0.96))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        }
+        .buttonStyle(.plain)
+        .help("Show suggestions")
+        .accessibilityLabel("\(count) suggestions, collapsed. Tap to expand.")
+        .transition(.scale(scale: 0.96).combined(with: .opacity))
     }
 }
 
