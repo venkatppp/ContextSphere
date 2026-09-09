@@ -46,6 +46,9 @@ struct GraphScreen: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     canvasArea(geo.size)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Context graph visualization")
+                        .accessibilityHint("Double tap nodes to expand, pinch to zoom, drag to pan")
                     // Lenses (top-center, compact)
                     lensBar
                         .frame(maxWidth: .infinity, alignment: .center)

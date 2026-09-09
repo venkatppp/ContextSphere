@@ -313,7 +313,7 @@ struct ProactiveSuggestionTray: View {
                 } else {
                     ProactiveActionBanner(
                         payload: payload,
-                        onCollapse: { withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = true } },
+                        onCollapse: { withAnimation(Theme.quick(reduceMotion)) { isCollapsed = true } },
                         onDismiss: {
                             Task { await notifier.dismissCurrent() }
                         }
@@ -326,14 +326,14 @@ struct ProactiveSuggestionTray: View {
             // New suggestion should re-expand so the user sees it; collapse
             // is explicitly local and transient.
             if new != nil, new != old {
-                withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = false }
+                withAnimation(Theme.quick(reduceMotion)) { isCollapsed = false }
             }
         }
     }
 
     private func collapsedView(count: Int, payload: ProactiveNotificationPayload) -> some View {
         Button {
-            withAnimation(Theme.spring(reduceMotion, response: 0.28)) { isCollapsed = false }
+            withAnimation(Theme.quick(reduceMotion)) { isCollapsed = false }
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: "sparkles")

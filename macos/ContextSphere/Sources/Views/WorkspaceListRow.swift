@@ -5,14 +5,24 @@ struct WorkspaceListRow: View {
     var isSelected = false
     @State private var isHovered = false
 
+    private var isArchived: Bool { workspace.status == .archived }
+
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.accentColor.opacity(0.12))
-                Image(systemName: workspace.status == .active ? "folder.fill" : "archivebox.fill")
+                    .fill(
+                        isArchived
+                            ? Color.cs(CSColor.textTertiary).opacity(isSelected ? 0.18 : 0.10)
+                            : Color.accentColor.opacity(isSelected ? 0.22 : 0.12)
+                    )
+                Image(systemName: isArchived ? "archivebox.fill" : "folder.fill")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
+                    .foregroundStyle(
+                        isArchived
+                            ? Color.cs(CSColor.textSecondary)
+                            : (isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
+                    )
             }
             .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 2) {

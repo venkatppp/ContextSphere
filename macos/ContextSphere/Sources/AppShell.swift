@@ -338,6 +338,8 @@ private struct SidebarRow: View {
     var isSelected = false
     @Environment(\.csPalette) private var palette
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -345,11 +347,12 @@ private struct SidebarRow: View {
                 .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
                 .frame(width: 16, alignment: .center)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.cs(CSColor.textSecondary))
-                .opacity(isSelected ? 1 : 0.9)
+                .opacity(isSelected ? 1 : (isHovered ? 0.95 : 0.80))
             Text(section.compactTitle)
                 .font(.system(size: 14.5, weight: isSelected ? .medium : .regular))
                 .tracking(isSelected ? -0.1 : 0)
-                .csForeground(isSelected ? CSColor.textPrimary : CSColor.textPrimary)
+                // Selected: primary; hover: primary; rest: secondary — clear hierarchy
+                .csForeground(isSelected || isHovered ? CSColor.textPrimary : CSColor.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .minimumScaleFactor(0.82)
@@ -359,6 +362,7 @@ private struct SidebarRow: View {
                     Text("⌘\(String(key.character))")
                         .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                         .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
+                        .opacity(isSelected ? 1 : (isHovered ? 0.7 : 0.55))
                         .padding(.horizontal, 3.5)
                         .padding(.vertical, 1.5)
                         .background(
@@ -379,13 +383,22 @@ private struct SidebarRow: View {
         .padding(.horizontal, 6)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected ? Color.cs(CSColor.sidebarSelectedFill) : .clear)
+                .fill(
+                    isSelected
+                        ? Color.cs(CSColor.sidebarSelectedFill)
+                        : (isHovered ? palette.hoverFill.opacity(0.7) : .clear)
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : .clear, lineWidth: 0.5)
         )
+        .animation(Theme.quick(reduceMotion), value: isSelected)
+        .animation(Theme.quick(reduceMotion), value: isHovered)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .accessibilityLabel(section.title)
         .accessibilityElement(children: .combine)
         .accessibilityHint(shortcutHint)
@@ -580,6 +593,8 @@ struct DetailHost: View {
     let activity: ActivityViewModel
     let onRevealWorkspace: (String) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Group {
             if !loaded {
@@ -601,20 +616,34 @@ struct DetailHost: View {
 
     @ViewBuilder
     private var content: some View {
-        switch section {
-        case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace, activity: activity)
-        case .workspaces: WorkspacesView(workspaces: workspaces, onWorkspacesChanged: { AppRouter.shared.reloadRequest = true })
-        case .timeline: TimelineView(viewModel: timeline)
-        case .activity: ActivityView(viewModel: activity)
-        case .graph: GraphScreen(viewModel: graph)
-        case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)
-        case .memory: MemoryView(viewModel: memory)
-        case .learning: LearningView(viewModel: learning)
-        case .performance: PerformanceView(viewModel: performance)
-        case .maintenance: MaintenanceView(viewModel: maintenance)
-        case .recovery: RecoveryView(viewModel: recovery)
-        case .settings: SettingsView()
+        Group {
+            switch section {
+            case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace, activity: activity)
+            case .workspaces: WorkspacesView(workspaces: workspaces, onWorkspacesChanged: { AppRouter.shared.reloadRequest = true })
+            case .timeline: TimelineView(viewModel: timeline)
+            case .activity: ActivityView(viewModel: activity)
+            case .graph: GraphScreen(viewModel: graph)
+            case .search: SearchView(viewModel: search, onRevealWorkspace: onRevealWorkspace)
+            case .memory: MemoryView(viewModel: memory)
+            case .learning: LearningView(viewModel: learning)
+            case .performance: PerformanceView(viewModel: performance)
+            case .maintenance: MaintenanceView(viewModel: maintenance)
+            case .recovery: RecoveryView(viewModel: recovery)
+            case .settings: SettingsView()
+            }
         }
+        .id(section)
+        .transition(
+            // Reduce Motion: plain opacity only — no spatial offset
+            // Standard: opacity + a gentle 14px horizontal push for spatial sense
+            reduceMotion
+                ? .opacity
+                : .asymmetric(
+                    insertion: .opacity.combined(with: .offset(x: 14, y: 0)),
+                    removal:   .opacity.combined(with: .offset(x: -14, y: 0))
+                )
+        )
+        .animation(Theme.spatial(reduceMotion), value: section)
     }
 }
 
