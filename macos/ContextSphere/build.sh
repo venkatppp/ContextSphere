@@ -82,8 +82,12 @@ swiftc \
   -o "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 echo "==> Assembling bundle"
+mkdir -p "$APP_DIR/Contents/Resources"
 cp Resources/Info.plist "$APP_DIR/Contents/Info.plist"
 cp "$CORE_BIN" "$APP_DIR/Contents/MacOS/contextsphere_core"
+if [ -d "Resources/Assets" ]; then
+  cp -R Resources/Assets/* "$APP_DIR/Contents/Resources/"
+fi
 if [ -f Resources/ContextSphere.entitlements ]; then
   codesign --force --options runtime --entitlements Resources/ContextSphere.entitlements --sign - "$APP_DIR"
 else

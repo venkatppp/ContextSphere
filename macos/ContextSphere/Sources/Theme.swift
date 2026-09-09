@@ -414,11 +414,44 @@ enum Theme {
         return 28
     }
 
-    // MARK: Animation
+    // MARK: Animation & Motion System
+
+    /// Centralized motion tokens for ContextSphere. All animations communicate
+    /// CONTEXT → RELATIONSHIP → HIERARCHY → STATE → FEEDBACK, never decoration.
+    enum Motion {
+        /// Immediate feedback: button press, hover, micro-interactions (0.18s)
+        static let instant: Double = 0.18
+        /// Quick state changes: selection, focus, toggle (0.25s)
+        static let quick: Double = 0.25
+        /// Standard transitions: panel appearance, content swap (0.35s)
+        static let standard: Double = 0.35
+        /// Deliberate spatial changes: navigation, workspace switch (0.48s)
+        static let spatial: Double = 0.48
+        /// Spring physics: natural, fluid motion
+        static let springResponse: Double = 0.40
+        static let springDamping: Double = 0.78
+        /// Spring for spatial transitions (slightly more deliberate)
+        static let spatialSpringResponse: Double = 0.52
+        static let spatialSpringDamping: Double = 0.82
+    }
+
+    /// Standard spring animation with Reduce Motion support.
     static func spring(_ reduceMotion: Bool = false,
-                       response: Double = 0.4,
-                       damping: Double = 0.78) -> Animation {
-        reduceMotion ? .easeInOut(duration: 0.3) : .spring(response: response, dampingFraction: damping)
+                       response: Double = Motion.springResponse,
+                       damping: Double = Motion.springDamping) -> Animation {
+        reduceMotion ? .easeInOut(duration: Motion.standard) : .spring(response: response, dampingFraction: damping)
+    }
+
+    /// Quick easing animation for immediate state feedback.
+    static func quick(_ reduceMotion: Bool = false) -> Animation {
+        reduceMotion ? .easeInOut(duration: Motion.instant) : .easeOut(duration: Motion.quick)
+    }
+
+    /// Spatial transition for navigation and workspace changes.
+    static func spatial(_ reduceMotion: Bool = false) -> Animation {
+        reduceMotion
+            ? .easeInOut(duration: Motion.standard)
+            : .spring(response: Motion.spatialSpringResponse, dampingFraction: Motion.spatialSpringDamping)
     }
 }
 
@@ -654,31 +687,106 @@ struct RootEnvironment<Content: View>: View {
 
 // MARK: - Backdrop
 
+/// Cosmic backdrop system — the foundational atmospheric layer that establishes
+/// ContextSphere's visual identity. Integrates a deep-space starfield image
+/// with layered gradients and subtle depth to create a premium, calm environment.
+///
+/// Design principles:
+/// - Large dark central breathing room (never busy)
+/// - Sparse stars with subtle glow
+/// - Intentional depth through layering, not excessive effects
+/// - Excellent text contrast at all times
+/// - Respects Reduce Transparency (falls back to gradient)
+/// - Static/pre-rendered assets preferred over continuous animation
+///
+/// The cosmic image is not wallpaper — it's an integrated atmospheric foundation
+/// that ContextSphere's spatial content floats within.
 struct ContentBackdrop: View {
     @Environment(\.csPalette) private var palette
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        if reduceTransparency || reduceMotion {
+        if reduceTransparency {
+            // Accessibility: solid color for maximum clarity
             Color.cs(CSColor.surface)
         } else {
-            ZStack {
+            CosmicAtmosphere(palette: palette, colorScheme: colorScheme)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+/// Loads the bundled cosmic starfield image. Works whether the asset is in
+/// the main bundle as a loose PNG (most common) or as a named image in an
+/// asset catalog. Returns nil only if neither location has the image.
+private func loadCosmicImage() -> NSImage? {
+    // 1. Loose resource file — works for PNG files copied into Resources/
+    if let path = Bundle.main.path(forResource: "cosmic-backdrop", ofType: "png"),
+       let img = NSImage(contentsOfFile: path) {
+        return img
+    }
+    // 2. Asset catalog — works when added via Xcode asset catalogs
+    if let img = NSImage(named: "cosmic-backdrop") {
+        return img
+    }
+    return nil
+}
+
+/// The cosmic atmospheric layer. Attempts to load the starfield asset; falls back
+/// to an enhanced gradient system that evokes deep space through color and depth.
+private struct CosmicAtmosphere: View {
+    let palette: ThemePalette
+    let colorScheme: ColorScheme
+
+    // Cache the image lookup so body doesn't re-query the bundle on each render.
+    private static let cosmicImage: NSImage? = loadCosmicImage()
+
+    var body: some View {
+        ZStack {
+            // Base: starfield or gradient fallback
+            if let cosmicImage = Self.cosmicImage {
+                // Asset available: render as positioned atmospheric foundation.
+                // Dark mode: 0.72 — vivid enough to establish identity but calm.
+                // Light mode: 0.28 — gentle tint, never overpowers white content.
+                GeometryReader { geo in
+                    Image(nsImage: cosmicImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                        .opacity(colorScheme == .dark ? 0.72 : 0.28)
+                }
+            } else {
+                // Fallback: deep-space gradient that evokes cosmic depth without the image.
                 LinearGradient(
-                    colors: [palette.backdropTop, palette.backdropBottom],
+                    colors: colorScheme == .dark
+                        ? [Color(red: 0.042, green: 0.048, blue: 0.072),
+                           Color(red: 0.028, green: 0.032, blue: 0.055)]
+                        : [palette.backdropTop, palette.backdropBottom],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .overlay {
-                    RadialGradient(
-                        colors: [palette.backdropAccent.opacity(0.06), .clear],
-                        center: .topTrailing,
-                        startRadius: 0,
-                        endRadius: 700
-                    )
-                }
             }
-            .ignoresSafeArea()
+
+            // Depth layer 1: very subtle tinted accent (top-right warmth).
+            // Kept at 0.04 — present but invisible unless you look for it.
+            RadialGradient(
+                colors: [palette.backdropAccent.opacity(0.04), .clear],
+                center: .topTrailing,
+                startRadius: 0,
+                endRadius: 800
+            )
+
+            // Depth layer 2: light vignette pulls focus to the centre.
+            // Slightly stronger in dark mode for contrast depth.
+            RadialGradient(
+                colors: [.clear, Color.black.opacity(colorScheme == .dark ? 0.22 : 0.06)],
+                center: .center,
+                startRadius: 240,
+                endRadius: 720
+            )
         }
     }
 }
@@ -693,14 +801,14 @@ struct ContentCard<Content: View>: View {
         content
             .padding(padding)
             .background(
-                Color.cs(CSColor.surface).opacity(0.88),
+                Color.cs(CSColor.surface).opacity(0.90),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
-            .shadow(color: .black.opacity(0.04), radius: 10, y: 3)
+            .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 }
 
@@ -712,14 +820,14 @@ struct CompactCard<Content: View>: View {
         content
             .padding(Theme.cardPadding)
             .background(
-                Color.cs(CSColor.surface).opacity(0.88),
+                Color.cs(CSColor.surface).opacity(0.90),
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
-            .shadow(color: .black.opacity(0.03), radius: 8, y: 2)
+            .shadow(color: .black.opacity(0.04), radius: 10, y: 2)
     }
 }
 
@@ -1141,12 +1249,24 @@ struct EmptyStateView: View {
     var details: [(String, String)]? = nil
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: symbol)
-                .font(.system(size: 38, weight: .light))
-                .csForeground(CSColor.textTertiary)
-                .accessibilityHidden(true)
-            VStack(spacing: 6) {
+        VStack(spacing: 18) {
+            // Icon in a subtle tinted container — premium, grounded, not floating
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.cs(CSColor.textTertiary).opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
+                    )
+                Image(systemName: symbol)
+                    .font(.system(size: 26, weight: .regular))
+                    .csForeground(CSColor.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: 60, height: 60)
+            .shadow(color: .black.opacity(0.03), radius: 8, y: 2)
+
+            VStack(spacing: 5) {
                 Text(title)
                     .font(.title3.weight(.semibold))
                     .csForeground(CSColor.textPrimary)
@@ -1182,6 +1302,7 @@ struct EmptyStateView: View {
                             .controlSize(.regular)
                     }
                 }
+                .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1201,11 +1322,11 @@ struct LoadingView: View {
     var label = "Loading…"
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.regular)
             Text(label)
-                .font(.caption)
+                .font(.callout)
                 .csForeground(CSColor.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1378,7 +1499,7 @@ struct HeroCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)
             }
-            .shadow(color: .black.opacity(0.04), radius: 10, y: 3)
+            .shadow(color: .black.opacity(0.06), radius: 14, y: 4)
     }
 }
 

@@ -32,8 +32,9 @@ struct WorkspacesView: View {
     }
 
     var body: some View {
+        // Note: ContentBackdrop() is applied by the parent DetailHost — do not add
+        // a second layer here to avoid double-compositing the cosmic atmosphere.
         workspacesContent
-            .background(ContentBackdrop())
             .onAppear {
                 // Select active workspace on initial appearance if none explicitly chosen
                 if selected == nil, let active = activeWorkspaces.first {

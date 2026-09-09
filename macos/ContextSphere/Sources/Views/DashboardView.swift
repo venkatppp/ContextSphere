@@ -92,7 +92,11 @@ struct DashboardView: View {
             GeometryReader { geo in
                 Color.clear
                     .onAppear { containerWidth = geo.size.width }
-                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+                    .onChange(of: geo.size.width) { _, new in
+                        // Debounce width updates to reduce body recomputation
+                        let delta = abs(new - containerWidth)
+                        if delta > 10 { containerWidth = new }
+                    }
             }
             .frame(height: 0)
         }
@@ -266,7 +270,7 @@ struct DashboardView: View {
     private func dashboardMetricTile(label: String, value: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary).opacity(0.9).accessibilityHidden(true)
+                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary).accessibilityHidden(true)
                 Text(label).font(.system(size: 12, weight: .semibold)).tracking(0.6).csForeground(CSColor.textTertiary).textCase(.uppercase).lineLimit(1).minimumScaleFactor(0.8)
             }
             Text(value).font(.csMetric(size: 28)).csForeground(CSColor.textPrimary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
@@ -275,7 +279,7 @@ struct DashboardView: View {
         .padding(.horizontal, 14).padding(.vertical, 14)
         .background(Color.cs(CSColor.surface).opacity(0.92), in: RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.cornerLarge, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.03), radius: 8, y: 2)
+        .shadow(color: .black.opacity(0.05), radius: 10, y: 3)
         .accessibilityElement(children: .combine).accessibilityLabel("\(label): \(value)")
     }
 
