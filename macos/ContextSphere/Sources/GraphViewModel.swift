@@ -70,7 +70,12 @@ final class GraphViewModel: ObservableObject {
             }
         }
     }
-    @Published var lens: Lens = .all
+    @Published var lens: Lens = .all {
+        didSet {
+            cachedFilteredModel = nil
+            cachedLens = nil
+        }
+    }
 
     private static let subgraphDepth = 2
     private static let searchLimit: UInt32 = 20
@@ -80,8 +85,12 @@ final class GraphViewModel: ObservableObject {
     private static let wholeGraphEdgeCap: UInt32 = 1_200
 
     @Published private(set) var state: LoadState = .idle
-    @Published private(set) var nodes: [KgNode] = []
-    @Published private(set) var edges: [KgEdge] = []
+    @Published private(set) var nodes: [KgNode] = [] {
+        didSet { invalidateModelCache() }
+    }
+    @Published private(set) var edges: [KgEdge] = [] {
+        didSet { invalidateModelCache() }
+    }
     @Published private(set) var lastError: String?
     @Published var selectedNodeID: String?
     @Published var showInspector = false
@@ -115,9 +124,54 @@ final class GraphViewModel: ObservableObject {
     private var semanticTask: Task<Void, Never>?
     private var lastSemanticQuery: String?
 
+    private var cachedVisualizationModel: GraphVisualizationModel?
+    private var cachedFilteredModel: GraphVisualizationModel?
+    private var cachedLens: Lens?
+
+    private func invalidateModelCache() {
+        cachedVisualizationModel = nil
+        cachedFilteredModel = nil
+        cachedLens = nil
+    }
+
     /// Adapter: current daemon data → visual model without DB migration (prompt §17).
+    /// Cached so Canvas camera pan/zoom animations do not recompute date parsing or layouts.
     var visualizationModel: GraphVisualizationModel {
-        GraphVisualizationModel.fromDaemon(nodes: nodes, edges: edges)
+        if let cached = cachedVisualizationModel {
+            return cached
+        }
+        let model = GraphVisualizationModel.fromDaemon(nodes: nodes, edges: edges)
+        cachedVisualizationModel = model
+        return model
+    }
+
+    /// Active model for rendering, applying the current lens filter.
+    /// Cached to keep Canvas drawing passes completely allocation-free.
+    var activeVisualizationModel: GraphVisualizationModel {
+        let base = visualizationModel
+        guard let lensIDs = lensHighlightedNodeIDs() else {
+            return base
+        }
+        if lens == cachedLens, let cached = cachedFilteredModel {
+            return cached
+        }
+        if lensIDs.isEmpty {
+            return base
+        }
+        var keep = lensIDs
+        for edge in base.edges {
+            if keep.contains(edge.sourceID) { keep.insert(edge.targetID) }
+            if keep.contains(edge.targetID) { keep.insert(edge.sourceID) }
+        }
+        let filteredNodes = base.nodes.filter { keep.contains($0.id) }
+        let filteredEdges = base.edges.filter { keep.contains($0.sourceID) && keep.contains($0.targetID) }
+        let filtered = GraphVisualizationModel(
+            nodes: filteredNodes, edges: filteredEdges,
+            clusters: base.clusters, workspaceLens: base.workspaceLens,
+            adjacency: base.adjacency)
+        cachedFilteredModel = filtered
+        cachedLens = lens
+        return filtered
     }
 
     /// Inspectable normalized relevance 0…1 for a node (for inspector/debug).

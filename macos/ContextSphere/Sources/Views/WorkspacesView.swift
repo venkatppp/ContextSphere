@@ -11,6 +11,7 @@ struct WorkspacesView: View {
     var onWorkspacesChanged: (() -> Void)? = nil
 
     @EnvironmentObject private var router: AppRouter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showCreate = false
     @State private var showEdit = false
     @State private var selected: Workspace?
@@ -153,6 +154,7 @@ struct WorkspacesView: View {
                     .frame(minWidth: 280, idealWidth: 320, maxWidth: 380)
                 detailPane
                     .frame(minWidth: 440)
+                    .animation(Theme.quick(reduceMotion), value: detail?.id)
             }
         }
         .overlay {

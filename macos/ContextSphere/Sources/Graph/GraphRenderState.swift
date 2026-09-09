@@ -15,7 +15,7 @@ struct GraphRenderState {
         let opacity: Double
         let title: String
         let displayTitle: String
-        let labelVisible: Bool
+        var labelVisible: Bool
         let symbol: String
         let isSelected: Bool
         let isHovered: Bool
@@ -111,6 +111,7 @@ enum GraphRenderStateBuilder {
 
         // First pass: build render nodes so we can dedupe labels
         var renderNodes: [GraphRenderState.RenderNode] = []
+        renderNodes.reserveCapacity(min(model.nodes.count, 256))
         for vn in model.nodes {
             guard let w = positions[vn.id], visibleWorld.contains(w) else { continue }
             let rel = relevance[vn.id] ?? 0.45
@@ -227,19 +228,11 @@ enum GraphRenderStateBuilder {
                 taken.append(box)
             }
         }
-        // Apply back
-        renderNodes = renderNodes.map { n in
-            var copy = n
-            copy = GraphRenderState.RenderNode(
-                id: n.id, world: n.world, screen: n.screen, radius: n.radius,
-                color: n.color, opacity: n.opacity, title: n.title,
-                displayTitle: n.displayTitle, labelVisible: labeledIDs.contains(n.id),
-                symbol: n.symbol, isSelected: n.isSelected, isHovered: n.isHovered,
-                isFocused: n.isFocused, isWorkspace: n.isWorkspace,
-                importance: n.importance, clusterId: n.clusterId,
-                distance: n.distance, activityIntensity: n.activityIntensity,
-                isRecent: n.isRecent, relevance: n.relevance)
-            return copy
+        // Apply back in-place without reallocation
+        for i in 0..<renderNodes.count {
+            if labeledIDs.contains(renderNodes[i].id) {
+                renderNodes[i].labelVisible = true
+            }
         }
 
         // Final z-order sort

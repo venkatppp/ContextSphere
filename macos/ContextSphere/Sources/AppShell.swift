@@ -635,12 +635,12 @@ struct DetailHost: View {
         .id(section)
         .transition(
             // Reduce Motion: plain opacity only — no spatial offset
-            // Standard: opacity + a gentle 14px horizontal push for spatial sense
+            // Standard: opacity + a gentle 10px horizontal push for spatial continuity
             reduceMotion
                 ? .opacity
                 : .asymmetric(
-                    insertion: .opacity.combined(with: .offset(x: 14, y: 0)),
-                    removal:   .opacity.combined(with: .offset(x: -14, y: 0))
+                    insertion: .opacity.combined(with: .offset(x: 10, y: 0)),
+                    removal:   .opacity.combined(with: .offset(x: -10, y: 0))
                 )
         )
         .animation(Theme.spatial(reduceMotion), value: section)

@@ -77,15 +77,12 @@ struct GraphScreen: View {
                 }
             }
         }
-        .animation(reduceMotion ? .none : .spring(response: 0.45, dampingFraction: 0.85),
-                   value: viewModel.positions)
-        .animation(reduceMotion ? .none : .easeOut(duration: 0.25), value: viewModel.showInspector)
+        .animation(Theme.easeOut(reduceMotion, duration: 0.22), value: viewModel.showInspector)
         .task { viewModel.initialLoadIfNeeded() }
         .onAppear { camera.setViewport(canvasSize) }
         .onChange(of: viewModel.layoutGeneration) { _, _ in needsFit = true }
         .onChange(of: viewModel.lens) { _, _ in
-            // Lenses don't change layout, but the render state needs a refresh.
-            viewModel.objectWillChange.send()
+            // Lens change needs Canvas refresh but positions don't change
         }
         .onChange(of: canvasSize) { _, newSize in
             camera.setViewport(newSize)
@@ -126,7 +123,9 @@ struct GraphScreen: View {
         HStack(spacing: 4) {
             ForEach(GraphViewModel.Lens.allCases) { lens in
                 Button {
-                    viewModel.lens = lens
+                    withAnimation(Theme.snappy(reduceMotion)) {
+                        viewModel.lens = lens
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: lens.symbol)
@@ -156,6 +155,7 @@ struct GraphScreen: View {
                 .csForeground(viewModel.lens == lens
                               ? CSColor.sidebarSelectedTint
                               : CSColor.textPrimary)
+                .animation(Theme.snappy(reduceMotion), value: viewModel.lens)
                 .accessibilityLabel("Lens: \(lens.title)")
                 .accessibilityAddTraits(viewModel.lens == lens ? .isSelected : [])
             }
@@ -169,16 +169,9 @@ struct GraphScreen: View {
     private func canvasArea(_ size: CGSize) -> some View {
         Canvas { context, cSize in
             guard viewModel.state == .loaded, !viewModel.positions.isEmpty else { return }
-            let model = viewModel.visualizationModel
             let density: GraphEdgeDensity = viewModel.edgeDensity == .all ? .all : .strong
-            // Apply lens: filtered nodes/edges for this view
-            let (filteredNodes, filteredEdges) = applyLens(model: model)
-            let filteredModel = GraphVisualizationModel(
-                nodes: filteredNodes, edges: filteredEdges,
-                clusters: model.clusters, workspaceLens: model.workspaceLens,
-                adjacency: model.adjacency)
             let state = GraphRenderStateBuilder.build(
-                model: filteredModel,
+                model: viewModel.activeVisualizationModel,
                 positions: viewModel.positions,
                 camera: camera,
                 selectedID: viewModel.selectedNodeID,
@@ -198,8 +191,15 @@ struct GraphScreen: View {
         .gesture(ExclusiveGesture(doubleTapGesture, tapGesture))
         .onContinuousHover(coordinateSpace: .local) { phase in
             switch phase {
-            case .active(let loc): hoveredNodeID = hitTest(loc)
-            case .ended: hoveredNodeID = nil
+            case .active(let loc):
+                let hit = hitTest(loc)
+                if hit != hoveredNodeID {
+                    hoveredNodeID = hit
+                }
+            case .ended:
+                if hoveredNodeID != nil {
+                    hoveredNodeID = nil
+                }
             }
         }
         .onAppear { canvasSize = size }
@@ -207,28 +207,6 @@ struct GraphScreen: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Context graph")
         .accessibilityValue(accessibilitySummary)
-    }
-
-    /// Returns a (nodes, edges) tuple restricted by the current lens.
-    /// The lens is purely visual: the underlying data is never mutated.
-    private func applyLens(model: GraphVisualizationModel) -> ([GraphVisualizationModel.VisualNode],
-                                                              [GraphVisualizationModel.VisualEdge]) {
-        if let lens = viewModel.lensHighlightedNodeIDs() {
-            if lens.isEmpty {
-                return (model.nodes, model.edges)
-            }
-            // Always include the highlighted nodes and their first-degree
-            // neighbours so the lens never produces an unreadable isolation.
-            var keep = lens
-            for edge in model.edges {
-                if keep.contains(edge.sourceID) { keep.insert(edge.targetID) }
-                if keep.contains(edge.targetID) { keep.insert(edge.sourceID) }
-            }
-            let nodes = model.nodes.filter { keep.contains($0.id) }
-            let edges = model.edges.filter { keep.contains($0.sourceID) && keep.contains($0.targetID) }
-            return (nodes, edges)
-        }
-        return (model.nodes, model.edges)
     }
 
     private var accessibilitySummary: String {
@@ -310,7 +288,7 @@ struct GraphScreen: View {
         if reduceMotion {
             camera.zoom(by: factor)
         } else {
-            withAnimation(.easeOut(duration: 0.15)) { camera.zoom(by: factor) }
+            withAnimation(Theme.quick(reduceMotion)) { camera.zoom(by: factor) }
         }
     }
 

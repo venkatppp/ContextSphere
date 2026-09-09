@@ -620,7 +620,7 @@ struct ActivityView: View {
                     HStack(spacing: 8) {
                         Button { selectedAppID = viewModel.overview?.appUsages.first?.id } label: { Label("View activity", systemImage: "waveform.path.ecg").font(.caption.weight(.medium)) }.buttonStyle(.borderedProminent).controlSize(.small)
                         Button { } label: { Label("View files", systemImage: "doc.on.doc").font(.caption.weight(.medium)) }.buttonStyle(.bordered).controlSize(.small)
-                        Button { withAnimation { expandedSessions = Set(ov.sessions.map(\.id)) } } label: { Label("View timeline", systemImage: "clock").font(.caption.weight(.medium)) }.buttonStyle(.bordered).controlSize(.small)
+                        Button { withAnimation(Theme.spring(reduceMotion)) { expandedSessions = Set(ov.sessions.map(\.id)) } } label: { Label("View timeline", systemImage: "clock").font(.caption.weight(.medium)) }.buttonStyle(.bordered).controlSize(.small)
                         Spacer()
                         Button { withAnimation(Theme.spring(reduceMotion)) { whatExpanded.toggle() } } label: { Image(systemName: whatExpanded ? "chevron.up" : "chevron.down").font(.system(size: 13, weight: .semibold)) }.buttonStyle(.plain).csForeground(CSColor.textTertiary)
                     }

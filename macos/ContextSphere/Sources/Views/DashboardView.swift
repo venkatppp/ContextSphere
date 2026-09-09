@@ -549,7 +549,7 @@ private struct ActivityMiniHeat: View {
             }
         }
         .padding(.horizontal, 2)
-        .animation(.easeInOut(duration: 0.15), value: hoveredIndex)
+        .animation(Theme.quick(reduceMotion), value: hoveredIndex)
     }
 
     private func formatActive(_ secs: Int) -> String {
