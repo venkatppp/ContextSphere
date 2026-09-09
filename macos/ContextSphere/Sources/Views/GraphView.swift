@@ -439,6 +439,8 @@ struct GraphScreen: View {
             }
             .padding(6)
         }
+        .scrollIndicators(.automatic)
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .frame(width: 320)
         .frame(maxHeight: 320)
         .lgChrome(cornerRadius: Theme.cornerRegular)

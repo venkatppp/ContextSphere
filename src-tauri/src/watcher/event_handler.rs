@@ -94,9 +94,16 @@ pub fn is_ignored(path: &Path) -> bool {
     false
 }
 
-/// Normalizes a raw `notify::Event` into zero or more `(path, kind)`
-/// pairs ready for [`super::debounce::Debouncer::push`], after dropping
-/// every ignored path.
+/// A normalized, debounced-ready event. For `Renamed`, `from` is `Some(old)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NormalizedEvent {
+    pub path: PathBuf,
+    pub kind: DebouncedEventKind,
+    pub from: Option<PathBuf>,
+}
+
+/// Normalizes a raw `notify::Event` into zero or more `NormalizedEvent`s
+/// ready for the debouncer, after dropping every ignored path.
 ///
 /// `notify::Event` can carry multiple paths — a same-event rename
 /// (`ModifyKind::Name(RenameMode::Both)`) carries both the old and new
@@ -106,37 +113,54 @@ pub fn is_ignored(path: &Path) -> bool {
 /// path in isolation rather than as a `Both` pair — a platform-dependent
 /// case `notify` itself documents as best-effort) normalize to an empty
 /// result rather than a guess.
-pub fn normalize(event: &Event) -> Vec<(PathBuf, DebouncedEventKind)> {
-    let raw: Vec<(PathBuf, DebouncedEventKind)> = match &event.kind {
+///
+/// For `RenameMode::Both` with 2 paths, we emit a single `Renamed` event
+/// with `path = new`, `from = Some(old)`, preserving the correlation so the
+/// pipeline can do an `UPDATE` rather than `DELETE+INSERT` and keep `files.id`.
+pub fn normalize(event: &Event) -> Vec<NormalizedEvent> {
+    let raw: Vec<NormalizedEvent> = match &event.kind {
         EventKind::Create(_) => event
             .paths
             .iter()
             .cloned()
-            .map(|p| (p, DebouncedEventKind::Created))
+            .map(|p| NormalizedEvent {
+                path: p,
+                kind: DebouncedEventKind::Created,
+                from: None,
+            })
             .collect(),
         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) if event.paths.len() == 2 => {
-            vec![
-                (event.paths[0].clone(), DebouncedEventKind::Removed),
-                (event.paths[1].clone(), DebouncedEventKind::Created),
-            ]
+            vec![NormalizedEvent {
+                path: event.paths[1].clone(),
+                kind: DebouncedEventKind::Renamed,
+                from: Some(event.paths[0].clone()),
+            }]
         }
         EventKind::Modify(_) => event
             .paths
             .iter()
             .cloned()
-            .map(|p| (p, DebouncedEventKind::Modified))
+            .map(|p| NormalizedEvent {
+                path: p,
+                kind: DebouncedEventKind::Modified,
+                from: None,
+            })
             .collect(),
         EventKind::Remove(_) => event
             .paths
             .iter()
             .cloned()
-            .map(|p| (p, DebouncedEventKind::Removed))
+            .map(|p| NormalizedEvent {
+                path: p,
+                kind: DebouncedEventKind::Removed,
+                from: None,
+            })
             .collect(),
         _ => Vec::new(),
     };
 
     raw.into_iter()
-        .filter(|(path, _)| !is_ignored(path))
+        .filter(|e| !is_ignored(&e.path))
         .collect()
 }
 
@@ -182,10 +206,10 @@ mod tests {
             Event::new(EventKind::Create(CreateKind::File)).add_path(PathBuf::from("/repo/new.rs"));
 
         let result = normalize(&event);
-        assert_eq!(
-            result,
-            vec![(PathBuf::from("/repo/new.rs"), DebouncedEventKind::Created)]
-        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, PathBuf::from("/repo/new.rs"));
+        assert_eq!(result[0].kind, DebouncedEventKind::Created);
+        assert!(result[0].from.is_none());
     }
 
     #[test]
@@ -203,12 +227,9 @@ mod tests {
             .add_path(PathBuf::from("/repo/new.rs"));
 
         let result = normalize(&event);
-        assert_eq!(
-            result,
-            vec![
-                (PathBuf::from("/repo/old.rs"), DebouncedEventKind::Removed),
-                (PathBuf::from("/repo/new.rs"), DebouncedEventKind::Created),
-            ]
-        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, PathBuf::from("/repo/new.rs"));
+        assert_eq!(result[0].kind, DebouncedEventKind::Renamed);
+        assert_eq!(result[0].from, Some(PathBuf::from("/repo/old.rs")));
     }
 }

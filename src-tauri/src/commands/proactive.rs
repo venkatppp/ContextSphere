@@ -146,3 +146,19 @@ pub async fn copilot_check_opportunities(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Executes a single ProactiveAction via the safe ToolExecutor.
+/// Validates workspace isolation, expiry, dismissal, dedup, permission, and
+/// tool allowlist before invoking. Returns structured `ProactiveExecutionResult`.
+#[tauri::command]
+pub async fn copilot_execute_proactive_action(
+    engine: State<'_, Arc<ProactiveEngine>>,
+    action_id: String,
+    workspace_id: Option<String>,
+) -> Result<ProactiveExecutionResult, String> {
+    let wid = workspace_id
+        .map(|s| Uuid::parse_str(&s))
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    Ok(engine.execute_proactive_action(&action_id, wid).await)
+}

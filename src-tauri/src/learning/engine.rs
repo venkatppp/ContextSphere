@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{Timelike, Utc};
 use uuid::Uuid;
 
 use crate::errors::DatabaseError;
@@ -12,12 +12,44 @@ use crate::learning::repository::LearningRepository;
 /// Adaptive learning engine that learns from user feedback and behavior.
 pub struct AdaptiveLearningEngine {
     repository: Arc<LearningRepository>,
+    timeline_repository: Option<Arc<crate::repositories::TimelineRepository>>,
+    workspace_repository: Option<Arc<crate::repositories::WorkspaceRepository>>,
+    file_repository: Option<Arc<crate::repositories::FileRepository>>,
 }
 
 impl AdaptiveLearningEngine {
     /// Creates a new adaptive learning engine.
     pub fn new(repository: Arc<LearningRepository>) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            timeline_repository: None,
+            workspace_repository: None,
+            file_repository: None,
+        }
+    }
+
+    /// Attach timeline history source (enables `learn_patterns_from_history`).
+    pub fn with_timeline_repository(
+        mut self,
+        repo: Arc<crate::repositories::TimelineRepository>,
+    ) -> Self {
+        self.timeline_repository = Some(repo);
+        self
+    }
+
+    /// Attach workspace source for isolation/validation.
+    pub fn with_workspace_repository(
+        mut self,
+        repo: Arc<crate::repositories::WorkspaceRepository>,
+    ) -> Self {
+        self.workspace_repository = Some(repo);
+        self
+    }
+
+    /// Attach file source for file-type pattern derivation.
+    pub fn with_file_repository(mut self, repo: Arc<crate::repositories::FileRepository>) -> Self {
+        self.file_repository = Some(repo);
+        self
     }
 
     /// Records user feedback and triggers learning updates.
@@ -144,12 +176,23 @@ impl AdaptiveLearningEngine {
             FeedbackAction::Dismissed => "User dismissed without action",
         };
 
+        // Prefer a real confidence supplied by the caller (e.g. recommendation
+        // generation passes `confidence` in context). Fall back to 0.5 only
+        // when no valid source exists — documented, not fabricated.
+        let original_confidence = feedback
+            .context
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .filter(|c| (0.0..=1.0).contains(c))
+            .unwrap_or(0.5);
+        let adjusted_confidence = (original_confidence * adjustment_factor).clamp(0.0, 1.0);
+
         let adjustment = ConfidenceAdjustment {
             id: Uuid::new_v4(),
             target_type: feedback.target_type,
             target_id: feedback.target_id.clone(),
-            original_confidence: 0.5, // TODO: Get from context
-            adjusted_confidence: 0.5 * adjustment_factor,
+            original_confidence,
+            adjusted_confidence,
             adjustment_factor,
             reason: reason.to_string(),
             applied_at: Utc::now(),
@@ -162,14 +205,318 @@ impl AdaptiveLearningEngine {
         Ok(())
     }
 
-    /// Learns behavioral patterns from user history.
+    /// Learns behavioral patterns from user history (bounded, deterministic,
+    /// workspace-isolated, idempotent).
+    ///
+    /// Window: 30 days, `list_by_workspace_window(..., 500)` keeps the scan
+    /// bounded even on a very active workspace. Each pattern gets a
+    /// deterministic id (`workspace|type|key` → fxhash → Uuid) so a second
+    /// cycle `ON CONFLICT(id) DO UPDATE` does not create uncontrolled
+    /// duplicates. Safe when history is empty or a repository is not wired
+    /// (e.g. in unit tests that construct the engine with only a
+    /// `LearningRepository`).
     pub async fn learn_patterns_from_history(
         &self,
-        _workspace_id: &str,
+        workspace_id: &str,
     ) -> Result<Vec<BehavioralPattern>, DatabaseError> {
-        // This would analyze timeline events, session data, etc.
-        // For now, return empty - would be implemented with timeline integration
-        Ok(Vec::new())
+        // Workspace-isolated: require a parseable workspace id. Empty or
+        // "all" is treated as empty history (no cross-workspace leakage).
+        let ws_uuid = match uuid::Uuid::parse_str(workspace_id) {
+            Ok(id) => id,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let timeline_repo = match &self.timeline_repository {
+            Some(r) => r.clone(),
+            None => return Ok(Vec::new()),
+        };
+
+        // Bounded 30-day window — matches the Dashboard/Correlation window.
+        let now = Utc::now();
+        let since = now - chrono::Duration::days(30);
+
+        // Index scan: `idx_timeline_workspace_started` keeps this cheap even
+        // when the table is large; `LIMIT 500` prevents unbounded reads.
+        let events = timeline_repo
+            .list_by_workspace_window(ws_uuid, since, now, 500)
+            .await
+            .unwrap_or_default();
+
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Deterministic helpers
+        fn det_id(workspace_id: &str, pattern_type: &str, key: &str) -> Uuid {
+            let s = format!("{}|{}|{}", workspace_id, pattern_type, key);
+            // FNV-1a 64-bit, then expand to 128-bit for Uuid
+            let mut h: u64 = 0xcbf29ce484222325;
+            for b in s.as_bytes() {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            let hi = h;
+            let lo = h.wrapping_mul(0x9e3779b97f4a7c15);
+            Uuid::from_u128(((hi as u128) << 64) | lo as u128)
+        }
+
+        let first_seen = events.iter().map(|e| e.occurred_at).min().unwrap_or(now);
+        let last_seen = events.iter().map(|e| e.occurred_at).max().unwrap_or(now);
+
+        // Fetch existing patterns once for idempotency (preserve earliest first_seen)
+        let existing: std::collections::HashMap<Uuid, BehavioralPattern> = self
+            .repository
+            .get_all_patterns()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.id, p))
+            .collect();
+
+        let mut out = Vec::new();
+
+        // ── 1. Time-based (hour-of-day) ──
+        {
+            use std::collections::HashMap;
+            let mut hour_counts: HashMap<u32, usize> = HashMap::new();
+            for e in &events {
+                let hour = e.occurred_at.hour();
+                *hour_counts.entry(hour).or_insert(0) += 1;
+            }
+            if let Some((&peak_hour, &peak_count)) = hour_counts.iter().max_by_key(|(_, c)| *c) {
+                let total = events.len() as f64;
+                if peak_count >= 5 && (peak_count as f64 / total) >= 0.20 {
+                    let confidence =
+                        ((peak_count as f64 / total).clamp(0.0, 1.0) * 0.6 + 0.35).clamp(0.5, 0.95);
+                    let frequency = peak_count as f64 / 30.0;
+                    let key = format!("hour-{:02}", peak_hour);
+                    let id = det_id(workspace_id, "time_based", &key);
+                    let first = existing
+                        .get(&id)
+                        .map(|p| p.first_seen.min(first_seen))
+                        .unwrap_or(first_seen);
+                    let pattern = BehavioralPattern {
+                        id,
+                        pattern_type: PatternType::TimeBased,
+                        description: format!(
+                            "Active during {:02}:00 UTC ({} of {} events, {}%)",
+                            peak_hour,
+                            peak_count,
+                            events.len(),
+                            ((peak_count as f64 / total) * 100.0) as i32
+                        ),
+                        conditions: serde_json::json!({
+                            "workspace_id": workspace_id,
+                            "peak_hour": peak_hour,
+                            "peak_count": peak_count,
+                            "total_events": events.len()
+                        }),
+                        frequency,
+                        confidence,
+                        occurrences: peak_count as i32,
+                        first_seen: first,
+                        last_seen,
+                    };
+                    self.repository.store_pattern(&pattern).await?;
+                    out.push(pattern);
+                }
+            }
+        }
+
+        // ── 2. SequentialFiles / file-type ──
+        {
+            use std::collections::HashMap;
+            // Collect up to 50 distinct file ids to keep N+1 bounded.
+            let mut file_ids: std::collections::HashSet<uuid::Uuid> =
+                std::collections::HashSet::new();
+            for e in &events {
+                if let Some(fid) = e.file_id {
+                    file_ids.insert(fid);
+                    if file_ids.len() >= 50 {
+                        break;
+                    }
+                }
+            }
+            let mut ext_counts: HashMap<String, usize> = HashMap::new();
+            let mut total_file_events = 0usize;
+            if let Some(file_repo) = &self.file_repository {
+                for fid in file_ids {
+                    if let Ok(file) = file_repo.get_by_id(fid).await {
+                        if let Some(ext) = std::path::Path::new(&file.path_or_url)
+                            .extension()
+                            .and_then(|s| s.to_str())
+                        {
+                            let ext = format!(".{}", ext.to_lowercase());
+                            *ext_counts.entry(ext).or_insert(0) += 1;
+                            total_file_events += 1;
+                        }
+                    }
+                }
+            } else {
+                // Fallback: infer from metadata path if present, without DB hit
+                for e in &events {
+                    if let Some(fid) = e.file_id {
+                        let _ = fid;
+                        // No repo — skip
+                    }
+                    if let Some(meta) = &e.metadata {
+                        if let Some(path) = meta.get("path").and_then(|v| v.as_str()) {
+                            if let Some(ext) = std::path::Path::new(path)
+                                .extension()
+                                .and_then(|s| s.to_str())
+                            {
+                                let ext = format!(".{}", ext.to_lowercase());
+                                *ext_counts.entry(ext).or_insert(0) += 1;
+                                total_file_events += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some((ext, count)) = ext_counts.into_iter().max_by_key(|(_, c)| *c) {
+                if count >= 3 && total_file_events > 0 {
+                    let confidence =
+                        ((count as f64 / total_file_events as f64) * 0.5 + 0.45).clamp(0.5, 0.95);
+                    let frequency = count as f64 / 30.0;
+                    let key = format!("ext-{}", ext);
+                    let id = det_id(workspace_id, "sequential_files", &key);
+                    let first = existing
+                        .get(&id)
+                        .map(|p| p.first_seen.min(first_seen))
+                        .unwrap_or(first_seen);
+                    let pattern = BehavioralPattern {
+                        id,
+                        pattern_type: PatternType::SequentialFiles,
+                        description: format!(
+                            "Frequently works with {} files ({} of {} file events)",
+                            ext, count, total_file_events
+                        ),
+                        conditions: serde_json::json!({
+                            "workspace_id": workspace_id,
+                            "extension": ext,
+                            "count": count,
+                            "total_file_events": total_file_events
+                        }),
+                        frequency,
+                        confidence,
+                        occurrences: count as i32,
+                        first_seen: first,
+                        last_seen,
+                    };
+                    self.repository.store_pattern(&pattern).await?;
+                    out.push(pattern);
+                }
+            }
+        }
+
+        // ── 3. FocusSession (session duration) ──
+        {
+            let sessions = crate::session::detector::detect_sessions(
+                events.clone(),
+                crate::session::detector::DEFAULT_INACTIVITY_THRESHOLD_SECONDS,
+            );
+            if sessions.len() >= 3 {
+                let total_secs: i64 = sessions.iter().map(|s| s.duration_seconds).sum();
+                let avg_secs = total_secs / sessions.len() as i64;
+                // Only emit if sessions are meaningfully long (10m–3h avg)
+                if (600..=10800).contains(&avg_secs) {
+                    let confidence =
+                        (sessions.len() as f64 / (sessions.len() as f64 + 10.0)).min(0.95);
+                    let frequency = sessions.len() as f64 / 30.0;
+                    let key = format!("focus-avg-{}", avg_secs / 60);
+                    let id = det_id(workspace_id, "focus_session", &key);
+                    let first = existing
+                        .get(&id)
+                        .map(|p| p.first_seen.min(first_seen))
+                        .unwrap_or(first_seen);
+                    let pattern = BehavioralPattern {
+                        id,
+                        pattern_type: PatternType::FocusSession,
+                        description: format!(
+                            "Focus sessions average {}m over {} sessions",
+                            avg_secs / 60,
+                            sessions.len()
+                        ),
+                        conditions: serde_json::json!({
+                            "workspace_id": workspace_id,
+                            "avg_duration_seconds": avg_secs,
+                            "session_count": sessions.len()
+                        }),
+                        frequency,
+                        confidence,
+                        occurrences: sessions.len() as i32,
+                        first_seen: first,
+                        last_seen,
+                    };
+                    self.repository.store_pattern(&pattern).await?;
+                    out.push(pattern);
+                }
+            }
+        }
+
+        // ── 4. WorkflowTransition (edit→commit) ──
+        {
+            let commit_count = events
+                .iter()
+                .filter(|e| e.event_type == crate::models::TimelineEventType::Commit)
+                .count();
+            let edit_count = events
+                .iter()
+                .filter(|e| e.event_type == crate::models::TimelineEventType::Edit)
+                .count();
+            if commit_count >= 2 && edit_count >= 5 {
+                let confidence =
+                    ((commit_count as f64 / edit_count as f64) * 0.5 + 0.5).clamp(0.5, 0.95);
+                let frequency = commit_count as f64 / 30.0;
+                let key = "edit-commit";
+                let id = det_id(workspace_id, "workflow_transition", key);
+                let first = existing
+                    .get(&id)
+                    .map(|p| p.first_seen.min(first_seen))
+                    .unwrap_or(first_seen);
+                let pattern = BehavioralPattern {
+                    id,
+                    pattern_type: PatternType::WorkflowTransition,
+                    description: format!(
+                        "Edit → Commit workflow ({} commits of {} edits)",
+                        commit_count, edit_count
+                    ),
+                    conditions: serde_json::json!({
+                        "workspace_id": workspace_id,
+                        "commits": commit_count,
+                        "edits": edit_count
+                    }),
+                    frequency,
+                    confidence,
+                    occurrences: commit_count as i32,
+                    first_seen: first,
+                    last_seen,
+                };
+                self.repository.store_pattern(&pattern).await?;
+                out.push(pattern);
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Convenience for background workers: learn patterns for every active
+    /// workspace (bounded per-workspace, errors per-workspace are logged
+    /// not propagated so one broken workspace never kills the daemon).
+    pub async fn learn_patterns_for_all_workspaces(&self) -> Result<usize, DatabaseError> {
+        let ws_repo = match &self.workspace_repository {
+            Some(r) => r.clone(),
+            None => return Ok(0),
+        };
+        let active = ws_repo.list_active_workspaces().await.unwrap_or_default();
+        let mut total = 0usize;
+        for ws in active {
+            match self.learn_patterns_from_history(&ws.id.to_string()).await {
+                Ok(patterns) => total += patterns.len(),
+                Err(e) => log::warn!("learn_patterns_for_workspace {} failed: {}", ws.id, e),
+            }
+        }
+        Ok(total)
     }
 
     /// Adjusts prediction confidence based on learned preferences.
@@ -464,7 +811,10 @@ mod tests {
             .unwrap();
         assert_eq!(prefs.len(), 1);
         assert_eq!(prefs[0].evidence_count, 1);
-        assert!((prefs[0].confidence - 0.5).abs() < 0.01, "first observation confidence 0.5");
+        assert!(
+            (prefs[0].confidence - 0.5).abs() < 0.01,
+            "first observation confidence 0.5"
+        );
     }
 
     #[tokio::test]
@@ -496,10 +846,7 @@ mod tests {
             prefs[0].confidence > 0.5,
             "confidence should increase with evidence"
         );
-        assert!(
-            prefs[0].confidence < 0.95,
-            "confidence must remain bounded"
-        );
+        assert!(prefs[0].confidence < 0.95, "confidence must remain bounded");
     }
 
     #[tokio::test]
@@ -647,5 +994,365 @@ mod tests {
             .await
             .unwrap();
         assert!(prefs.is_empty(), "dismissed should be neutral");
+    }
+
+    // ── Phase A: learn_patterns_from_history ──
+
+    #[tokio::test]
+    async fn learn_patterns_empty_history_returns_empty() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        let repo = Arc::new(LearningRepository::new(pool.clone()));
+        let tl_repo = Arc::new(crate::repositories::TimelineRepository::new(pool.clone()));
+        let ws_repo = Arc::new(crate::repositories::WorkspaceRepository::new(pool.clone()));
+        let engine = AdaptiveLearningEngine::new(repo)
+            .with_timeline_repository(tl_repo)
+            .with_workspace_repository(ws_repo);
+        let ws_id = uuid::Uuid::new_v4().to_string();
+        let patterns = engine.learn_patterns_from_history(&ws_id).await.unwrap();
+        assert!(patterns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn learn_patterns_invalid_workspace_returns_empty() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo);
+        let patterns = engine
+            .learn_patterns_from_history("not-a-uuid")
+            .await
+            .unwrap();
+        assert!(patterns.is_empty());
+        let patterns2 = engine.learn_patterns_from_history("").await.unwrap();
+        assert!(patterns2.is_empty());
+    }
+
+    #[tokio::test]
+    async fn learn_patterns_time_based_for_repeated_activity() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        let repo = Arc::new(LearningRepository::new(pool.clone()));
+        let tl_repo = Arc::new(crate::repositories::TimelineRepository::new(pool.clone()));
+        let ws_repo = Arc::new(crate::repositories::WorkspaceRepository::new(pool.clone()));
+        let file_repo = Arc::new(crate::repositories::FileRepository::new(pool.clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone())
+            .with_timeline_repository(tl_repo.clone())
+            .with_workspace_repository(ws_repo.clone())
+            .with_file_repository(file_repo.clone());
+
+        // Create workspace
+        let ws = ws_repo
+            .create(crate::models::CreateWorkspaceInput {
+                name: "ws-a".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+
+        // Create 5 events at same hour (09 UTC) plus 1 off-peak at different hour — peak 09 should trigger time pattern.
+        // Use `Utc::now() - 2h` as anchor so all events are in the past relative to `now` (the 30-day window check uses `occurred_at <= now`).
+        let anchor = chrono::Utc::now() - chrono::Duration::hours(2);
+        let anchor_hour = anchor.hour();
+        let off_hour = (anchor_hour + 6) % 24;
+        for i in 0..5 {
+            let _at = anchor + chrono::Duration::minutes(i as i64 * 5);
+            // Force same hour as anchor by truncating to hour then adding minutes within hour
+            let at = anchor
+                .date_naive()
+                .and_hms_opt(anchor_hour, (i * 5) as u32, 0)
+                .unwrap()
+                .and_utc();
+            // Ensure it's in the past
+            let at = if at > chrono::Utc::now() {
+                at - chrono::Duration::days(1)
+            } else {
+                at
+            };
+            tl_repo
+                .create(crate::models::NewTimelineEvent {
+                    workspace_id: ws.id,
+                    file_id: None,
+                    event_type: crate::models::TimelineEventType::Edit,
+                    occurred_at: at,
+                    metadata: None,
+                })
+                .await
+                .unwrap();
+        }
+        // One off-peak at different hour
+        let off_at = anchor
+            .date_naive()
+            .and_hms_opt(off_hour, 0, 0)
+            .unwrap()
+            .and_utc();
+        let off_at = if off_at > chrono::Utc::now() {
+            off_at - chrono::Duration::days(1)
+        } else {
+            off_at
+        };
+        tl_repo
+            .create(crate::models::NewTimelineEvent {
+                workspace_id: ws.id,
+                file_id: None,
+                event_type: crate::models::TimelineEventType::Edit,
+                occurred_at: off_at,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+
+        let patterns = engine
+            .learn_patterns_from_history(&ws.id.to_string())
+            .await
+            .unwrap();
+        assert!(
+            !patterns.is_empty(),
+            "should have learned at least time-based pattern"
+        );
+        let time_pat = patterns
+            .iter()
+            .find(|p| p.pattern_type == PatternType::TimeBased)
+            .expect("time pattern");
+        assert_eq!(time_pat.occurrences, 5);
+        assert!(time_pat.confidence >= 0.5 && time_pat.confidence <= 0.95);
+        assert!(time_pat.description.contains(":00"), "desc {}", time_pat.description);
+        // Persisted
+        let all = repo.get_all_patterns().await.unwrap();
+        assert!(all.iter().any(|p| p.id == time_pat.id));
+    }
+
+    #[tokio::test]
+    async fn learn_patterns_workspace_isolation() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        let repo = Arc::new(LearningRepository::new(pool.clone()));
+        let tl_repo = Arc::new(crate::repositories::TimelineRepository::new(pool.clone()));
+        let ws_repo = Arc::new(crate::repositories::WorkspaceRepository::new(pool.clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone())
+            .with_timeline_repository(tl_repo.clone())
+            .with_workspace_repository(ws_repo.clone());
+
+        let ws_a = ws_repo
+            .create(crate::models::CreateWorkspaceInput {
+                name: "ws-a".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+        let ws_b = ws_repo
+            .create(crate::models::CreateWorkspaceInput {
+                name: "ws-b".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+
+        let anchor = chrono::Utc::now() - chrono::Duration::hours(2);
+        let anchor_hour = anchor.hour();
+        for i in 0..5 {
+            let at = anchor
+                .date_naive()
+                .and_hms_opt(anchor_hour, i as u32, 0)
+                .unwrap()
+                .and_utc();
+            let at = if at > chrono::Utc::now() {
+                at - chrono::Duration::days(1)
+            } else {
+                at
+            };
+            tl_repo
+                .create(crate::models::NewTimelineEvent {
+                    workspace_id: ws_a.id,
+                    file_id: None,
+                    event_type: crate::models::TimelineEventType::Edit,
+                    occurred_at: at,
+                    metadata: None,
+                })
+                .await
+                .unwrap();
+        }
+
+        let pats_a = engine
+            .learn_patterns_from_history(&ws_a.id.to_string())
+            .await
+            .unwrap();
+        let pats_b = engine
+            .learn_patterns_from_history(&ws_b.id.to_string())
+            .await
+            .unwrap();
+        assert!(!pats_a.is_empty());
+        assert!(
+            pats_b.is_empty(),
+            "ws_b has no history, should not leak ws_a patterns"
+        );
+        // Ensure stored patterns all belong to ws_a
+        for p in pats_a {
+            let ws_in_cond = p.conditions.get("workspace_id").and_then(|v| v.as_str());
+            assert_eq!(ws_in_cond, Some(ws_a.id.to_string()).as_deref());
+        }
+    }
+
+    #[tokio::test]
+    async fn learn_patterns_idempotent_no_duplicate_on_repeated_cycle() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        let repo = Arc::new(LearningRepository::new(pool.clone()));
+        let tl_repo = Arc::new(crate::repositories::TimelineRepository::new(pool.clone()));
+        let ws_repo = Arc::new(crate::repositories::WorkspaceRepository::new(pool.clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone())
+            .with_timeline_repository(tl_repo.clone())
+            .with_workspace_repository(ws_repo.clone());
+
+        let ws = ws_repo
+            .create(crate::models::CreateWorkspaceInput {
+                name: "ws".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+
+        let anchor = chrono::Utc::now() - chrono::Duration::hours(2);
+        let anchor_hour = anchor.hour();
+        for i in 0..5 {
+            let at = anchor
+                .date_naive()
+                .and_hms_opt(anchor_hour, i as u32, 0)
+                .unwrap()
+                .and_utc();
+            let at = if at > chrono::Utc::now() {
+                at - chrono::Duration::days(1)
+            } else {
+                at
+            };
+            tl_repo
+                .create(crate::models::NewTimelineEvent {
+                    workspace_id: ws.id,
+                    file_id: None,
+                    event_type: crate::models::TimelineEventType::Edit,
+                    occurred_at: at,
+                    metadata: None,
+                })
+                .await
+                .unwrap();
+        }
+
+        let first = engine
+            .learn_patterns_from_history(&ws.id.to_string())
+            .await
+            .unwrap();
+        let first_ids: std::collections::HashSet<uuid::Uuid> = first.iter().map(|p| p.id).collect();
+        let count_before = repo.get_all_patterns().await.unwrap().len();
+
+        let second = engine
+            .learn_patterns_from_history(&ws.id.to_string())
+            .await
+            .unwrap();
+        let second_ids: std::collections::HashSet<uuid::Uuid> =
+            second.iter().map(|p| p.id).collect();
+        let count_after = repo.get_all_patterns().await.unwrap().len();
+
+        assert_eq!(first_ids, second_ids, "deterministic ids");
+        assert_eq!(count_before, count_after, "no duplicate rows");
+    }
+
+    #[tokio::test]
+    async fn learn_patterns_for_all_workspaces_bounded() {
+        let (db, _guard) = test_database().await;
+        let pool = db.pool().clone();
+        let repo = Arc::new(LearningRepository::new(pool.clone()));
+        let tl_repo = Arc::new(crate::repositories::TimelineRepository::new(pool.clone()));
+        let ws_repo = Arc::new(crate::repositories::WorkspaceRepository::new(pool.clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone())
+            .with_timeline_repository(tl_repo.clone())
+            .with_workspace_repository(ws_repo.clone());
+
+        // Two workspaces each with history
+        for name in ["ws1", "ws2"] {
+            let ws = ws_repo
+                .create(crate::models::CreateWorkspaceInput {
+                    name: name.into(),
+                    description: None,
+                    root_path: None,
+                })
+                .await
+                .unwrap();
+            let anchor = chrono::Utc::now() - chrono::Duration::hours(2);
+            let anchor_hour = anchor.hour();
+            for i in 0..5 {
+                let at = anchor
+                    .date_naive()
+                    .and_hms_opt(anchor_hour, i as u32, 0)
+                    .unwrap()
+                    .and_utc();
+                let at = if at > chrono::Utc::now() {
+                    at - chrono::Duration::days(1)
+                } else {
+                    at
+                };
+                tl_repo
+                    .create(crate::models::NewTimelineEvent {
+                        workspace_id: ws.id,
+                        file_id: None,
+                        event_type: crate::models::TimelineEventType::Edit,
+                        occurred_at: at,
+                        metadata: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+
+        let total = engine.learn_patterns_for_all_workspaces().await.unwrap();
+        assert!(total >= 2, "each workspace contributes");
+        let stored = repo.get_all_patterns().await.unwrap().len();
+        assert!(stored >= 2);
+    }
+
+    #[tokio::test]
+    async fn original_confidence_threaded_from_context() {
+        let (db, _guard) = test_database().await;
+        let repo = Arc::new(LearningRepository::new(db.pool().clone()));
+        let engine = AdaptiveLearningEngine::new(repo.clone());
+
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-x".into(),
+                FeedbackAction::Accepted,
+                serde_json::json!({"category": "productivity", "confidence": 0.8}),
+            )
+            .await
+            .unwrap();
+
+        let adjs = repo
+            .get_confidence_adjustments(FeedbackTargetType::Recommendation, "rec-x")
+            .await
+            .unwrap();
+        assert_eq!(adjs.len(), 1);
+        assert!((adjs[0].original_confidence - 0.8).abs() < 1e-6);
+        assert!((adjs[0].adjusted_confidence - 0.8 * 1.2).abs() < 1e-6);
+
+        // Without confidence in context → fallback 0.5
+        engine
+            .record_feedback(
+                FeedbackType::Recommendation,
+                FeedbackTargetType::Recommendation,
+                "rec-y".into(),
+                FeedbackAction::Rejected,
+                serde_json::json!({"category": "productivity"}),
+            )
+            .await
+            .unwrap();
+        let adjs2 = repo
+            .get_confidence_adjustments(FeedbackTargetType::Recommendation, "rec-y")
+            .await
+            .unwrap();
+        assert!((adjs2[0].original_confidence - 0.5).abs() < 1e-6);
+        assert!((adjs2[0].adjusted_confidence - 0.5 * 0.5).abs() < 1e-6);
     }
 }

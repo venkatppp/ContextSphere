@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::errors::DatabaseError;
 use crate::intelligence::recommendation::models::{
-    Recommendation, RecommendationAction, RecommendationCategory,
+    Recommendation, RecommendationCategory,
 };
 use crate::repositories::{FileRepository, WorkspaceRepository};
 
@@ -80,7 +80,11 @@ impl RecommendationGenerator for OrganizationRecommendationGenerator {
             );
         }
 
-        // Recommend duplicate scan for larger workspaces
+        // Duplicate scan recommendation — informational only until a safe,
+        // permitted duplicate-scan tool exists in ToolRegistry. Must not
+        // produce an unsupported ExecuteCommand that would surface as a
+        // runnable "Scan for duplicate files" Run button (the screenshot
+        // regression). Surfacing as Info keeps the insight without a Run.
         if file_count > 50 {
             recommendations.push(
                 Recommendation::new(
@@ -91,11 +95,7 @@ impl RecommendationGenerator for OrganizationRecommendationGenerator {
                 )
                 .with_confidence(0.6)
                 .with_impact(0.4)
-                .with_effort(0.2)
-                .with_action(RecommendationAction::ExecuteCommand {
-                    command: "scan_duplicates".to_string(),
-                    args: vec![workspace_id.to_string()],
-                }),
+                .with_effort(0.2),
             );
         }
 

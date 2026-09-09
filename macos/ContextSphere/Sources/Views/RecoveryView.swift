@@ -20,6 +20,7 @@ struct RecoveryView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -55,14 +56,16 @@ struct RecoveryView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
+                .accessibilityLabel("Refresh recovery status")
                 Button("Self-Heal") { showSelfHealConfirm = true }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .accessibilityLabel("Run self-healing")
                 Menu {
                     Button("Rollback", role: .destructive) { showRollbackConfirm = true }
                     Divider()
                     Button("Tick Watchdog") { Task { await viewModel.tick() } }
-                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
+                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).accessibilityLabel("Recovery options")
             }
         }
     }

@@ -20,6 +20,7 @@ struct PerformanceView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -57,12 +58,14 @@ struct PerformanceView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh performance")
+                .accessibilityLabel("Refresh performance")
                 Button { Task { await viewModel.runBenchmark() } } label: {
                     Label("Benchmark", systemImage: "speedometer")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(viewModel.isFetching)
+                .accessibilityLabel("Run benchmark")
                 Menu {
                     Button("Analyze") { applyOptimize = false; showOptimizeConfirm = true }
                     Button("Apply Optimizations") { applyOptimize = true; showOptimizeConfirm = true }
@@ -70,6 +73,7 @@ struct PerformanceView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Performance options")
             }
         }
     }

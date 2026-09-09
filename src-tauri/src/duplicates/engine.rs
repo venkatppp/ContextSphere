@@ -289,6 +289,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: path.to_string_lossy().to_string(),
                 content_hash: None,
+                file_identifier: None,
             })
             .await
             .unwrap();
@@ -314,7 +315,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/path/file1.txt".to_string(),
                 content_hash: Some(hash.to_string()),
-            })
+                file_identifier: None,})
             .await
             .unwrap();
 
@@ -325,7 +326,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/path/file2.txt".to_string(),
                 content_hash: Some(hash.to_string()),
-            })
+                file_identifier: None,})
             .await
             .unwrap();
 
@@ -349,7 +350,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/path/unique1.txt".to_string(),
                 content_hash: Some("hash1".to_string()),
-            })
+                file_identifier: None,})
             .await
             .unwrap();
 
@@ -360,7 +361,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/path/unique2.txt".to_string(),
                 content_hash: Some("hash2".to_string()),
-            })
+                file_identifier: None,})
             .await
             .unwrap();
 

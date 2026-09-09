@@ -55,17 +55,75 @@ impl TimelineRecorder {
             }
         }
 
-        let file_id = match (&activity, activity.file_path()) {
-            // A deleted file's `files` row is removed after the event is
-            // recorded below; a path that was never indexed must not get
-            // a row created for it, so resolve without creating.
-            (TimelineActivity::FileDeleted { .. }, Some(path)) => self
-                .file_repository
-                .find_by_workspace_and_path(workspace_id, path)
-                .await?
-                .map(|existing| existing.id),
-            (_, Some(path)) => Some(self.resolve_file(workspace_id, path).await?),
-            (_, None) => None,
+        let file_id = match &activity {
+            TimelineActivity::FileMoved { from, to } => {
+                // Try to preserve identity via stable filesystem identifier (inode)
+                // or via the existing `from` path row. This keeps `files.id` stable
+                // across renames and allows `search_index` to stay associated.
+                let from_artifact = self
+                    .file_repository
+                    .find_by_workspace_and_path(workspace_id, from)
+                    .await?;
+                if let Some(existing) = from_artifact {
+                    // Try to get the new file's stable identifier (device:inode) for future correlation
+                    let new_ident = Self::file_identifier_for_path(&to);
+                    // Update the existing row's path (and identifier) to the new location, preserving `id`
+                    let updated = self
+                        .file_repository
+                        .update_path(existing.id, to, new_ident.as_deref())
+                        .await?;
+                    // If this looks like a directory rename (from is a prefix of other files),
+                    // update all children as well. `update_path` already handled the single file;
+                    // `rename_directory` handles the rest.
+                    if from != to {
+                        let _ = self
+                            .file_repository
+                            .rename_directory(workspace_id, from, to)
+                            .await;
+                    }
+                    Some(updated.id)
+                } else {
+                    // No existing row for `from` — treat as a plain create at `to`.
+                    // This also handles the case where the rename was for a directory
+                    // that wasn't tracked as a single file row but whose children are.
+                    // Try to find by identifier first (for files that were created before Phase F without identifier)
+                    if let Some(ident) = Self::file_identifier_for_path(&to) {
+                        if let Some(by_ident) = self
+                            .file_repository
+                            .find_by_workspace_and_identifier(workspace_id, &ident)
+                            .await?
+                        {
+                            // Found by inode — update its path to `to`
+                            let updated = self
+                                .file_repository
+                                .update_path(by_ident.id, to, Some(&ident))
+                                .await?;
+                            Some(updated.id)
+                        } else {
+                            Some(self.resolve_file_with_identifier(workspace_id, to).await?)
+                        }
+                    } else {
+                        Some(self.resolve_file(workspace_id, to).await?)
+                    }
+                }
+            }
+            TimelineActivity::FileDeleted { .. } => {
+                if let Some(path) = activity.file_path() {
+                    self.file_repository
+                        .find_by_workspace_and_path(workspace_id, path)
+                        .await?
+                        .map(|existing| existing.id)
+                } else {
+                    None
+                }
+            }
+            _ => {
+                if let Some(path) = activity.file_path() {
+                    Some(self.resolve_file(workspace_id, path).await?)
+                } else {
+                    None
+                }
+            }
         };
 
         let (event_type, metadata) = activity.to_event_type_and_metadata();
@@ -119,6 +177,19 @@ impl TimelineRecorder {
         workspace_id: Uuid,
         path: &str,
     ) -> Result<Uuid, DatabaseError> {
+        self.resolve_file_with_identifier(workspace_id, path).await
+    }
+
+    /// Like `resolve_file`, but also stores the stable filesystem identifier
+    /// (device:inode) when available, so a later rename can be correlated
+    /// via `file_identifier` even if the path has changed. Falls back to
+    /// path-only when the file is not on disk (e.g. in tests) or for non-file
+    /// artifacts.
+    pub(crate) async fn resolve_file_with_identifier(
+        &self,
+        workspace_id: Uuid,
+        path: &str,
+    ) -> Result<Uuid, DatabaseError> {
         if let Some(existing) = self
             .file_repository
             .find_by_workspace_and_path(workspace_id, path)
@@ -127,6 +198,24 @@ impl TimelineRecorder {
             return Ok(existing.id);
         }
 
+        // Try to correlate via stable identifier (inode) if the file exists on disk
+        if let Some(ident) = Self::file_identifier_for_path(path) {
+            if let Some(by_ident) = self
+                .file_repository
+                .find_by_workspace_and_identifier(workspace_id, &ident)
+                .await?
+            {
+                // Found the same inode under a different path — update its path to the new one
+                let updated = self
+                    .file_repository
+                    .update_path(by_ident.id, path, Some(&ident))
+                    .await?;
+                return Ok(updated.id);
+            }
+        }
+
+        let file_identifier = Self::file_identifier_for_path(path);
+
         let created = self
             .file_repository
             .create(NewFile {
@@ -134,10 +223,30 @@ impl TimelineRecorder {
                 artifact_type: ArtifactType::File,
                 path_or_url: path.to_string(),
                 content_hash: None,
+                file_identifier,
             })
             .await?;
 
         Ok(created.id)
+    }
+
+    /// Stable filesystem identifier for a path, if it exists on disk.
+    /// On Unix, `device:inode` is stable across renames within the same filesystem.
+    /// On other platforms, falls back to `None` (path-only correlation). Used to
+    /// preserve `files.id` across renames.
+    fn file_identifier_for_path(path: &str) -> Option<String> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            std::fs::metadata(path)
+                .ok()
+                .map(|m| format!("{}:{}", m.dev(), m.ino()))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            None
+        }
     }
 
     /// Ensures a `files` row exists for `path` under `workspace_id`
@@ -483,5 +592,377 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(DatabaseError::Constraint(_))));
+    }
+
+    #[tokio::test]
+    async fn create_modify_preserves_id() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        let ev2 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileModified {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ev2.file_id.unwrap(), id1);
+        assert_eq!(file_repo.list_by_workspace(ws_id).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rename_preserves_id() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        let ev2 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ev2.file_id.unwrap(), id1);
+        let files = file_repo.list_by_workspace(ws_id).await.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, id1);
+        assert_eq!(files[0].path_or_url, "/repo/new.rs");
+    }
+
+    #[tokio::test]
+    async fn rename_preserves_search_index() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // search_index should still have one entry with same entity_id but new title
+        let pool = file_repo.clone();
+        // Use raw query to check search_index
+        let rows: Vec<(Uuid, String)> = sqlx::query_as(
+            "SELECT entity_id, title FROM search_index WHERE entity_type='file' AND workspace_id = ?",
+        )
+        .bind(ws_id)
+        .fetch_all(&pool.pool.clone())
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, id1);
+        assert_eq!(rows[0].1, "/repo/new.rs");
+    }
+
+    #[tokio::test]
+    async fn historical_references_still_resolve() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // Old event's file_id should still be the same id, which now points to new path
+        let fetched = file_repo.get_by_id(id1).await.unwrap();
+        assert_eq!(fetched.path_or_url, "/repo/new.rs");
+        assert_eq!(ev1.file_id.unwrap(), id1);
+    }
+
+    #[tokio::test]
+    async fn unrelated_delete_create_gets_different_ids() {
+        let (recorder, _, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileDeleted {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let ev2 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(ev2.file_id.unwrap(), id1);
+    }
+
+    #[tokio::test]
+    async fn same_filename_different_workspaces_isolated() {
+        let (database, _guard) = test_database().await;
+        let ws_repo = WorkspaceRepository::new(database.pool().clone());
+        let ws1 = ws_repo
+            .create(CreateWorkspaceInput {
+                name: "ws1".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+        let ws2 = ws_repo
+            .create(CreateWorkspaceInput {
+                name: "ws2".into(),
+                description: None,
+                root_path: None,
+            })
+            .await
+            .unwrap();
+        let file_repo = FileRepository::new(database.pool().clone());
+        let recorder = TimelineRecorder::new(
+            file_repo.clone(),
+            TimelineRepository::new(database.pool().clone()),
+        );
+        let ev1 = recorder
+            .record(
+                ws1.id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let ev2 = recorder
+            .record(
+                ws2.id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(ev1.file_id.unwrap(), ev2.file_id.unwrap());
+        assert_eq!(file_repo.list_by_workspace(ws1.id).await.unwrap().len(), 1);
+        assert_eq!(file_repo.list_by_workspace(ws2.id).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn repeated_rename_idempotent() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        // First rename
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // Repeat same rename (idempotent)
+        let ev3 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // Should still be same id, not duplicate
+        assert_eq!(ev3.file_id.unwrap(), id1);
+        assert_eq!(file_repo.list_by_workspace(ws_id).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rename_followed_by_modify_preserves_id() {
+        let (recorder, _, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let ev3 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileModified {
+                    path: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ev3.file_id.unwrap(), id1);
+    }
+
+    #[tokio::test]
+    async fn delete_then_new_does_not_reuse_old_id() {
+        let (recorder, _, ws_id, _guard) = recorder_with_workspace().await;
+        let ev1 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let id1 = ev1.file_id.unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileDeleted {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // Create a different file at same path after deletion — should be new id if content hash differs?
+        // Since we deleted the old row, a new create at same path should be new id (not reuse)
+        // Our current logic for FileCreated after delete will do find_by_workspace_and_path (which will be None after delete)
+        // so it will create new, which is correct.
+        let ev2 = recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/a.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(ev2.file_id.unwrap(), id1);
+    }
+
+    #[tokio::test]
+    async fn reindex_does_not_duplicate_renamed_file() {
+        let (recorder, file_repo, ws_id, _guard) = recorder_with_workspace().await;
+        // Create and rename
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileCreated {
+                    path: "/repo/old.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        recorder
+            .record(
+                ws_id,
+                TimelineActivity::FileMoved {
+                    from: "/repo/old.rs".into(),
+                    to: "/repo/new.rs".into(),
+                },
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        // Simulate restart re-scan: register_file for new path should reuse existing id, not duplicate
+        recorder.register_file(ws_id, "/repo/new.rs").await.unwrap();
+        assert_eq!(file_repo.list_by_workspace(ws_id).await.unwrap().len(), 1);
+        // Also register old path should not create duplicate (old path no longer exists, but if scanned, it would be ignored)
+        // For a directory scan, only new path exists, so only one row remains.
     }
 }

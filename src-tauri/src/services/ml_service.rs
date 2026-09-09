@@ -157,6 +157,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/test/code.rs".to_string(),
                 content_hash: None,
+                file_identifier: None,
             })
             .await
             .unwrap();

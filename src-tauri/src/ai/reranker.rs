@@ -161,12 +161,40 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default since it requires downloaded models
     async fn real_reranking_works() {
-        let model_path = PathBuf::from("test_models/bge-reranker-base/model.onnx");
-        let tokenizer_path = PathBuf::from("test_models/bge-reranker-base/tokenizer.json");
-
-        if !model_path.exists() || !tokenizer_path.exists() {
-            return; // Skip if models not available
-        }
+        let candidates = vec![
+            (
+                PathBuf::from("test_models/bge-reranker-base/model.onnx"),
+                PathBuf::from("test_models/bge-reranker-base/tokenizer.json"),
+            ),
+            (
+                PathBuf::from("/Users/srivenkat/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/model.onnx"),
+                PathBuf::from("/Users/srivenkat/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/tokenizer.json"),
+            ),
+        ];
+        let (model_path, tokenizer_path) = match candidates.into_iter().find(|(m, t)| m.exists() && t.exists()) {
+            Some((m, t)) => (m, t),
+            None => return,
+        };
+        // Also handle HOME env for CI
+        let home_candidates = std::env::var("HOME")
+            .ok()
+            .map(|h| {
+                (
+                    PathBuf::from(format!("{}/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/model.onnx", h)),
+                    PathBuf::from(format!("{}/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/tokenizer.json", h)),
+                )
+            });
+        let (model_path, tokenizer_path) = if model_path.exists() {
+            (model_path, tokenizer_path)
+        } else if let Some((m, t)) = home_candidates {
+            if m.exists() && t.exists() {
+                (m, t)
+            } else {
+                return;
+            }
+        } else {
+            return;
+        };
 
         let reranker = Reranker::new(
             "test".to_string(),
@@ -194,5 +222,85 @@ mod tests {
 
         // Verify that Rust-related documents score higher
         assert!(results[0].document.contains("Rust") || results[1].document.contains("Rust"));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn cross_encoder_semantic_reranking() {
+        // Proves BGE cross-encoder beats lexical overlap: query shares no tokens with A,
+        // but A is semantically related, while B shares "Swift" token but is unrelated.
+        let candidates = vec![
+            (
+                PathBuf::from("test_models/bge-reranker-base/model.onnx"),
+                PathBuf::from("test_models/bge-reranker-base/tokenizer.json"),
+            ),
+            (
+                PathBuf::from("/Users/srivenkat/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/model.onnx"),
+                PathBuf::from("/Users/srivenkat/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/tokenizer.json"),
+            ),
+        ];
+        let (model_path, tokenizer_path) = match candidates.into_iter().find(|(m, t)| m.exists() && t.exists()) {
+            Some((m, t)) => (m, t),
+            None => {
+                if let Ok(home) = std::env::var("HOME") {
+                    let m = PathBuf::from(format!("{}/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/model.onnx", home));
+                    let t = PathBuf::from(format!("{}/Library/Application Support/com.chronodesk.app/models/bge-reranker-base/tokenizer.json", home));
+                    if m.exists() && t.exists() {
+                        (m, t)
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+        };
+
+        let reranker = Reranker::new(
+            "test".to_string(),
+            model_path,
+            tokenizer_path,
+            512,
+            true,
+            100,
+        )
+        .unwrap();
+
+        let request = RerankRequest {
+            query: "debug the Swift graph rendering problem".to_string(),
+            documents: vec![
+                "Investigating Canvas layout failures in the macOS graph renderer".to_string(),
+                "Swift syntax tutorial for beginners".to_string(),
+                "Organizing financial documents".to_string(),
+            ],
+            top_k: 3,
+        };
+
+        let results = reranker.rerank(request).await.unwrap();
+        assert_eq!(results.len(), 3);
+        // A should outrank B and C because it is semantically related to graph rendering, not just Swift token overlap
+        let pos_a = results.iter().position(|r| r.document.contains("Canvas layout failures")).unwrap();
+        let pos_b = results.iter().position(|r| r.document.contains("Swift syntax tutorial")).unwrap();
+        let pos_c = results.iter().position(|r| r.document.contains("financial documents")).unwrap();
+        assert!(pos_a < pos_b, "Canvas failures (A) should outrank Swift tutorial (B): positions {} vs {}, scores {:?}", pos_a, pos_b, results.iter().map(|r| (r.document.clone(), r.score)).collect::<Vec<_>>());
+        assert!(pos_a < pos_c, "Canvas failures (A) should outrank financial (C)");
+        // Scores should be 0..1 (sigmoid) and deterministic
+        for r in &results {
+            assert!((0.0..=1.0).contains(&r.score), "score {} out of range", r.score);
+        }
+        // Determinism: rerun same query should give same ordering and scores within epsilon
+        let request2 = RerankRequest {
+            query: "debug the Swift graph rendering problem".to_string(),
+            documents: vec![
+                "Investigating Canvas layout failures in the macOS graph renderer".to_string(),
+                "Swift syntax tutorial for beginners".to_string(),
+                "Organizing financial documents".to_string(),
+            ],
+            top_k: 3,
+        };
+        let results2 = reranker.rerank(request2).await.unwrap();
+        for (r1, r2) in results.iter().zip(results2.iter()) {
+            assert!((r1.score - r2.score).abs() < 1e-5, "deterministic scores {} vs {}", r1.score, r2.score);
+        }
     }
 }

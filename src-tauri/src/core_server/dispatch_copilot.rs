@@ -56,6 +56,7 @@ pub async fn dispatch_copilot(
         "copilot_get_enhanced_briefing" => rpc_state!(app, params, Arc<ProactiveEngine>, crate::commands::proactive::copilot_get_enhanced_briefing, ("workspace_id": Option<String>)),
         "copilot_query_timeline" => rpc_state!(app, params, Arc<ProactiveEngine>, crate::commands::proactive::copilot_query_timeline, ("workspace_id": Option<String>, "query": String)),
         "copilot_check_opportunities" => rpc_state!(app, params, Arc<ProactiveEngine>, crate::commands::proactive::copilot_check_opportunities, ("workspace_id": String)),
+        "copilot_execute_proactive_action" => rpc_state!(app, params, Arc<ProactiveEngine>, crate::commands::proactive::copilot_execute_proactive_action, ("action_id": String, "workspace_id": Option<String>)),
 
         // -------------------------------------------------------- conversation
         "copilot_rename_conversation" => rpc_state!(app, params, CopilotRepository, crate::commands::conversation::copilot_rename_conversation, ("conversation_id": String, "new_title": String)),

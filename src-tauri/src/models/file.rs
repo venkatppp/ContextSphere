@@ -72,6 +72,10 @@ pub struct FileArtifact {
     /// (blueprint §6, "Duplicate & near-duplicate detection"). `None`
     /// until the (Phase 5) ML layer computes it.
     pub content_hash: Option<String>,
+    /// Stable filesystem identifier (device:inode on Unix, fileResourceIdentifier on macOS)
+    /// used to correlate renames/moves as an UPDATE rather than DELETE+INSERT.
+    /// `None` for non-file artifacts (tab, note) or for rows created before Phase F.
+    pub file_identifier: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -85,6 +89,7 @@ pub(crate) struct FileRow {
     pub artifact_type: String,
     pub path_or_url: String,
     pub content_hash: Option<String>,
+    pub file_identifier: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -99,6 +104,7 @@ impl TryFrom<FileRow> for FileArtifact {
             artifact_type: ArtifactType::from_str(&row.artifact_type)?,
             path_or_url: row.path_or_url,
             content_hash: row.content_hash,
+            file_identifier: row.file_identifier,
             created_at: row.created_at,
             updated_at: row.updated_at,
         })
@@ -114,4 +120,6 @@ pub struct NewFile {
     pub path_or_url: String,
     #[serde(default)]
     pub content_hash: Option<String>,
+    #[serde(default)]
+    pub file_identifier: Option<String>,
 }

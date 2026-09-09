@@ -41,6 +41,7 @@ struct SearchView: View {
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -173,18 +174,23 @@ struct SearchView: View {
 
     // MARK: - Initial state
 
+    @ViewBuilder
     private var initialContent: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            recentSearchesSection
-            savedSearchesSection
-            if viewModel.history.isEmpty && viewModel.savedSearches.isEmpty {
-                EmptyStateView(
-                    title: "Search your context",
-                    message: "Find workspaces and files across everything ContextSphere is watching. Recent searches and saved queries appear here.",
-                    symbol: "magnifyingglass"
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+        // Single coherent empty state: when there is no history and no saved
+        // searches, the section stubs and the big empty view would otherwise
+        // compete. Show one guidance block; sections render once populated.
+        if viewModel.history.isEmpty && viewModel.savedSearches.isEmpty {
+            EmptyStateView(
+                title: "Search your context",
+                message: "Find workspaces and files across everything ContextSphere is watching. Recent searches and saved queries appear here.",
+                symbol: "magnifyingglass"
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        } else {
+            VStack(alignment: .leading, spacing: 22) {
+                recentSearchesSection
+                savedSearchesSection
             }
         }
     }

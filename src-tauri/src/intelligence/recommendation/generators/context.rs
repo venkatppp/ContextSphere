@@ -29,7 +29,9 @@ impl RecommendationGenerator for ContextRecommendationGenerator {
 
         // Get smart resume session (no workspace_id parameter)
         if let Some(session) = self.context_service.get_smart_resume_session().await? {
-            // Short session detected
+            // Short session detected — resume the workspace via the
+            // permitted `resume_workspace` tool, not a non-existent
+            // `smart_resume` command (would be Unsupported).
             if session.duration_seconds < 600 {
                 recommendations.push(
                     Recommendation::new(
@@ -42,13 +44,15 @@ impl RecommendationGenerator for ContextRecommendationGenerator {
                     .with_impact(0.7)
                     .with_effort(0.1)
                     .with_action(RecommendationAction::ExecuteCommand {
-                        command: "smart_resume".to_string(),
-                        args: vec![],
+                        command: "resume_workspace".to_string(),
+                        args: vec![session.workspace_id.to_string()],
                     })
                 );
             }
 
-            // Many files in session
+            // Many files in session — informational until a permitted
+            // file-organization tool exists. OpenView "files" would map to
+            // `navigate` which is not in ToolRegistry (Unsupported).
             if session.file_count > 15 {
                 recommendations.push(
                     Recommendation::new(
@@ -62,10 +66,7 @@ impl RecommendationGenerator for ContextRecommendationGenerator {
                     )
                     .with_confidence(0.7)
                     .with_impact(0.5)
-                    .with_effort(0.4)
-                    .with_action(RecommendationAction::OpenView {
-                        view: "files".to_string(),
-                    })
+                    .with_effort(0.4),
                 );
             }
 

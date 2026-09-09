@@ -73,8 +73,10 @@ sha2 = "0.10"
 async-trait = "0.1"
 
 # --- Phase 6B: Local AI (ONNX Runtime) ---
-# ONNX Runtime for local ML inference
-ort = { version = "2.0.0-rc.4", features = ["load-dynamic"] }
+# ONNX Runtime for local ML inference — `load-dynamic` searches DYLD path,
+# `download-binaries` fetches a prebuilt dylib at build time when not
+# present (required for CI/tests where the host has no system ORT).
+ort = { version = "2.0.0-rc.4", features = ["load-dynamic", "download-binaries"] }
 # Tokenizers for text preprocessing
 tokenizers = { version = "0.19", default-features = false, features = ["onig"] }
 # HTTP client for model downloads

@@ -71,6 +71,50 @@ impl ProactiveDetector {
                     }),
                 }];
 
+                let now = Utc::now();
+                let actions = vec![
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::LongFocusSession,
+                            &ProactiveActionType::NoOp,
+                            Some("break"),
+                        ),
+                        trigger: Some(ProactiveTrigger::LongFocusSession),
+                        action_type: ProactiveActionType::NoOp,
+                        title: "Take a 5-minute break".to_string(),
+                        description: "Step away to recharge — ContextSphere will keep your session warm.".to_string(),
+                        target: None,
+                        confidence: 0.95,
+                        impact: 0.6,
+                        effort: 0.1,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::minutes(15)),
+                        requires_confirmation: false,
+                    },
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::LongFocusSession,
+                            &ProactiveActionType::NoOp,
+                            Some("save"),
+                        ),
+                        trigger: Some(ProactiveTrigger::LongFocusSession),
+                        action_type: ProactiveActionType::NoOp,
+                        title: "Save current progress".to_string(),
+                        description: "Snapshot your current files before the break.".to_string(),
+                        target: None,
+                        confidence: 0.9,
+                        impact: 0.5,
+                        effort: 0.1,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::minutes(15)),
+                        requires_confirmation: false,
+                    },
+                ];
+                let suggested_actions = actions.iter().map(|a| a.title.clone()).collect();
                 return Ok(Some(ProactiveNotification {
                     id: Uuid::new_v4(),
                     workspace_id: Some(workspace_id),
@@ -82,14 +126,12 @@ impl ProactiveDetector {
                     ),
                     priority: NotificationPriority::Medium,
                     evidence,
-                    suggested_actions: vec![
-                        "Take a 5-minute break".to_string(),
-                        "Save current progress".to_string(),
-                    ],
+                    suggested_actions,
+                    actions,
                     dismissible: true,
                     dismissed: false,
-                    created_at: Utc::now(),
-                    expires_at: Some(Utc::now() + Duration::minutes(15)),
+                    created_at: now,
+                    expires_at: Some(now + Duration::minutes(15)),
                 }));
             }
         }
@@ -134,6 +176,50 @@ impl ProactiveDetector {
                     }),
                 }];
 
+                let now = Utc::now();
+                let actions = vec![
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::RepeatedEdits,
+                            &ProactiveActionType::ReviewRelatedWork { workspace_id: workspace_id.to_string() },
+                            Some(&file_id.to_string()),
+                        ),
+                        trigger: Some(ProactiveTrigger::RepeatedEdits),
+                        action_type: ProactiveActionType::ReviewRelatedWork { workspace_id: workspace_id.to_string() },
+                        title: "Review recent changes".to_string(),
+                        description: format!("File edited {} times in 10 minutes — review diff.", count),
+                        target: Some(file_id.to_string()),
+                        confidence: 0.9,
+                        impact: 0.5,
+                        effort: 0.2,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::minutes(30)),
+                        requires_confirmation: false,
+                    },
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::RepeatedEdits,
+                            &ProactiveActionType::NoOp,
+                            Some("syntax"),
+                        ),
+                        trigger: Some(ProactiveTrigger::RepeatedEdits),
+                        action_type: ProactiveActionType::NoOp,
+                        title: "Check for syntax errors".to_string(),
+                        description: "Run a quick check for compile errors.".to_string(),
+                        target: None,
+                        confidence: 0.85,
+                        impact: 0.4,
+                        effort: 0.1,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::minutes(30)),
+                        requires_confirmation: false,
+                    },
+                ];
+                let suggested_actions = actions.iter().map(|a| a.title.clone()).collect();
                 return Ok(Some(ProactiveNotification {
                     id: Uuid::new_v4(),
                     workspace_id: Some(workspace_id),
@@ -142,14 +228,12 @@ impl ProactiveDetector {
                     message: format!("You've edited a file {} times. Need help debugging?", count),
                     priority: NotificationPriority::Low,
                     evidence,
-                    suggested_actions: vec![
-                        "Review recent changes".to_string(),
-                        "Check for syntax errors".to_string(),
-                    ],
+                    suggested_actions,
+                    actions,
                     dismissible: true,
                     dismissed: false,
-                    created_at: Utc::now(),
-                    expires_at: Some(Utc::now() + Duration::minutes(30)),
+                    created_at: now,
+                    expires_at: Some(now + Duration::minutes(30)),
                 }));
             }
         }
@@ -182,6 +266,50 @@ impl ProactiveDetector {
                     }),
                 }];
 
+                let now = Utc::now();
+                let actions = vec![
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::IdlePeriod,
+                            &ProactiveActionType::ResumeWorkspace { workspace_id: workspace_id.to_string() },
+                            None,
+                        ),
+                        trigger: Some(ProactiveTrigger::IdlePeriod),
+                        action_type: ProactiveActionType::ResumeWorkspace { workspace_id: workspace_id.to_string() },
+                        title: "Resume previous work".to_string(),
+                        description: "Reopen your last session and continue.".to_string(),
+                        target: Some(workspace_id.to_string()),
+                        confidence: 1.0,
+                        impact: 0.6,
+                        effort: 0.2,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::hours(1)),
+                        requires_confirmation: true,
+                    },
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(workspace_id),
+                            &ProactiveTrigger::IdlePeriod,
+                            &ProactiveActionType::SearchContext { query: "recent changes".to_string() },
+                            None,
+                        ),
+                        trigger: Some(ProactiveTrigger::IdlePeriod),
+                        action_type: ProactiveActionType::SearchContext { query: "recent changes".to_string() },
+                        title: "See what changed".to_string(),
+                        description: "Show timeline of recent edits.".to_string(),
+                        target: Some("recent changes".to_string()),
+                        confidence: 0.9,
+                        impact: 0.4,
+                        effort: 0.1,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::hours(1)),
+                        requires_confirmation: false,
+                    },
+                ];
+                let suggested_actions = actions.iter().map(|a| a.title.clone()).collect();
                 return Ok(Some(ProactiveNotification {
                     id: Uuid::new_v4(),
                     workspace_id: Some(workspace_id),
@@ -190,14 +318,12 @@ impl ProactiveDetector {
                     message: "You've been away for a while. Ready to resume?".to_string(),
                     priority: NotificationPriority::Low,
                     evidence,
-                    suggested_actions: vec![
-                        "Resume previous work".to_string(),
-                        "See what changed".to_string(),
-                    ],
+                    suggested_actions,
+                    actions,
                     dismissible: true,
                     dismissed: false,
-                    created_at: Utc::now(),
-                    expires_at: Some(Utc::now() + Duration::hours(1)),
+                    created_at: now,
+                    expires_at: Some(now + Duration::hours(1)),
                 }));
             }
         }
@@ -222,6 +348,50 @@ impl ProactiveDetector {
             }),
         }];
 
+        let now = Utc::now();
+        let actions = vec![
+            ProactiveAction {
+                id: ProactiveAction::deterministic_id(
+                    Some(to_workspace_id),
+                    &ProactiveTrigger::WorkspaceSwitch,
+                    &ProactiveActionType::OpenRecentFile { path: to_workspace_id.to_string() },
+                    None,
+                ),
+                trigger: Some(ProactiveTrigger::WorkspaceSwitch),
+                action_type: ProactiveActionType::OpenRecentFile { path: to_workspace_id.to_string() },
+                title: "Show recent files".to_string(),
+                description: "List recent files in the new workspace.".to_string(),
+                target: Some(to_workspace_id.to_string()),
+                confidence: 1.0,
+                impact: 0.5,
+                effort: 0.1,
+                evidence: evidence.clone(),
+                created_at: now,
+                expires_at: Some(now + Duration::minutes(5)),
+                requires_confirmation: false,
+            },
+            ProactiveAction {
+                id: ProactiveAction::deterministic_id(
+                    Some(to_workspace_id),
+                    &ProactiveTrigger::WorkspaceSwitch,
+                    &ProactiveActionType::ResumeWorkspace { workspace_id: to_workspace_id.to_string() },
+                    None,
+                ),
+                trigger: Some(ProactiveTrigger::WorkspaceSwitch),
+                action_type: ProactiveActionType::ResumeWorkspace { workspace_id: to_workspace_id.to_string() },
+                title: "Resume previous session".to_string(),
+                description: "Restore the last session for this workspace.".to_string(),
+                target: Some(to_workspace_id.to_string()),
+                confidence: 1.0,
+                impact: 0.6,
+                effort: 0.2,
+                evidence: evidence.clone(),
+                created_at: now,
+                expires_at: Some(now + Duration::minutes(5)),
+                requires_confirmation: true,
+            },
+        ];
+        let suggested_actions = actions.iter().map(|a| a.title.clone()).collect();
         Ok(ProactiveNotification {
             id: Uuid::new_v4(),
             workspace_id: Some(to_workspace_id),
@@ -230,14 +400,12 @@ impl ProactiveDetector {
             message: "Switched to a new workspace. Would you like context?".to_string(),
             priority: NotificationPriority::Medium,
             evidence,
-            suggested_actions: vec![
-                "Show recent files".to_string(),
-                "Resume previous session".to_string(),
-            ],
+            suggested_actions,
+            actions,
             dismissible: true,
             dismissed: false,
-            created_at: Utc::now(),
-            expires_at: Some(Utc::now() + Duration::minutes(5)),
+            created_at: now,
+            expires_at: Some(now + Duration::minutes(5)),
         })
     }
 
@@ -317,6 +485,50 @@ impl ProactiveDetector {
                     }),
                 }];
 
+                let now = Utc::now();
+                let actions = vec![
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(_workspace_id),
+                            &ProactiveTrigger::RecurringWorkflow,
+                            &ProactiveActionType::ReviewRelatedWork { workspace_id: prediction.workspace_id.clone() },
+                            None,
+                        ),
+                        trigger: Some(ProactiveTrigger::RecurringWorkflow),
+                        action_type: ProactiveActionType::ReviewRelatedWork { workspace_id: prediction.workspace_id.clone() },
+                        title: "Show related files".to_string(),
+                        description: format!("Files related to recurring workspace {}", prediction.workspace_name),
+                        target: Some(prediction.workspace_id.clone()),
+                        confidence: prediction.confidence,
+                        impact: 0.5,
+                        effort: 0.2,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::hours(1)),
+                        requires_confirmation: false,
+                    },
+                    ProactiveAction {
+                        id: ProactiveAction::deterministic_id(
+                            Some(_workspace_id),
+                            &ProactiveTrigger::RecurringWorkflow,
+                            &ProactiveActionType::ResumeWorkspace { workspace_id: prediction.workspace_id.clone() },
+                            None,
+                        ),
+                        trigger: Some(ProactiveTrigger::RecurringWorkflow),
+                        action_type: ProactiveActionType::ResumeWorkspace { workspace_id: prediction.workspace_id.clone() },
+                        title: "Start workflow".to_string(),
+                        description: "Begin the predicted workflow.".to_string(),
+                        target: Some(prediction.workspace_id.clone()),
+                        confidence: prediction.confidence,
+                        impact: 0.6,
+                        effort: 0.3,
+                        evidence: evidence.clone(),
+                        created_at: now,
+                        expires_at: Some(now + Duration::hours(1)),
+                        requires_confirmation: true,
+                    },
+                ];
+                let suggested_actions = actions.iter().map(|a| a.title.clone()).collect();
                 return Ok(Some(ProactiveNotification {
                     id: Uuid::new_v4(),
                     workspace_id: Some(_workspace_id),
@@ -328,14 +540,12 @@ impl ProactiveDetector {
                     ),
                     priority: NotificationPriority::Low,
                     evidence,
-                    suggested_actions: vec![
-                        "Show related files".to_string(),
-                        "Start workflow".to_string(),
-                    ],
+                    suggested_actions,
+                    actions,
                     dismissible: true,
                     dismissed: false,
-                    created_at: Utc::now(),
-                    expires_at: Some(Utc::now() + Duration::hours(1)),
+                    created_at: now,
+                    expires_at: Some(now + Duration::hours(1)),
                 }));
             }
         }

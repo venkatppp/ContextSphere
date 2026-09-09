@@ -203,19 +203,19 @@ impl SearchRepository {
         workspace_id: Uuid,
         limit: i64,
     ) -> Result<Vec<SearchResult>, DatabaseError> {
-        // We join with search_index to get the title/snippet if available,
-        // or just use files table and search_index columns.
-        // Actually, search_index triggers keep everything in sync.
+        // `search_index` is alphabetical, not chronological — ordering by
+        // `files.updated_at` is the source of truth for recency.
         let rows: Vec<SearchResultRow> = sqlx::query_as(
-            "SELECT 
-                entity_type, 
-                entity_id, 
-                workspace_id, 
-                title, 
+            "SELECT
+                'file' as entity_type,
+                id as entity_id,
+                workspace_id,
+                path_or_url as title,
                 '' as snippet,
                 0.0 as rank
-             FROM search_index
-             WHERE entity_type = 'file' AND workspace_id = ?
+             FROM files
+             WHERE workspace_id = ?
+             ORDER BY updated_at DESC
              LIMIT ?",
         )
         .bind(workspace_id)

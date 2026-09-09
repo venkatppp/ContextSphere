@@ -27,6 +27,8 @@ struct GraphInspectorView: View {
                     }
                     .padding(16)
                 }
+                .scrollIndicators(.automatic)
+                .scrollEdgeEffectStyle(.soft, for: .vertical)
             } else {
                 Spacer(minLength: 0)
             }
