@@ -408,10 +408,22 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             );
 
             // --- Adaptive Learning Engine (Phase 6C) ---
+            // Wired to timeline/workspace/file so `learn_patterns_from_history`
+            // can run a bounded 30-day window per active workspace.
             let learning_repository = learning::LearningRepository::new(pool.clone());
-            let learning_engine = Arc::new(learning::AdaptiveLearningEngine::new(Arc::new(
-                learning_repository.clone(),
-            )));
+            let learning_engine = Arc::new(
+                learning::AdaptiveLearningEngine::new(Arc::new(learning_repository.clone()))
+                    .with_timeline_repository(Arc::new(timeline_repository.clone()))
+                    .with_workspace_repository(Arc::new(workspace_repository.clone()))
+                    .with_file_repository(Arc::new(file_repository.clone())),
+            );
+
+            // Wire learning into recommendation generation so future
+            // recommendations are confidence-adjusted via real feedback.
+            // This is done via interior mutability so the earlier-cloned
+            // `recommendation_engine` held by runtime workers sees the
+            // updated engine without needing a rebuild.
+            recommendation_engine.set_learning_engine(learning_engine.clone());
 
             // Start learning workers
             let learning_worker = learning::LearningWorker::new(learning_engine.clone(), 3600);
@@ -492,6 +504,14 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             proactive_engine.set_event_emitter(
                 Arc::new(app_handle.clone()) as Arc<dyn app_events::AppEventEmitter>
             );
+            // Wire the safe ToolExecutor for Phase D proactive execution.
+            // Must happen before the engine is wrapped in Arc and shared.
+            tauri::async_runtime::block_on(
+                proactive_engine.set_tool_executor(tool_executor.clone()),
+            );
+            tauri::async_runtime::block_on(
+                proactive_engine.set_permission_service(tool_permission_service.clone()),
+            );
             let proactive_engine = Arc::new(proactive_engine);
 
             // --- Execution Memory & Learning (RC-6 M1 + M2) ---
@@ -525,6 +545,11 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                 async move { memory_cleanup.run().await }
             });
             startup_profiler.stage_end();
+
+            // Phase G: wire MemoryEngine into ProactiveEngine for the Context → Memory bridge
+            tauri::async_runtime::block_on(
+                proactive_engine.set_memory_engine(memory_engine.clone()),
+            );
 
             // --- RC-8 M2: Live Knowledge Graph (incremental sync, semantic
             // edges, analytics, multi-hop context, recommendations) ---
@@ -903,7 +928,12 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             app.manage(learning_repository);
             app.manage(learning_engine);
             app.manage(ai_state);
-            // Auto-load real ONNX model if already downloaded (no UI block, no auto-download)
+            // Auto-load real ONNX model if already downloaded (no UI block, no auto-download).
+            // Checks the filesystem directly — `ModelManager` starts with
+            // `NotDownloaded` for all models and only flips to `Downloaded`
+            // after an explicit `download_model` call, so we must not rely
+            // on `model.status`/`local_path` when the user manually placed
+            // the 86 MB artifact (as in this dev Mac's Library path).
             {
                 let app_clone = app_handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -911,11 +941,37 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                     let ai_state = app_clone.state::<commands::ai::AIState>();
                     let model_id = "all-minilm-l6-v2";
                     if let Some(model) = ai_state.manager.get_model(model_id) {
-                        if model.status == crate::ai::models::ModelStatus::Downloaded {
-                            if let Some(path) = ai_state.manager.get_model_path(model_id) {
-                                let model_file = path.join("model.onnx");
-                                let tokenizer_file = path.join("tokenizer.json");
-                                if model_file.exists() && tokenizer_file.exists() {
+                        // Prefer manager's known path, but fall back to the
+                        // conventional app-data layout so a manually-placed
+                        // model is still discovered.
+                        let model_dir = ai_state
+                            .manager
+                            .get_model_path(model_id)
+                            .or_else(|| {
+                                app_clone
+                                    .path()
+                                    .app_data_dir()
+                                    .ok()
+                                    .map(|d| d.join("models").join(model_id))
+                            })
+                            .or_else(|| {
+                                // Legacy fallback: model may still reside under
+                                // the pre-migration identifier
+                                // `com.chronodesk.app` until the user
+                                // migrates or re-downloads. Check there before
+                                // giving up so ONNX/BGE still lights up on
+                                // upgraded installs.
+                                std::env::var("HOME").ok().map(|h| {
+                                    std::path::PathBuf::from(h).join(
+                                        "Library/Application Support/com.chronodesk.app/models",
+                                    )
+                                    .join(model_id)
+                                })
+                            });
+                        if let Some(path) = model_dir {
+                            let model_file = path.join("model.onnx");
+                            let tokenizer_file = path.join("tokenizer.json");
+                            if model_file.exists() && tokenizer_file.exists() {
                                     match crate::ai::ONNXEmbeddingProvider::new(
                                         model_id.to_string(),
                                         model_file,
@@ -943,7 +999,6 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                                 }
                             }
                         }
-                    }
                 });
             }
             app.manage(llm_repository);
@@ -1170,6 +1225,7 @@ pub fn run() {
             commands::proactive::copilot_get_enhanced_briefing,
             commands::proactive::copilot_query_timeline,
             commands::proactive::copilot_check_opportunities,
+            commands::proactive::copilot_execute_proactive_action,
             commands::llm::llm_get_settings,
             commands::llm::llm_update_settings,
             commands::llm::llm_test_connection,

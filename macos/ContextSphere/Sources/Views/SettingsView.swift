@@ -160,6 +160,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .background(Color.cs(CSColor.surface))
@@ -169,6 +170,8 @@ struct SettingsView: View {
                     .onAppear { detailWidth = geo.size.width }
                     .onChange(of: geo.size.width) { _, new in detailWidth = new }
             }
+            .frame(height: 0)
+            .allowsHitTesting(false)
         }
     }
 

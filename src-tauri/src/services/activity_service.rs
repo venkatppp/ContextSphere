@@ -643,7 +643,8 @@ mod tests {
         let (svc, ws, _, _guard) = make_service().await;
         let now = Utc::now();
         // Create a single file edit timeline event
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now, metadata: None }).await.unwrap();
         let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
         assert_eq!(ov.sessions.len(), 1);
@@ -659,7 +660,8 @@ mod tests {
     async fn session_wall_clock_two_events_ten_minutes() {
         let (svc, ws, _, _guard) = make_service().await;
         let now = Utc::now();
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now - chrono::Duration::minutes(10), metadata: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now, metadata: None }).await.unwrap();
         let ov = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
@@ -769,7 +771,8 @@ mod tests {
     async fn what_happened_insufficient_evidence() {
         let (svc, ws, _, _guard) = make_service().await;
         let now = Utc::now();
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now, metadata: None }).await.unwrap();
         let ov = svc.get_overview(Some(ws), None, None).await.unwrap();
         // What Happened should exist but have no outcome and not sufficient
@@ -784,10 +787,12 @@ mod tests {
         let (svc, ws, _, _guard) = make_service().await;
         let now = Utc::now();
         for i in 0..3 {
-            let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: format!("/a/{i}.swift"), content_hash: None }).await.unwrap();
+            let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, file_identifier: None,
+                path_or_url: format!("/a/{i}.swift"), content_hash: None }).await.unwrap();
             svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now - chrono::Duration::minutes(i as i64), metadata: None }).await.unwrap();
         }
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/commit".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/commit".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Commit, occurred_at: now, metadata: None }).await.unwrap();
         let ov = svc.get_overview(Some(ws), None, None).await.unwrap();
         let wh = ov.what_happened.expect("should have what happened");
@@ -826,7 +831,8 @@ mod tests {
     async fn recent_memory_consistency() {
         let (svc, ws, _, _guard) = make_service().await;
         let now = Utc::now();
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now - chrono::Duration::hours(2), metadata: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now - chrono::Duration::hours(1), metadata: None }).await.unwrap();
         let ov = svc.get_overview(Some(ws), None, None).await.unwrap();
@@ -934,7 +940,8 @@ mod tests {
             duration_seconds: Some(3600),
             metadata: None,
         }).await.unwrap();
-        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None }).await.unwrap();
+        let file = svc.file_repository.create(NewFile { workspace_id: ws, artifact_type: ArtifactType::File, path_or_url: "/a/b.swift".into(), content_hash: None,
+                file_identifier: None }).await.unwrap();
         svc.timeline_repository.create(NewTimelineEvent { workspace_id: ws, file_id: Some(file.id), event_type: TimelineEventType::Edit, occurred_at: now, metadata: None }).await.unwrap();
         let today = svc.get_overview(Some(ws), Some("Today".into()), None).await.unwrap();
         assert!(today.day.active_seconds >= 3600);

@@ -182,12 +182,23 @@ impl FileWatcher {
         let intake_debouncer = debouncer.clone();
         let intake_task = tokio::spawn(async move {
             while let Some(event) = raw_rx.recv().await {
-                for (path, kind) in normalize(&event) {
+                for ev in normalize(&event) {
                     // Canonicalize — on macOS, notify may return /private/var/…
                     // while the watch root was registered as /var/…, which
                     // breaks the starts_with check in workspace detection.
-                    let canonical = std::fs::canonicalize(&path).unwrap_or(path);
-                    intake_debouncer.push(canonical, kind).await;
+                    let canonical = std::fs::canonicalize(&ev.path).unwrap_or(ev.path);
+                    let canonical_from = ev.from.map(|p| std::fs::canonicalize(&p).unwrap_or(p));
+                    match ev.kind {
+                        DebouncedEventKind::Renamed => {
+                            // For renames, push the `to` path with the `from` correlation
+                            intake_debouncer
+                                .push_with_from(canonical, DebouncedEventKind::Renamed, canonical_from)
+                                .await;
+                        }
+                        _ => {
+                            intake_debouncer.push(canonical, ev.kind).await;
+                        }
+                    }
                 }
             }
         });
@@ -306,6 +317,17 @@ async fn process_event(
         DebouncedEventKind::Removed => TimelineActivity::FileDeleted {
             path: path_string.clone(),
         },
+        DebouncedEventKind::Renamed => {
+            let from_str = event
+                .from
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path_string.clone());
+            TimelineActivity::FileMoved {
+                from: from_str,
+                to: path_string.clone(),
+            }
+        }
     };
 
     let timeline_event = timeline_engine.record_now(workspace.id, activity).await?;
@@ -333,6 +355,7 @@ async fn process_event(
             DebouncedEventKind::Modified => "edit",
             DebouncedEventKind::Created => "create",
             DebouncedEventKind::Removed => "delete",
+            DebouncedEventKind::Renamed => "edit",
         };
         if let Err(err) = proactive.on_timeline_event(ws_id, event_type).await {
             tracing::warn!(error = %err, workspace_id = %ws_id, "proactive on_timeline_event failed");

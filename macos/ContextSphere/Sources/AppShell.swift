@@ -155,21 +155,29 @@ struct AppShell: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 232, max: 280)
         } detail: {
-            DetailHost(section: router.selection ?? .dashboard,
-                       workspaces: workspaces,
-                       loaded: loaded,
-                       loadFailed: loadFailed,
-                       timeline: timeline,
-                       search: search,
-                       graph: graph,
-                       memory: memory,
-                       learning: learning,
-                       performance: performance,
-                       maintenance: maintenance,
-                       recovery: recovery,
-                       activity: activity,
-                       onRevealWorkspace: revealWorkspace)
-                .background(ContentBackdrop())
+            ZStack(alignment: .topTrailing) {
+                DetailHost(section: router.selection ?? .dashboard,
+                           workspaces: workspaces,
+                           loaded: loaded,
+                           loadFailed: loadFailed,
+                           timeline: timeline,
+                           search: search,
+                           graph: graph,
+                           memory: memory,
+                           learning: learning,
+                           performance: performance,
+                           maintenance: maintenance,
+                           recovery: recovery,
+                           activity: activity,
+                           onRevealWorkspace: revealWorkspace)
+                    .background(ContentBackdrop())
+                if let payload = proactiveNotifier.latest, !payload.actionable.isEmpty {
+                    ProactiveActionBanner(payload: payload)
+                        .padding(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 16))
+                        .transition(AnyTransition.opacity)
+                        .zIndex(10)
+                }
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar { toolbarContent }
@@ -381,6 +389,7 @@ private struct SidebarRow: View {
         )
         .contentShape(Rectangle())
         .accessibilityLabel(section.title)
+        .accessibilityElement(children: .combine)
         .accessibilityHint(shortcutHint)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

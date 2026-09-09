@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Charts
 
 /// Production Activity view — real data from ActivityService via CoreBridge.
 /// Visual direction from macos/ContextSphereDemo demo, but driven by live
@@ -12,6 +13,8 @@ struct ActivityView: View {
     @State private var selectedWebID: String?
     @State private var whatExpanded = false
     @State private var selectedMemoryID: String?
+    @State private var hoveredDonutID: String?
+    @State private var selectedDonutID: String?
     @State private var containerWidth: CGFloat = 1024
 
     private var workspaces: [Workspace] { viewModel.workspaces }
@@ -61,6 +64,7 @@ struct ActivityView: View {
                     .padding(.vertical, 16)
                 }
                 .scrollIndicators(.automatic)
+                .scrollEdgeEffectStyle(.soft, for: .vertical)
                 .defaultScrollAnchor(.top)
             }
 
@@ -449,23 +453,62 @@ struct ActivityView: View {
                     Text("No application distribution to show yet.").font(.callout).csForeground(CSColor.textSecondary)
                 } else {
                     let display = AppColorProvider.displayDonut(ov.donut)
-                    HStack(alignment: .center, spacing: 18) {
-                        ProductionDonut(segments: display, size: 128)
-                        VStack(alignment: .leading, spacing: 7) {
-                            ForEach(display) { seg in
-                                HStack(spacing: 7) {
-                                    Circle().fill(AppColorProvider.color(for: seg)).frame(width: 8, height: 8).accessibilityHidden(true)
-                                    Text(seg.label).font(.system(size: 13.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1)
-                                    Spacer(minLength: 4)
-                                    Text("\(Int((seg.percent*100).rounded()))%").font(.system(size: 13).monospacedDigit()).csForeground(CSColor.textSecondary)
-                                }
-                                .accessibilityElement(children: .combine).accessibilityLabel("\(seg.label), \(Int((seg.percent*100).rounded())) percent")
-                            }
+                    // Side-by-side while the legend fits; stacked with a
+                    // full-width legend in narrow columns so app names never
+                    // truncate. Donut stays 128pt per the approved reference.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .center, spacing: 18) {
+                            ProductionDonut(
+                                segments: display,
+                                size: 128,
+                                hoveredSegmentID: $hoveredDonutID,
+                                selectedSegmentID: $selectedDonutID
+                            )
+                            usageLegend(display)
+                            Spacer(minLength: 0)
                         }
-                        Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 12) {
+                            ProductionDonut(
+                                segments: display,
+                                size: 128,
+                                hoveredSegmentID: $hoveredDonutID,
+                                selectedSegmentID: $selectedDonutID
+                            )
+                            usageLegend(display)
+                        }
                     }
                 }
-                Text("Restrained, native — not a SaaS rainbow.").font(.system(size: 12)).csForeground(CSColor.textTertiary).italic()
+            }
+        }
+    }
+
+    private func usageLegend(_ segments: [ActivityDonutSegment]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(segments) { seg in
+                Button {
+                    withAnimation(Theme.spring(reduceMotion, response: 0.18)) {
+                        selectedDonutID = (selectedDonutID == seg.id) ? nil : seg.id
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Circle().fill(AppColorProvider.color(for: seg)).frame(width: 8, height: 8).accessibilityHidden(true)
+                        Text(seg.label).font(.system(size: 13.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text("\(Int((seg.percent*100).rounded()))%").font(.system(size: 13).monospacedDigit()).csForeground(CSColor.textSecondary)
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(selectedDonutID == seg.id
+                                  ? Color.cs(CSColor.selectionFill)
+                                  : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(seg.label), \(Int((seg.percent*100).rounded())) percent")
+                .accessibilityAddTraits(selectedDonutID == seg.id ? [.isButton, .isSelected] : .isButton)
             }
         }
     }
@@ -494,6 +537,10 @@ struct ActivityView: View {
                         ForEach(Array(corr.appPairs.enumerated()), id: \.offset) { _, pair in
                             HStack(spacing: 8) {
                                 Text(pair.0).font(.system(size: 13.5)).csForeground(CSColor.textPrimary).frame(width: 64, alignment: .leading)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .minimumScaleFactor(0.85)
+                                .accessibilityHidden(true)
                                 GeometryReader { geo in
                                     let maxM = corr.appPairs.map(\.1).max() ?? 1
                                     let frac = maxM > 0 ? CGFloat(pair.1) / CGFloat(maxM) : 0
@@ -772,31 +819,151 @@ private struct ProductionWebRow: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isSelected ? Color.cs(CSColor.selectionFill) : Color.clear))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(isSelected ? Color.cs(CSColor.selectionBorder) : Color.clear, lineWidth: 0.5))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(usage.title), \(usage.minutes) minutes, \(usage.domain), \(usage.pages) pages")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
+/// Interactive donut chart for the Usage Breakdown card.
+///
+/// Native Swift Charts (`SectorMark` + `chartAngleSelection`). On macOS the
+/// default selection gesture is hover (Apple, WWDC23 session 10037). The
+/// chart owns two independent concepts:
+///
+/// - `hoveredSegmentID` (transient, set ONLY by `chartAngleSelection` and
+///   cleared by `.onHover` leaving the chart) tracks the sector under the
+///   live pointer.
+/// - `selectedSegmentID` (persistent, set ONLY by legend clicks) is the
+///   keyboard/accessibility entry point and survives pointer exit.
+///
+/// The displayed sector — used by the highlight treatment and the in-center
+/// label — is `hoveredSegmentID ?? selectedSegmentID`, so live pointer hover
+/// always wins. Colors come from `AppColorProvider` so palette overrides
+/// stay authoritative.
 private struct ProductionDonut: View {
     let segments: [ActivityDonutSegment]
     var size: CGFloat = 128
+    @Binding var hoveredSegmentID: String?
+    @Binding var selectedSegmentID: String?
+
+    /// Live-wins-over-persistent: pointer hover takes priority; legend
+    /// selection re-emerges once the pointer leaves the chart.
+    private var displayedID: String? { hoveredSegmentID ?? selectedSegmentID }
+
     var body: some View {
-        Canvas { ctx, sz in
-            let center = CGPoint(x: sz.width/2, y: sz.height/2); let radius = min(sz.width, sz.height)/2 - 7
-            var start = Angle.degrees(-90)
-            for seg in segments {
-                // Skip zero/ultra-tiny artifacts already merged by AppColorProvider
-                guard seg.percent >= 0.005 else { continue }
-                let sweepDegrees = 360 * seg.percent
-                // Avoid a hairline gap from round caps on tiny sweeps
-                let lineCap: CGLineCap = sweepDegrees < 3 ? .butt : .round
-                let sweep = Angle.degrees(sweepDegrees)
-                let end = start + sweep
-                // Add tiny gap between segments for readability (1 degree) unless very small
-                let adjustedEnd = sweepDegrees < 6 ? end : end - Angle.degrees(1)
-                var p = Path(); p.addArc(center: center, radius: radius, startAngle: start, endAngle: adjustedEnd, clockwise: false)
-                ctx.stroke(p, with: .color(AppColorProvider.color(for: seg)), style: StrokeStyle(lineWidth: 14, lineCap: lineCap))
-                start = end
+        let cumulative = cumulativeValues()
+        let display = displayedID
+        Chart {
+            ForEach(Array(segments.enumerated()), id: \.element.id) { _, seg in
+                let isDisplayed = (display == seg.id)
+                SectorMark(
+                    angle: .value("Active", max(0.005, seg.percent)),
+                    innerRadius: .ratio(0.618),
+                    outerRadius: isDisplayed ? .inset(2) : .inset(6),
+                    angularInset: isDisplayed ? 2.0 : 1.5
+                )
+                .cornerRadius(5)
+                .foregroundStyle(AppColorProvider.color(for: seg))
+                .opacity(display == nil || isDisplayed ? 1.0 : 0.55)
+                .accessibilityLabel(seg.label)
+                .accessibilityValue("\(Int((seg.percent * 100).rounded())) percent")
             }
-        }.frame(width: size, height: size).accessibilityHidden(true)
+        }
+        .chartLegend(.hidden)
+        .chartAngleSelection(value: angleBinding(cumulative: cumulative))
+        .chartBackground { proxy in
+            GeometryReader { geo in
+                if let frame = proxy.plotFrame.map({ geo[$0] }) {
+                    donutCenterLabel(frame: frame)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if !hovering { hoveredSegmentID = nil }
+        }
+    }
+
+    /// Renders the in-center label when a sector is hovered or selected,
+    /// positioned at the geometric centre of the donut's plot area.
+    /// The hole is `frame.width * 0.618` in diameter; long app names
+    /// (e.g. "ContextSphere") would otherwise overflow beneath the ring.
+    /// The label is therefore constrained to the hole width, scales down,
+    /// and truncates before it can clip.
+    @ViewBuilder
+    private func donutCenterLabel(frame: CGRect) -> some View {
+        if let id = displayedID, let seg = segments.first(where: { $0.id == id }) {
+            let holeDiameter = frame.width * 0.618
+            let maxLabelWidth = max(56, holeDiameter - 14)
+            VStack(spacing: 1) {
+                Text(seg.label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .csForeground(CSColor.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.center)
+                Text("\(Int((seg.percent * 100).rounded()))%")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .csForeground(CSColor.textSecondary)
+            }
+            .frame(maxWidth: maxLabelWidth)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 4).padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.cs(CSColor.surface).opacity(0.001))
+            )
+            .position(x: frame.midX, y: frame.midY)
+            .transition(.opacity)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Cumulative end boundaries in the SAME data units passed to
+    /// `SectorMark(angle:)` — i.e. `max(0.005, percent)` per segment, in
+    /// render order. `chartAngleSelection` reports the pointer position as
+    /// a raw cumulative data value in this domain (Charts converts the
+    /// pointer angle internally; WWDC23 session 10037), so hit-testing is
+    /// a plain cumulative-range lookup with no trigonometry and no
+    /// wrap-around edge cases.
+    private func cumulativeValues() -> [Double] {
+        var result: [Double] = []
+        var acc: Double = 0
+        for seg in segments {
+            acc += max(0.005, seg.percent)
+            result.append(acc)
+        }
+        return result
+    }
+
+    /// Translates the raw `Double?` from `chartAngleSelection` into the
+    /// donut's two independent id slots. The setter writes ONLY
+    /// `hoveredSegmentID` (Charts is the sole authority for live pointer
+    /// hover); `nil` (pointer in the hole or off the sectors) clears it.
+    /// The getter derives the midpoint data value of
+    /// `hoveredSegmentID ?? selectedSegmentID` so a legend-driven
+    /// selection keeps Charts' internal selection state consistent after
+    /// the pointer leaves.
+    private func angleBinding(cumulative: [Double]) -> Binding<Double?> {
+        Binding(
+            get: {
+                let id = hoveredSegmentID ?? selectedSegmentID
+                guard let id, let idx = segments.firstIndex(where: { $0.id == id }) else { return nil }
+                let prev = idx == 0 ? 0 : cumulative[idx - 1]
+                return (prev + cumulative[idx]) / 2
+            },
+            set: { newValue in
+                guard let newValue else { hoveredSegmentID = nil; return }
+                if let idx = cumulative.firstIndex(where: { newValue <= $0 }) {
+                    hoveredSegmentID = segments[idx].id
+                } else {
+                    hoveredSegmentID = segments.last?.id
+                }
+            }
+        )
     }
 }
 

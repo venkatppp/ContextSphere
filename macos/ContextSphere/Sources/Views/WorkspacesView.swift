@@ -34,6 +34,12 @@ struct WorkspacesView: View {
     var body: some View {
         workspacesContent
             .background(ContentBackdrop())
+            .onAppear {
+                // Select active workspace on initial appearance if none explicitly chosen
+                if selected == nil, let active = activeWorkspaces.first {
+                    selected = active
+                }
+            }
             .onChange(of: selected) { _, newValue in
                 guard let newValue else {
                     detail = nil

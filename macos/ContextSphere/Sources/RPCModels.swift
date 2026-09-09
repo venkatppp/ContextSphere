@@ -1697,8 +1697,134 @@ struct ExplainablePrediction: Decodable, Hashable {
 
 // MARK: - Proactive notifications
 
+/// Structured proactive action (Phase C/D) — the actionable contract that
+/// replaces the legacy `suggestedActions: [String]`. Carries trigger,
+/// type, target, confidence/impact/effort and evidence for scoring.
+struct ProactiveAction: Decodable, Hashable, Identifiable {
+    let id: String
+    let trigger: String?
+    let actionType: ProactiveActionType
+    let title: String
+    let description: String
+    let target: String?
+    let confidence: Double
+    let impact: Double
+    let effort: Double
+    let requiresConfirmation: Bool
+    let createdAt: String
+    let expiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, trigger, title, description, target, confidence, impact, effort, createdAt, expiresAt, requiresConfirmation
+        case actionType = "actionType"
+    }
+}
+
+enum ProactiveActionType: Decodable, Hashable {
+    case resumeWorkspace(workspaceId: String)
+    case openRecentFile(path: String)
+    case openWorkspace(workspaceId: String)
+    case reviewRelatedWork(workspaceId: String)
+    case searchContext(query: String)
+    case executeCommand(command: String, args: [String])
+    case navigate(path: String)
+    case noOp
+    case unknown(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let typeStr = try container.decode(String.self, forKey: .type)
+        switch typeStr {
+        case "resume_workspace":
+            let wid = try container.decodeIfPresent(String.self, forKey: .workspaceId) ?? ""
+            self = .resumeWorkspace(workspaceId: wid)
+        case "open_recent_file":
+            let p = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
+            self = .openRecentFile(path: p)
+        case "open_workspace":
+            let wid = try container.decodeIfPresent(String.self, forKey: .workspaceId) ?? ""
+            self = .openWorkspace(workspaceId: wid)
+        case "review_related_work":
+            let wid = try container.decodeIfPresent(String.self, forKey: .workspaceId) ?? ""
+            self = .reviewRelatedWork(workspaceId: wid)
+        case "search_context":
+            let q = try container.decodeIfPresent(String.self, forKey: .query) ?? ""
+            self = .searchContext(query: q)
+        case "execute_command":
+            let c = try container.decodeIfPresent(String.self, forKey: .command) ?? ""
+            let a = try container.decodeIfPresent([String].self, forKey: .args) ?? []
+            self = .executeCommand(command: c, args: a)
+        case "navigate":
+            let p = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
+            self = .navigate(path: p)
+        case "no_op":
+            self = .noOp
+        default:
+            self = .unknown(typeStr)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case workspaceId = "workspace_id"
+        case path, query, command, args
+    }
+}
+
+extension ProactiveActionType {
+    /// Must match `ProactiveAction::to_suggested_action` in
+    /// `src-tauri/src/copilot/proactive_models.rs` exactly.
+    var toolName: String {
+        switch self {
+        case .resumeWorkspace: return "resume_workspace"
+        case .openRecentFile: return "search_timeline"
+        case .openWorkspace: return "get_workspace"
+        case .reviewRelatedWork: return "search_timeline"
+        case .searchContext: return "search_timeline"
+        case .executeCommand(let c, _): return c
+        case .navigate: return "navigate"
+        case .noOp: return "noop"
+        case .unknown(let s): return s
+        }
+    }
+
+    /// Whether this action maps to a real ToolRegistry executor (plus `noop`).
+    /// Mirrors `ToolExecutor::get_available_tools` allow-list. `navigate` and
+    /// `unknown` are not executable and must be suppressed before presentation.
+    var isSupported: Bool {
+        switch self {
+        case .resumeWorkspace, .openRecentFile, .openWorkspace,
+             .reviewRelatedWork, .searchContext, .noOp:
+            return true
+        case .executeCommand(let c, _):
+            return Self.allowedTools.contains(c)
+        case .navigate, .unknown:
+            return false
+        }
+    }
+
+    private static let allowedTools: Set<String> = [
+        "list_workspaces", "get_workspace", "get_active_workspace",
+        "get_recent_events", "search_timeline", "get_session_summary",
+        "resume_workspace"
+    ]
+}
+
+/// Result of `copilot_execute_proactive_action` (Phase D).
+struct ProactiveExecutionResult: Decodable, Hashable {
+    let actionId: String
+    let success: Bool
+    let status: String
+    let message: String
+    let toolName: String?
+    let startedAt: String
+    let completedAt: String
+    let error: String?
+}
+
 /// Mirror of the backend `ProactiveNotification` — delivered live as a
-/// `proactive:notification` daemon event.
+/// `proactive:notification` daemon event. `suggestedActions` is legacy
+/// (frozen UI compat); `actions` is the structured Phase C/D contract.
 struct ProactiveNotificationPayload: Decodable, Hashable, Identifiable {
     let id: String
     let workspaceId: String?
@@ -1709,11 +1835,22 @@ struct ProactiveNotificationPayload: Decodable, Hashable, Identifiable {
     /// lowercase enum string (`low`, `medium`, `high`, `critical`).
     let priority: String
     let suggestedActions: [String]
+    let actions: [ProactiveAction]?
     let dismissible: Bool
     let dismissed: Bool
     let createdAt: String
 
     var isHighPriority: Bool { priority == "high" || priority == "critical" }
+    /// Only actions whose tool actually exists in `ToolRegistry` (plus `noop`)
+    /// are runnable. Unsupported `navigate`/`unknown` or an
+    /// `executeCommand` with a non-allowlisted command (e.g.
+    /// `scan_duplicates`) are suppressed before presentation — a visible Run
+    /// button must always correspond to a real executor.
+    var actionable: [ProactiveAction] {
+        (actions ?? []).filter { $0.actionType.isSupported }
+    }
+    /// All actions regardless of support (for diagnostics / logging).
+    var allActions: [ProactiveAction] { actions ?? [] }
 }
 
 // MARK: - Workspace health (intelligence)

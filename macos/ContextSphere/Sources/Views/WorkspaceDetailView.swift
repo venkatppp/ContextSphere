@@ -34,6 +34,9 @@ struct WorkspaceDetailView: View {
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollIndicators(.automatic)
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
+        .defaultScrollAnchor(.top)
         .task(id: workspace.id) {
             await loadHealth()
         }

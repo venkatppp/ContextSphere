@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::errors::DatabaseError;
 use crate::intelligence::recommendation::models::{
-    Recommendation, RecommendationAction, RecommendationCategory,
+    Recommendation, RecommendationCategory,
 };
 use crate::repositories::WorkspaceRepository;
 
@@ -43,7 +43,9 @@ impl RecommendationGenerator for ActivityRecommendationGenerator {
         let now = Utc::now();
         let time_since_last_activity = now.signed_duration_since(stats.last_activity);
 
-        // Check for inactivity (no activity in 7+ days)
+        // Check for inactivity (no activity in 7+ days) — informational
+        // until a permitted settings tool exists. OpenView maps to `navigate`
+        // which is not in ToolRegistry (would be Unsupported).
         if time_since_last_activity > Duration::days(7) {
             recommendations.push(
                 Recommendation::new(
@@ -57,10 +59,7 @@ impl RecommendationGenerator for ActivityRecommendationGenerator {
                 )
                 .with_confidence(0.9)
                 .with_impact(0.4)
-                .with_effort(0.1)
-                .with_action(RecommendationAction::OpenView {
-                    view: "workspace-settings".to_string(),
-                }),
+                .with_effort(0.1),
             );
         } else if time_since_last_activity > Duration::days(3) {
             // Low activity warning
@@ -99,6 +98,7 @@ impl RecommendationGenerator for ActivityRecommendationGenerator {
         }
 
         // Check if workspace needs organization (many files but few events recently)
+        // — informational; OpenView "files" would be `navigate` Unsupported.
         if stats.file_count > 100 && stats.timeline_event_count < 50 {
             recommendations.push(
                 Recommendation::new(
@@ -112,10 +112,7 @@ impl RecommendationGenerator for ActivityRecommendationGenerator {
                 )
                 .with_confidence(0.75)
                 .with_impact(0.6)
-                .with_effort(0.5)
-                .with_action(RecommendationAction::OpenView {
-                    view: "files".to_string(),
-                }),
+                .with_effort(0.5),
             );
         }
 

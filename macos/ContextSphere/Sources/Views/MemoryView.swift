@@ -23,6 +23,7 @@ struct MemoryView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -171,6 +172,8 @@ struct MemoryView: View {
                 .csForeground(CSColor.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.5)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             Text(value.map(String.init) ?? "—")
                 .font(.csMetric(size: 26))
                 .csForeground(CSColor.textPrimary)
@@ -256,24 +259,41 @@ struct MemoryView: View {
 
     private var filterBar: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                searchFieldCapsule
-                kindPicker
-                outcomePicker
-                if !viewModel.workspaces.isEmpty { workspacePicker }
-                Spacer()
-                if hasActiveFilters {
-                    Button("Clear filters") { viewModel.clearFilters() }
-                        .buttonStyle(.borderless)
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                searchFieldCapsule
-                HStack(spacing: 8) {
+            if containerWidth >= 1200 {
+                // Full width: show all controls inline
+                HStack(spacing: 10) {
+                    searchFieldCapsule
                     kindPicker
                     outcomePicker
                     if !viewModel.workspaces.isEmpty { workspacePicker }
                     Spacer()
+                    if hasActiveFilters {
+                        Button("Clear filters") { viewModel.clearFilters() }
+                            .buttonStyle(.borderless)
+                    }
+                }
+            } else if containerWidth >= 800 {
+                // Compact: search field on top, pickers in a single row below
+                VStack(alignment: .leading, spacing: 8) {
+                    searchFieldCapsule
+                    HStack(spacing: 8) {
+                        kindPicker
+                        outcomePicker
+                        if !viewModel.workspaces.isEmpty { workspacePicker }
+                        Spacer()
+                        if hasActiveFilters {
+                            Button("Clear filters") { viewModel.clearFilters() }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            } else {
+                // Very compact: stack everything vertically
+                VStack(alignment: .leading, spacing: 6) {
+                    searchFieldCapsule
+                    kindPicker
+                    outcomePicker
+                    if !viewModel.workspaces.isEmpty { workspacePicker }
                     if hasActiveFilters {
                         Button("Clear filters") { viewModel.clearFilters() }
                             .buttonStyle(.borderless)

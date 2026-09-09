@@ -37,24 +37,17 @@ impl LearningWorker {
         }
     }
 
-    /// Runs a single learning cycle.
+    /// Runs a single learning cycle — now real: scans active workspaces'
+    /// 30-day timeline windows and persists deterministic behavioral
+    /// patterns. Bounded per-workspace (500 events), idempotent via
+    /// deterministic ids, and per-workspace errors are logged not
+    /// propagated so one broken workspace never kills the daemon.
     async fn run_learning_cycle(&self) -> Result<(), DatabaseError> {
         log::debug!("Running learning cycle");
-
-        // Note: Real pattern detection requires integration with:
-        // - Timeline repository to analyze event sequences
-        // - Session engine to identify workflow patterns
-        // - Context memory to extract behavioral signals
-        //
-        // This is a placeholder that demonstrates the architecture.
-        // Full implementation would call:
-        // - self.engine.learn_patterns_from_history() with timeline data
-        // - self.engine.learn_workflow_patterns() with session data
-        //
-        // Privacy-first: Only metadata (timestamps, file types, durations)
-        // would be analyzed, never file contents or user data.
-
-        log::debug!("Learning cycle completed");
+        match self.engine.learn_patterns_for_all_workspaces().await {
+            Ok(n) => log::debug!("Learning cycle completed: {} patterns learned", n),
+            Err(e) => log::warn!("Learning cycle failed: {}", e),
+        }
         Ok(())
     }
 }

@@ -113,6 +113,7 @@ mod tests {
             artifact_type: ArtifactType::File,
             path_or_url: path.to_string(),
             content_hash: None,
+            file_identifier: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

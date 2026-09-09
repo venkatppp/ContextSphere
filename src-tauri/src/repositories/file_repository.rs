@@ -11,11 +11,11 @@ use crate::models::{FileArtifact, NewFile};
 /// screenshot, or terminal session).
 #[derive(Debug, Clone)]
 pub struct FileRepository {
-    pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
 }
 
 const SELECT_COLUMNS: &str =
-    "id, workspace_id, artifact_type, path_or_url, content_hash, created_at, updated_at";
+    "id, workspace_id, artifact_type, path_or_url, content_hash, file_identifier, created_at, updated_at";
 
 impl FileRepository {
     pub fn new(pool: SqlitePool) -> Self {
@@ -33,14 +33,15 @@ impl FileRepository {
         let now = Utc::now();
 
         sqlx::query(
-            "INSERT INTO files (id, workspace_id, artifact_type, path_or_url, content_hash, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO files (id, workspace_id, artifact_type, path_or_url, content_hash, file_identifier, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(input.workspace_id)
         .bind(input.artifact_type.as_str())
         .bind(&input.path_or_url)
         .bind(&input.content_hash)
+        .bind(&input.file_identifier)
         .bind(now)
         .bind(now)
         .execute(&self.pool)
@@ -101,6 +102,112 @@ impl FileRepository {
         .await?;
 
         row.map(FileArtifact::try_from).transpose()
+    }
+
+    /// Finds the artifact with a stable filesystem identifier within a workspace,
+    /// if one is already tracked. Used to correlate renames/moves via inode.
+    pub async fn find_by_workspace_and_identifier(
+        &self,
+        workspace_id: Uuid,
+        file_identifier: &str,
+    ) -> Result<Option<FileArtifact>, DatabaseError> {
+        if file_identifier.trim().is_empty() {
+            return Ok(None);
+        }
+        let row: Option<FileRow> = sqlx::query_as(&format!(
+            "SELECT {SELECT_COLUMNS} FROM files WHERE workspace_id = ? AND file_identifier = ?"
+        ))
+        .bind(workspace_id)
+        .bind(file_identifier)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(FileArtifact::try_from).transpose()
+    }
+
+    /// Updates a single file's path and/or identifier, preserving its `id`.
+    /// Used for file renames/moves where the filesystem identity (inode) proves
+    /// the new path is the same logical file.
+    pub async fn update_path(
+        &self,
+        id: Uuid,
+        new_path: &str,
+        new_identifier: Option<&str>,
+    ) -> Result<FileArtifact, DatabaseError> {
+        let now = Utc::now();
+        let result = if let Some(ident) = new_identifier {
+            sqlx::query(
+                "UPDATE files SET path_or_url = ?, file_identifier = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(new_path)
+            .bind(ident)
+            .bind(now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?
+        } else {
+            sqlx::query("UPDATE files SET path_or_url = ?, updated_at = ? WHERE id = ?")
+                .bind(new_path)
+                .bind(now)
+                .bind(id)
+                .execute(&self.pool)
+                .await?
+        };
+
+        if result.rows_affected() == 0 {
+            return Err(DatabaseError::not_found("file", id.to_string()));
+        }
+
+        tracing::info!(file_id = %id, new_path = %new_path, "file path updated (rename preserved id)");
+        self.get_by_id(id).await
+    }
+
+    /// For a directory rename, updates every file whose path starts with `old_prefix`
+    /// to `new_prefix`. Preserves each file's `id`.
+    pub async fn rename_directory(
+        &self,
+        workspace_id: Uuid,
+        old_prefix: &str,
+        new_prefix: &str,
+    ) -> Result<u64, DatabaseError> {
+        // Ensure prefixes end with '/' for LIKE safety, but also handle exact match
+        let old_with_slash = if old_prefix.ends_with('/') {
+            old_prefix.to_string()
+        } else {
+            format!("{}/", old_prefix)
+        };
+        let _new_with_slash = if new_prefix.ends_with('/') {
+            new_prefix.to_string()
+        } else {
+            format!("{}/", new_prefix)
+        };
+
+        // Update files under the directory
+        let result = sqlx::query(
+            "UPDATE files SET path_or_url = replace(path_or_url, ?, ?), updated_at = ? \
+             WHERE workspace_id = ? AND (path_or_url = ? OR path_or_url LIKE ?)",
+        )
+        .bind(&old_prefix)
+        .bind(&new_prefix)
+        .bind(Utc::now())
+        .bind(workspace_id)
+        .bind(old_prefix)
+        .bind(format!("{}%", old_with_slash))
+        .execute(&self.pool)
+        .await?;
+
+        // Also handle the directory itself if tracked as a file artifact (unlikely but safe)
+        let _ = sqlx::query(
+            "UPDATE files SET path_or_url = ?, updated_at = ? WHERE workspace_id = ? AND path_or_url = ?",
+        )
+        .bind(new_prefix)
+        .bind(Utc::now())
+        .bind(workspace_id)
+        .bind(old_prefix)
+        .execute(&self.pool)
+        .await;
+
+        Ok(result.rows_affected())
     }
 
     /// Finds every artifact sharing a content hash, across all
@@ -258,11 +365,13 @@ impl FileRepository {
     /// search augmented with local file content (text files <256KB, 10k chars).
     /// No-op if the row is missing (e.g. search index not yet created).
     pub async fn update_search_body(&self, id: Uuid, body: String) -> Result<(), DatabaseError> {
-        sqlx::query("UPDATE search_index SET body = ? WHERE entity_type = 'file' AND entity_id = ?")
-            .bind(body)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE search_index SET body = ? WHERE entity_type = 'file' AND entity_id = ?",
+        )
+        .bind(body)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -326,6 +435,7 @@ mod tests {
                 artifact_type: ArtifactType::File,
                 path_or_url: "/Users/me/model.xlsx".to_string(),
                 content_hash: Some("abc123".to_string()),
+                file_identifier: None,
             })
             .await
             .expect("create should succeed");
@@ -347,6 +457,7 @@ mod tests {
                 artifact_type: ArtifactType::Tab,
                 path_or_url: "https://stripe.com/pricing".to_string(),
                 content_hash: None,
+                file_identifier: None,
             })
             .await;
 
@@ -362,6 +473,7 @@ mod tests {
             artifact_type: ArtifactType::Note,
             path_or_url: "notes.md".to_string(),
             content_hash: None,
+            file_identifier: None,
         })
         .await
         .unwrap();
@@ -383,6 +495,7 @@ mod tests {
             artifact_type: ArtifactType::File,
             path_or_url: "/repo/src/main.rs".to_string(),
             content_hash: None,
+            file_identifier: None,
         })
         .await
         .unwrap();
@@ -409,6 +522,7 @@ mod tests {
             artifact_type: ArtifactType::File,
             path_or_url: "/a/report.pdf".to_string(),
             content_hash: Some("dup-hash".to_string()),
+            file_identifier: None,
         })
         .await
         .unwrap();
@@ -417,6 +531,7 @@ mod tests {
             artifact_type: ArtifactType::File,
             path_or_url: "/b/report-copy.pdf".to_string(),
             content_hash: Some("dup-hash".to_string()),
+            file_identifier: None,
         })
         .await
         .unwrap();

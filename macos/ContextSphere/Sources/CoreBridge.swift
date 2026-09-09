@@ -285,6 +285,34 @@ final class CoreBridge: ObservableObject {
         _ = try await rawRequest(method, params: params, timeout: timeout)
     }
 
+    // MARK: - Proactive Action Execution (Phase D)
+
+    /// Executes a single `ProactiveAction` via the safe backend entry point.
+    /// Returns structured `ProactiveExecutionResult` handling success,
+    /// RequiresConfirmation, PermissionDenied, Expired, etc. without crashing.
+    func executeProactiveAction(actionId: String, workspaceId: String?) async throws -> ProactiveExecutionResult {
+        try await request(
+            "copilot_execute_proactive_action",
+            params: [
+                "action_id": actionId,
+                "workspace_id": workspaceId as Any
+            ].compactMapValues { $0 },
+            as: ProactiveExecutionResult.self
+        )
+    }
+
+    /// Grants a one-time permission for a tool (used for confirmation flow).
+    func setToolPermission(toolName: String, workspaceId: String?, decision: String) async throws {
+        try await call(
+            "copilot_set_tool_permission",
+            params: [
+                "tool_name": toolName,
+                "workspace_id": workspaceId as Any,
+                "decision": decision
+            ].compactMapValues { $0 }
+        )
+    }
+
     private func rawRequest(_ method: String, params: [String: Any],
                             timeout: TimeInterval) async throws -> Data? {
         let id = nextId

@@ -23,6 +23,7 @@ struct LearningView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {

@@ -4,6 +4,141 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Structured proactive action — the actionable contract that replaces
+/// the legacy `Vec<String>` suggestions. Each action is deterministic
+/// (fxhash id), evidence-backed, and carries confidence/impact/effort for
+/// the existing scoring formula. Execution is via `SuggestedAction`/`ToolCall`
+/// through the existing `ToolExecutor` boundary; `NoOp` is informational only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProactiveAction {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<ProactiveTrigger>,
+    pub action_type: ProactiveActionType,
+    pub title: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    pub confidence: f64,
+    pub impact: f64,
+    pub effort: f64,
+    pub evidence: Vec<Evidence>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub requires_confirmation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProactiveTrigger {
+    LongFocusSession,
+    IdlePeriod,
+    RepeatedEdits,
+    UnfinishedWork,
+    RecurringWorkflow,
+    WorkspaceSwitch,
+    Recommendation,
+    DailyBriefing,
+    SessionStart,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProactiveActionType {
+    ResumeWorkspace { workspace_id: String },
+    OpenRecentFile { path: String },
+    OpenWorkspace { workspace_id: String },
+    ReviewRelatedWork { workspace_id: String },
+    SearchContext { query: String },
+    ExecuteCommand { command: String, args: Vec<String> },
+    Navigate { path: String },
+    NoOp,
+}
+
+impl ProactiveAction {
+    /// Deterministic id from workspace + trigger + action_type + target.
+    pub fn deterministic_id(
+        workspace_id: Option<Uuid>,
+        trigger: &ProactiveTrigger,
+        action_type: &ProactiveActionType,
+        target: Option<&str>,
+    ) -> String {
+        let ws = workspace_id.map(|id| id.to_string()).unwrap_or_else(|| "global".to_string());
+        let at_str = serde_json::to_string(action_type).unwrap_or_else(|_| format!("{:?}", action_type));
+        let key = format!("{}|{:?}|{}|{}", ws, trigger, at_str, target.unwrap_or(""));
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for b in key.as_bytes() {
+            hash ^= u64::from(*b);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        format!("{:016x}", hash)
+    }
+
+    /// Map to the existing `SuggestedAction` execution boundary.
+    pub fn to_suggested_action(&self) -> crate::copilot::models::SuggestedAction {
+        match &self.action_type {
+            ProactiveActionType::ResumeWorkspace { workspace_id } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "resume_workspace".to_string(),
+                arguments: serde_json::json!({ "workspace_id": workspace_id }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::OpenRecentFile { path } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "search_timeline".to_string(),
+                arguments: serde_json::json!({ "query": path }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::OpenWorkspace { workspace_id } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "get_workspace".to_string(),
+                arguments: serde_json::json!({ "workspace_id": workspace_id }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::ReviewRelatedWork { workspace_id } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "search_timeline".to_string(),
+                arguments: serde_json::json!({ "query": format!("workspace:{}", workspace_id), "workspace_id": workspace_id }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::SearchContext { query } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "search_timeline".to_string(),
+                arguments: serde_json::json!({ "query": query }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::ExecuteCommand { command, args } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: command.clone(),
+                arguments: serde_json::json!({ "args": args }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::Navigate { path } => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "navigate".to_string(),
+                arguments: serde_json::json!({ "path": path }),
+                requires_confirmation: self.requires_confirmation,
+            },
+            ProactiveActionType::NoOp => crate::copilot::models::SuggestedAction {
+                title: self.title.clone(),
+                description: self.description.clone(),
+                tool_name: "noop".to_string(),
+                arguments: serde_json::Value::Null,
+                requires_confirmation: false,
+            },
+        }
+    }
+}
+
 /// A proactive notification generated by the AI assistant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,7 +150,12 @@ pub struct ProactiveNotification {
     pub message: String,
     pub priority: NotificationPriority,
     pub evidence: Vec<Evidence>,
+    /// Legacy string suggestions — kept for frozen UI compat; new code should use `actions`.
+    #[serde(default)]
     pub suggested_actions: Vec<String>,
+    /// Structured actionable contract (Phase C). Empty for old notifications.
+    #[serde(default)]
+    pub actions: Vec<ProactiveAction>,
     pub dismissible: bool,
     pub dismissed: bool,
     pub created_at: DateTime<Utc>,
@@ -271,4 +411,36 @@ pub struct TimelineIntelligence {
     pub evidence: Vec<Evidence>,
     pub confidence: f64,
     pub related_events: Vec<TimelineSummary>,
+}
+
+/// Result of attempting to execute a `ProactiveAction` via the safe `ToolExecutor`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProactiveExecutionResult {
+    pub action_id: String,
+    pub success: bool,
+    pub status: ProactiveExecutionStatus,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_result: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProactiveExecutionStatus {
+    Executed,
+    RequiresConfirmation,
+    PermissionDenied,
+    Expired,
+    Dismissed,
+    Unsupported,
+    Failed,
+    NotFound,
+    WorkspaceMismatch,
 }

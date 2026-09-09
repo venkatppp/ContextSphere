@@ -15,6 +15,16 @@ struct TimelineView: View {
                 .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
                 .padding(.vertical, Theme.pageHeaderVerticalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if !showsInlineFilters {
+                HStack(spacing: 8) {
+                    workspacePicker
+                    typePicker
+                    Spacer(minLength: 8)
+                }
+                .padding(.horizontal, Theme.horizontalPadding(for: containerWidth))
+                .padding(.bottom, Theme.pageHeaderVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Hairline(opacity: Theme.pageHeaderDividerOpacity)
             ScrollView {
                 content
@@ -23,6 +33,7 @@ struct TimelineView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -92,28 +103,43 @@ struct TimelineView: View {
             symbol: AppSection.timeline.symbol,
             eyebrow: NavGroup.workspace.title.uppercased()
         ) {
-            HStack(spacing: 8) {
-                workspacePicker
-                typePicker
-                Button {
-                    Task { await viewModel.refresh() }
-                } label: {
-                    if viewModel.isFetching {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .medium))
-                    }
+            if showsInlineFilters {
+                HStack(spacing: 8) {
+                    workspacePicker
+                    typePicker
+                    refreshButton
                 }
-                .buttonStyle(.borderless)
-                .help("Refresh timeline")
-                .accessibilityLabel("Refresh timeline")
+            } else {
+                refreshButton
             }
         }
     }
 
+    /// Inline pickers crowd the title below this width, so filters defer to a
+    /// dedicated row under the header. The 1200pt tier matches
+    /// `Theme.horizontalPadding(for:)` so header and content break together.
+    private var showsInlineFilters: Bool { containerWidth >= 1200 }
+
+    private var refreshButton: some View {
+        Button {
+            Task { await viewModel.refresh() }
+        } label: {
+            if viewModel.isFetching {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 14, weight: .medium))
+            }
+        }
+        .buttonStyle(.borderless)
+        .help("Refresh timeline")
+        .accessibilityLabel("Refresh timeline")
+    }
+
     private var subtitle: String {
-        var parts = ["Context: \(viewModel.selectedWorkspace?.name ?? "No workspace")"]
+        // Workspace identity already lives in the composite eyebrow and the
+        // workspace picker; keep the subtitle to the useful count signal.
+        var parts = [viewModel.selectedWorkspace?.name ?? "No workspace"]
         if !viewModel.events.isEmpty {
             parts.append("\(viewModel.displayedEventCount) events")
         }
@@ -583,19 +609,11 @@ extension TimelineEvent {
         }
     }
 
-    /// Supporting detail: full path (or full from/to pair).
+    /// Supporting detail: filename (last path component) — the feed is
+    /// workspace-scoped and the filename is already displayed adjacent,
+    /// so the full absolute path creates unnecessary visual noise.
     var displayDetail: String? {
-        switch eventType {
-        case .create, .edit, .delete:
-            return metadata?.string("path")
-        case .move:
-            let from = metadata?.string("from")
-            let to = metadata?.string("to")
-            if let from, let to { return "\(from) → \(to)" }
-            return from ?? to
-        default:
-            return nil
-        }
+        metadata?.string("path").map(lastPathComponent)
     }
 
     private func lastPathComponent(_ path: String) -> String {

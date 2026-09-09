@@ -20,6 +20,7 @@ struct MaintenanceView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
             }
             .scrollIndicators(.automatic)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .defaultScrollAnchor(.top)
         }
         .overlay {
@@ -59,16 +60,18 @@ struct MaintenanceView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
+                .accessibilityLabel("Refresh maintenance")
                 Button { Task { await viewModel.runBackup() } } label: {
                     Label("Backup", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(viewModel.isFetching)
+                .accessibilityLabel("Create backup")
                 Menu {
                     Button("Run Integrity Check") { Task { await viewModel.refresh() } }
                     Button("Run Maintenance (Vacuum)") { Task { await viewModel.runOptimize() } }
-                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
+                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).accessibilityLabel("Maintenance options")
             }
         }
     }
