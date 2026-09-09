@@ -114,6 +114,23 @@ struct RecentMemory: Decodable, Identifiable, Hashable {
     let subtitle: String
 }
 
+struct HourlyBucket: Decodable, Hashable, Identifiable {
+    let hour: Int
+    let label: String
+    let activeSeconds: Int
+    let eventCount: Int
+    let intensity: Double
+    var id: Int { hour }
+}
+
+struct HourlyActivity: Decodable, Hashable {
+    let buckets: [HourlyBucket]
+    let startLabel: String
+    let endLabel: String
+    let totalActiveSeconds: Int
+    let maxActiveSeconds: Int
+}
+
 struct ActivityOverview: Decodable, Hashable {
     let day: ActivityDaySummary
     let sessions: [ActivitySession]
@@ -123,6 +140,7 @@ struct ActivityOverview: Decodable, Hashable {
     let correlation: WorkspaceCorrelation
     let whatHappened: WhatHappened?
     let recentMemory: [RecentMemory]
+    let hourlyActivity: HourlyActivity?
     let isEmpty: Bool
     let emptyReason: String?
 }

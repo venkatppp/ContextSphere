@@ -227,6 +227,26 @@ pub struct RecentMemoryDto {
     pub subtitle: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HourlyBucketDto {
+    pub hour: i32,
+    pub label: String,
+    pub active_seconds: i64,
+    pub event_count: i64,
+    pub intensity: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HourlyActivityDto {
+    pub buckets: Vec<HourlyBucketDto>,
+    pub start_label: String,
+    pub end_label: String,
+    pub total_active_seconds: i64,
+    pub max_active_seconds: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityOverviewDto {
@@ -238,6 +258,7 @@ pub struct ActivityOverviewDto {
     pub correlation: WorkspaceCorrelationDto,
     pub what_happened: Option<WhatHappenedDto>,
     pub recent_memory: Vec<RecentMemoryDto>,
+    pub hourly_activity: HourlyActivityDto,
     /// If no real activity exists, the UI should show an empty-state, not zeros.
     pub is_empty: bool,
     pub empty_reason: Option<String>,
