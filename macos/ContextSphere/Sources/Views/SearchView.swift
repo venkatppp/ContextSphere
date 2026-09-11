@@ -244,7 +244,7 @@ struct SearchView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "clock")
-                    .font(.caption2.weight(.medium))
+                    .font(.csTiny.weight(.medium))
                     .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
                 Text(item)
@@ -310,7 +310,7 @@ struct SearchView: View {
             .accessibilityLabel("Run saved search: \(saved.query)")
             Spacer()
             Text(saved.createdAt.relativeTime)
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
                 .accessibilityLabel("Saved \(saved.createdAt.relativeTime)")
             Button {
@@ -496,7 +496,7 @@ struct SearchResultRow: View {
                     }
                     if let filePath {
                         Text(filePath)
-                            .font(.caption2.monospaced())
+                            .font(.csTiny.monospaced())
                             .csForeground(CSColor.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -570,7 +570,7 @@ struct SearchResultRow: View {
                 .lineLimit(1)
             Spacer()
             Text(result.entityType.title)
-                .font(.caption2.weight(.semibold))
+                .font(.csSmallLabel)
                 .foregroundStyle(result.entityType.color)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
@@ -580,7 +580,7 @@ struct SearchResultRow: View {
 
     private func workspaceCaption(_ name: String) -> some View {
         Label(name, systemImage: "folder")
-            .font(.caption2)
+            .font(.csTiny)
             .csForeground(CSColor.textTertiary)
             .accessibilityLabel("In workspace \(name)")
     }

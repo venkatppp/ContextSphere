@@ -49,7 +49,7 @@ struct MemoryDetailView: View {
                         Text("\(record.replayCount) replays")
                     }
                 }
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
                 .accessibilityElement(children: .combine)
             }
@@ -142,7 +142,7 @@ struct MemoryDetailView: View {
             Text(value)
                 .font(.callout.weight(.semibold).monospacedDigit())
             Text(label)
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textSecondary)
         }
     }
@@ -159,7 +159,7 @@ struct MemoryDetailView: View {
             HStack(spacing: 4) {
                 ForEach(record.toolsUsed.prefix(8), id: \.self) { tool in
                     Text(tool)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.cs(CSColor.borderSubtle), in: Capsule())
@@ -202,7 +202,7 @@ struct MemoryDetailView: View {
             ForEach(Array(record.steps.enumerated()), id: \.offset) { index, step in
                 HStack(alignment: .top, spacing: 6) {
                     Text("\(index + 1)")
-                        .font(.caption2.monospacedDigit())
+                        .font(.csTiny.monospacedDigit())
                         .csForeground(CSColor.textTertiary)
                         .frame(width: 18, alignment: .trailing)
                     Text(step)
@@ -225,7 +225,7 @@ struct MemoryDetailView: View {
                 Spacer()
                 if plan.confidence > 0 {
                     Text("plan confidence \(plan.confidence.percentString)")
-                        .font(.caption2.monospacedDigit())
+                        .font(.csTiny.monospacedDigit())
                         .csForeground(CSColor.textSecondary)
                         .accessibilityLabel("Plan confidence \(plan.confidence.percentString)")
                 }
@@ -233,7 +233,7 @@ struct MemoryDetailView: View {
             if !plan.requiredFiles.isEmpty {
                 Label(plan.requiredFiles.joined(separator: ", "),
                       systemImage: "doc")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textSecondary)
                     .lineLimit(2)
                     .accessibilityLabel("Required files: \(plan.requiredFiles.joined(separator: ", "))")
@@ -312,7 +312,7 @@ struct MemoryDetailView: View {
     private func lineageNodeList(nodes: [LineageNode], relationTitle: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(relationTitle)
-                .font(.caption2).csForeground(CSColor.textTertiary)
+                .font(.csTiny).csForeground(CSColor.textTertiary)
             ForEach(nodes, id: \.id) { node in
                 HStack(spacing: 6) {
                     Circle()
@@ -323,10 +323,10 @@ struct MemoryDetailView: View {
                         .lineLimit(1)
                     Spacer()
                     Text(node.status.title)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textSecondary)
                     Text(node.createdAt.relativeTime)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                 }
                 .accessibilityElement(children: .combine)

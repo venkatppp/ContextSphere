@@ -370,14 +370,14 @@ private struct PreferenceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(preference.preferenceType.title)
-                        .font(.caption2.weight(.semibold))
+                        .font(.csSmallLabel)
                         .foregroundStyle(.tint)
                     Text(preference.key)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
                 }
                 Text("\(preference.evidenceCount) piece\(preference.evidenceCount == 1 ? "" : "s") of evidence · updated \(preference.lastUpdated.relativeTime)")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
             }
             Spacer()
@@ -419,7 +419,7 @@ private struct BehavioralPatternRow: View {
                     .font(.callout)
                     .csForeground(CSColor.textSecondary)
                 Text("First seen \(pattern.firstSeen.relativeTime) · Last seen \(pattern.lastSeen.relativeTime)")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
             }
             Spacer()

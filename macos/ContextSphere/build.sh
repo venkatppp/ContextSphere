@@ -6,7 +6,14 @@ set -euo pipefail
 # Builds the Rust core daemon and bundles it into the .app.
 cd "$(dirname "$0")"
 
-SDK=$(xcrun --show-sdk-path --sdk macosx)
+SDK="${MACOS_SDK:-}"
+if [ -z "$SDK" ]; then
+  if [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk" ]; then
+    SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+  else
+    SDK=$(xcrun --show-sdk-path --sdk macosx)
+  fi
+fi
 APP_NAME="ContextSphere"
 BUILD_DIR="build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
@@ -42,6 +49,7 @@ swiftc \
   Sources/AppShell.swift \
   Sources/Notifications.swift \
   Sources/ActivityViewModel.swift \
+  Sources/WorkspaceIntelligenceViewModel.swift \
   Sources/ActivityMonitor.swift \
   Sources/TimelineViewModel.swift \
   Sources/SearchViewModel.swift \
@@ -62,6 +70,9 @@ swiftc \
   Sources/Graph/GraphSemanticAdapter.swift \
   Sources/GraphLayout.swift \
   Sources/GraphViewModel.swift \
+  Sources/Views/ActivityMiniHeat.swift \
+  Sources/Views/WorkspaceIntelligenceCard.swift \
+  Sources/Views/ContextContinuityCard.swift \
   Sources/Views/DashboardView.swift \
   Sources/Views/TimelineView.swift \
   Sources/Views/WorkspacesView.swift \

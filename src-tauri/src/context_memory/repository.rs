@@ -7,6 +7,7 @@ use crate::context_memory::models::{
 use crate::errors::DatabaseError;
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
+use uuid::Uuid;
 
 /// Repository for context memory persistence.
 #[derive(Clone)]
@@ -54,7 +55,8 @@ impl ContextMemoryRepository {
             .transpose()?
             .unwrap_or_else(|| serde_json::to_string(&serde_json::json!({})).unwrap());
 
-        let result = sqlx::query(
+        let ws_uuid = Uuid::parse_str(&request.workspace_id).ok();
+        let query = sqlx::query(
             r#"
             INSERT INTO context_snapshots (
                 workspace_id, snapshot_type, active_files, session_summary,
@@ -62,18 +64,23 @@ impl ContextMemoryRepository {
                 recommendations_summary, metadata
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
-        )
-        .bind(&request.workspace_id)
-        .bind(snapshot_type_str)
-        .bind(&active_files_json)
-        .bind(session_summary_json.as_deref())
-        .bind(timeline_refs_json.as_deref())
-        .bind(analytics_json.as_deref())
-        .bind(request.health_score)
-        .bind(recommendations_json.as_deref())
-        .bind(&metadata_json)
-        .execute(&self.pool)
-        .await?;
+        );
+        let query = if let Some(uuid) = ws_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(&request.workspace_id)
+        };
+        let result = query
+            .bind(snapshot_type_str)
+            .bind(&active_files_json)
+            .bind(session_summary_json.as_deref())
+            .bind(timeline_refs_json.as_deref())
+            .bind(analytics_json.as_deref())
+            .bind(request.health_score)
+            .bind(recommendations_json.as_deref())
+            .bind(&metadata_json)
+            .execute(&self.pool)
+            .await?;
 
         let id = result.last_insert_rowid();
 
@@ -98,7 +105,8 @@ impl ContextMemoryRepository {
         workspace_id: &str,
         limit: i64,
     ) -> Result<Vec<ContextSnapshot>, DatabaseError> {
-        let rows = sqlx::query(
+        let ws_uuid = Uuid::parse_str(workspace_id).ok();
+        let query = sqlx::query(
             r#"
             SELECT id, workspace_id, snapshot_type, captured_at, active_files,
                    session_summary, timeline_references, analytics_summary,
@@ -108,11 +116,16 @@ impl ContextMemoryRepository {
             ORDER BY captured_at DESC
             LIMIT ?
             "#,
-        )
-        .bind(workspace_id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        );
+        let query = if let Some(uuid) = ws_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(workspace_id)
+        };
+        let rows = query
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?;
 
         let mut snapshots = Vec::new();
         for row in rows {
@@ -127,7 +140,8 @@ impl ContextMemoryRepository {
         &self,
         workspace_id: &str,
     ) -> Result<Option<ContextSnapshot>, DatabaseError> {
-        let row = sqlx::query(
+        let ws_uuid = Uuid::parse_str(workspace_id).ok();
+        let query = sqlx::query(
             r#"
             SELECT id, workspace_id, snapshot_type, captured_at, active_files,
                    session_summary, timeline_references, analytics_summary,
@@ -137,10 +151,15 @@ impl ContextMemoryRepository {
             ORDER BY captured_at DESC
             LIMIT 1
             "#,
-        )
-        .bind(workspace_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        );
+        let query = if let Some(uuid) = ws_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(workspace_id)
+        };
+        let row = query
+            .fetch_optional(&self.pool)
+            .await?;
 
         match row {
             Some(row) => Ok(Some(self.parse_snapshot_row(row)?)),
@@ -271,9 +290,13 @@ impl ContextMemoryRepository {
             .map_err(|e| DatabaseError::InvalidInput(format!("Invalid timestamp: {}", e)))?
             .with_timezone(&Utc);
 
+        let workspace_id: String = row
+            .try_get("workspace_id")
+            .or_else(|_| row.try_get::<Uuid, _>("workspace_id").map(|u| u.to_string()))?;
+
         Ok(ContextSnapshot {
             id: row.get("id"),
-            workspace_id: row.get("workspace_id"),
+            workspace_id,
             snapshot_type,
             captured_at,
             active_files,

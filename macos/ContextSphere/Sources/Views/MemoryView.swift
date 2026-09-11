@@ -218,7 +218,7 @@ struct MemoryView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(label)
-                    .font(.caption2.weight(.medium))
+                    .font(.csTiny.weight(.medium))
                     .csForeground(CSColor.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.3)
@@ -556,7 +556,7 @@ struct MemoryView: View {
                     }
                     if viewModel.snapshots.count > 5 {
                         Text("\(viewModel.snapshots.count - 5) older snapshot\(viewModel.snapshots.count - 5 == 1 ? "" : "s") kept by the core")
-                            .font(.caption2)
+                            .font(.csTiny)
                             .csForeground(CSColor.textTertiary)
                     }
                 }
@@ -597,7 +597,7 @@ struct MemoryView: View {
     private func snapshotRow(_ snapshot: MemorySnapshot) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "camera")
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
@@ -605,7 +605,7 @@ struct MemoryView: View {
                     .font(.caption.weight(.medium))
                     .lineLimit(1)
                 Text("\(snapshot.recordCount) records · \(snapshot.createdAt.relativeTime)")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
             }
             Spacer()
@@ -888,7 +888,7 @@ private struct MemoryRow: View {
                                 .truncationMode(.tail)
                         }
                     }
-                    .font(.caption2)
+                    .font(.csTiny)
                     HStack(spacing: 6) {
                         if let retentionBadge = hit.record.retentionBadge {
                             Text(retentionBadge)
@@ -903,7 +903,7 @@ private struct MemoryRow: View {
                         Text(hit.record.createdAt.relativeTime)
                             .csForeground(CSColor.textTertiary)
                     }
-                    .font(.caption2)
+                    .font(.csTiny)
                 }
             }
             .padding(10)
@@ -989,12 +989,12 @@ private struct WorkflowFamilyCard: View {
                             .csForeground(CSColor.textSecondary)
                     }
                 }
-                .font(.caption2)
+                .font(.csTiny)
                 if !family.sharedTools.isEmpty {
                     HStack(spacing: 4) {
                         ForEach(family.sharedTools.prefix(6), id: \.self) { tool in
                             Text(tool)
-                                .font(.caption2)
+                                .font(.csTiny)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Color.cs(CSColor.borderSubtle), in: Capsule())
@@ -1089,25 +1089,25 @@ private struct DuplicateGroupCard: View {
                 ForEach(group.records, id: \.id) { record in
                     HStack(spacing: 6) {
                         Image(systemName: record.id == group.keepId ? "star.fill" : "doc")
-                            .font(.caption2)
+                            .font(.csTiny)
                             .foregroundStyle(record.id == group.keepId ? Color.cs(CSColor.warning) : Color.cs(CSColor.textSecondary))
                             .accessibilityHidden(true)
                         Text(record.status.title)
-                            .font(.caption2)
+                            .font(.csTiny)
                             .csForeground(CSColor.textSecondary)
                         if let workspaceName {
                             Text("· \(workspaceName)")
-                                .font(.caption2)
+                                .font(.csTiny)
                                 .csForeground(CSColor.textTertiary)
                                 .lineLimit(1)
                         }
                         Spacer()
                         Text(record.createdAt.relativeTime)
-                            .font(.caption2)
+                            .font(.csTiny)
                             .csForeground(CSColor.textTertiary)
                         if record.id == group.keepId {
                             Text("kept")
-                                .font(.caption2.weight(.semibold))
+                                .font(.csSmallLabel)
                                 .csForeground(CSColor.success)
                         }
                     }

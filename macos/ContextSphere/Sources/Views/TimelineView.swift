@@ -334,7 +334,7 @@ struct TimelineView: View {
                     Text("· \(session.eventCount) events")
                     Text("· \(session.fileCount) files")
                 }
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textSecondary)
             }
             .padding(.horizontal, 12)
@@ -366,7 +366,7 @@ struct TimelineView: View {
                 .textCase(.uppercase)
                 .tracking(0.6)
             Text("· \(group.events.count) events")
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
             Rectangle()
                 .fill(Color.cs(CSColor.borderSubtle).opacity(0.5))
@@ -447,14 +447,14 @@ struct TimelineEventRow: View {
                 }
                 if let detail = event.displayDetail, detail != event.artifactName {
                     Text(detail)
-                        .font(.caption2.monospaced())
+                        .font(.csTiny.monospaced())
                         .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 if let workspaceName {
                     Text(workspaceName)
-                        .font(.caption2.weight(.medium))
+                        .font(.csTiny.weight(.medium))
                         .csForeground(CSColor.textSecondary)
                 }
             }
@@ -520,7 +520,7 @@ struct TimelineEventRow: View {
                 .csForeground(CSColor.textTertiary)
             if isFileEvent {
                 Image(systemName: "arrow.up.forward.app")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(isHovered ? CSColor.textSecondary : CSColor.textTertiary)
                     .accessibilityHidden(true)
             }

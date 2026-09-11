@@ -145,12 +145,12 @@ struct GraphInspectorView: View {
                 .csForeground(CSColor.textSecondary)
                 .frame(width: 16)
             Text(label)
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
                 .textCase(.uppercase)
                 .tracking(0.4)
             Text(value)
-                .font(.caption)
+                .font(.csMetadata)
                 .csForeground(CSColor.textPrimary)
                 .lineLimit(2)
             Spacer()
@@ -212,11 +212,11 @@ struct GraphInspectorView: View {
                 ForEach(metadata.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
                     HStack(alignment: .top, spacing: 8) {
                         Text(key)
-                            .font(.caption2.weight(.medium))
+                            .font(.csTiny.weight(.medium))
                             .csForeground(CSColor.textSecondary)
                             .frame(width: 96, alignment: .leading)
                         Text(metadataString(value))
-                            .font(.caption2)
+                            .font(.csTiny)
                             .csForeground(CSColor.textPrimary)
                             .lineLimit(2)
                             .textSelection(.enabled)
@@ -245,20 +245,20 @@ struct GraphInspectorView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Created")
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                     Spacer()
                     Text(relative(node.createdAt))
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textSecondary)
                 }
                 HStack {
                     Text("Updated")
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                     Spacer()
                     Text(relative(node.updatedAt))
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textSecondary)
                 }
             }
@@ -276,7 +276,7 @@ struct GraphInspectorView: View {
 
     private func typeBadge(_ node: KgNode) -> some View {
         Text(node.nodeType.title)
-            .font(.caption2.weight(.semibold))
+            .font(.csSmallLabel)
             .csForeground(node.nodeType.colorToken)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)

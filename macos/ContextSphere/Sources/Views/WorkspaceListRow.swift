@@ -34,7 +34,7 @@ struct WorkspaceListRow: View {
                         .csForeground(CSColor.textPrimary)
                     if workspace.status == .archived {
                         Text("Archived")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.csSmallLabel)
                             .csForeground(CSColor.textTertiary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
@@ -44,18 +44,18 @@ struct WorkspaceListRow: View {
                 }
                 if let path = workspace.rootPath, !path.isEmpty {
                     Text(path)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } else if let description = workspace.description, !description.isEmpty {
                     Text(description)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                         .lineLimit(1)
                 } else {
                     Text("No folder set")
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                 }
             }
@@ -93,7 +93,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(status.rawValue.capitalized)
-            .font(.caption.weight(.semibold))
+            .font(.csSmallLabel)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(status == .active ? Color.cs(CSColor.success).opacity(0.14) : Color.cs(CSColor.textSecondary).opacity(0.12),
                         in: Capsule())
@@ -114,7 +114,7 @@ struct StatTile: View {
         ContentCard(cornerRadius: Theme.cornerRegular) {
             VStack(alignment: .leading, spacing: 6) {
                 Label(label, systemImage: symbol)
-                    .font(.caption.weight(.semibold))
+                    .font(.csSmallLabel)
                     .csForeground(CSColor.textSecondary)
                 Text(value)
                     .font(.callout.weight(.semibold))

@@ -134,10 +134,13 @@ struct ProactiveActionBanner: View {
                     HStack(spacing: 8) {
                         Image(systemName: "sparkles")
                             .foregroundStyle(Color.accentColor)
-                        Text(payload.title).font(.headline)
+                        Text(payload.title)
+                            .font(.headline)
+                            .lineLimit(1)
                         Spacer()
                         Text(payload.notificationType.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption2).csForeground(CSColor.textTertiary)
+                            .font(.csTiny).csForeground(CSColor.textTertiary)
+                            .lineLimit(1)
                         if onCollapse != nil {
                             Button {
                                 onCollapse?()
@@ -157,7 +160,7 @@ struct ProactiveActionBanner: View {
                                 onDismiss?()
                             } label: {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .csForeground(CSColor.textTertiary)
                                     .frame(width: 22, height: 22)
                                     .background(Circle().fill(Color.cs(CSColor.textTertiary).opacity(0.08)))
@@ -171,12 +174,14 @@ struct ProactiveActionBanner: View {
                     ForEach(visible, id: \.id) { action in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(action.title).font(.callout.weight(.medium))
+                                Text(action.title)
+                                    .font(.callout.weight(.medium))
+                                    .lineLimit(1)
                                 Text(action.description).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2)
                                 HStack(spacing: 6) {
                                     Text(String(format: "%.0f%%", action.confidence * 100))
-                                        .font(.caption2.monospacedDigit()).csForeground(CSColor.textTertiary)
-                                    if let exp = action.expiresAt { Text(exp.relativeTime).font(.caption2).csForeground(CSColor.textTertiary) }
+                                        .font(.csTiny.monospacedDigit()).csForeground(CSColor.textTertiary)
+                                    if let exp = action.expiresAt { Text(exp.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary) }
                                 }
                             }
                             Spacer()
@@ -202,7 +207,7 @@ struct ProactiveActionBanner: View {
                     }
                 }
             }
-            .frame(maxWidth: 520)
+            .frame(maxWidth: 480)
             .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
             .confirmationDialog(
                 "Confirm Action",
@@ -344,7 +349,7 @@ struct ProactiveSuggestionTray: View {
                     .csForeground(CSColor.textPrimary)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
             }
             .padding(.horizontal, 12)

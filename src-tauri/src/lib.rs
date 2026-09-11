@@ -95,8 +95,10 @@ use analytics::AnalyticsEngine;
 use context_memory::{ContextMemoryEngine, ContextMemoryRepository};
 use duplicates::DuplicateDetectionEngine;
 use graph::GraphEngine;
+use intelligence::continuity::ContextContinuityEngine;
 use intelligence::health::{HealthService, WorkspaceHealthEngine};
 use intelligence::recommendation::RecommendationEngine;
+use intelligence::workspace::WorkspaceIntelligenceEngine;
 use maintenance::MaintenanceEngine;
 use performance::recovery::RecoveryManager;
 use performance::{
@@ -258,6 +260,14 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                 file_repository.clone(),
                 context_service.clone(),
             );
+            let workspace_intelligence_engine = WorkspaceIntelligenceEngine::new(
+                workspace_repository.clone(),
+                timeline_repository.clone(),
+                activity_repository.clone(),
+                context_service.clone(),
+                health_engine.clone(),
+            )
+            .with_recommendation_engine(recommendation_engine.clone());
 
             // --- Action Engine & Service (Phase 5D) ---
             let action_repository = ActionRepository::new(pool.clone());
@@ -274,6 +284,16 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
                 context_memory_repository,
                 workspace_repository.clone(),
                 context_service.clone(),
+            );
+
+            // --- Context Reconstruction & Continuity Engine ---
+            let context_continuity_engine = ContextContinuityEngine::new(
+                workspace_intelligence_engine.clone(),
+                context_memory_engine.clone(),
+                context_service.clone(),
+                workspace_repository.clone(),
+                timeline_repository.clone(),
+                activity_repository.clone(),
             );
 
             // --- Duplicate Detection Engine (Phase 5 Stage 2) ---
@@ -905,8 +925,10 @@ pub fn initialize_core(app: &mut tauri::App) -> Result<(), Box<dyn std::error::E
             app.manage(analytics_engine);
             app.manage(health_engine);
             app.manage(recommendation_engine);
+            app.manage(workspace_intelligence_engine);
             app.manage(action_service);
             app.manage(context_memory_engine.clone());
+            app.manage(context_continuity_engine);
             app.manage(predictive_engine);
             app.manage(workflow_engine);
             app.manage(adaptive_learning);
@@ -1149,6 +1171,12 @@ pub fn run() {
             commands::intelligence::get_workspace_recommendations,
             commands::intelligence::get_category_recommendations,
             commands::intelligence::get_priority_recommendations,
+            commands::intelligence::get_workspace_intelligence,
+            commands::intelligence::get_active_workspace_inference,
+            commands::intelligence::list_workspaces_intelligence,
+            commands::intelligence::reconstruct_workspace_context,
+            commands::intelligence::get_smart_resume_context,
+            commands::intelligence::snapshot_work_episode,
             commands::actions::execute_action,
             commands::actions::undo_action,
             commands::actions::get_action_history,

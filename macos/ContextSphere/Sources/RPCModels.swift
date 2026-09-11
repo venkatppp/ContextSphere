@@ -587,6 +587,122 @@ struct WorkflowQuality: Decodable, Hashable {
     }
 }
 
+// MARK: - Workspace Intelligence Engine
+
+struct ConfidenceSignal: Decodable, Hashable, Identifiable {
+    let signal: String
+    let score: Double
+    let weight: Double
+    let contribution: Double
+    let explanation: String
+
+    var id: String { signal }
+}
+
+struct WorkEpisode: Decodable, Hashable {
+    let startedAt: String
+    let endedAt: String
+    let durationSeconds: Int64
+    let eventCount: Int
+    let summary: String
+    let isResumable: Bool
+}
+
+struct WorkspaceSuggestion: Decodable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+    let actionType: String
+    let confidence: Double
+    let target: String?
+}
+
+struct WorkspaceIntelligence: Decodable, Hashable, Identifiable {
+    let workspaceId: String
+    let workspaceName: String
+    let confidence: Double
+    let signals: [ConfidenceSignal]
+    let isActiveInference: Bool
+    let latestEpisode: WorkEpisode?
+    let suggestions: [WorkspaceSuggestion]
+    let activity24h: Int64
+    let activity7d: Int64
+    let primaryApp: String?
+    let computedAt: String
+
+    var id: String { workspaceId }
+}
+
+struct ActiveWorkspaceInference: Decodable, Hashable {
+    let active: WorkspaceIntelligence?
+    let ranked: [WorkspaceIntelligence]
+    let hasActiveInference: Bool
+    let computedAt: String
+}
+
+// MARK: - Context Reconstruction & Continuity
+
+struct ContinuitySignal: Decodable, Hashable, Identifiable {
+    let signal: String
+    let score: Double
+    let weight: Double
+    let contribution: Double
+    let explanation: String
+
+    var id: String { signal }
+}
+
+struct ReconstructedFile: Decodable, Hashable, Identifiable {
+    let path: String
+    let fileName: String
+    let existsOnDisk: Bool
+    let language: String?
+    let isInferred: Bool
+
+    var id: String { path }
+}
+
+struct ResumeAction: Decodable, Hashable, Identifiable {
+    let actionType: String
+    let label: String
+    let description: String
+    let target: String?
+
+    var id: String { "\(actionType)_\(label)" }
+}
+
+struct ReconstructedContext: Decodable, Hashable, Identifiable {
+    let workspaceId: String
+    let workspaceName: String
+    let continuityScore: Double
+    let signals: [ContinuitySignal]
+    let selectionReason: String
+    let latestEpisode: WorkEpisode?
+    let primaryApp: String?
+    let activeApplications: [String]
+    let relevantFiles: [ReconstructedFile]
+    let recentActivities: [SessionEventSummary]
+    let relatedWorkspaces: [String]
+    let snapshotId: Int64?
+    let isResumable: Bool
+    let recommendedActions: [ResumeAction]
+    let reconstructedAt: String
+
+    var id: String { workspaceId }
+}
+
+struct ContextSnapshot: Decodable, Hashable, Identifiable {
+    let id: Int64
+    let workspaceId: String
+    let snapshotType: String
+    let capturedAt: String
+    let activeFiles: [String]
+    let healthScore: Double?
+    let recommendationsSummary: [String]?
+}
+
+
+
 /// How well the memory store is being used (`MemoryUtilization`).
 struct MemoryUtilization: Decodable, Hashable {
     let totalRecords: Int

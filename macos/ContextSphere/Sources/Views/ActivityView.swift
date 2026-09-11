@@ -160,7 +160,7 @@ struct ActivityView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar").font(.system(size: 13, weight: .medium)).csForeground(CSColor.textSecondary)
                     Text(viewModel.dateFilter).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).csForeground(CSColor.textTertiary)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
@@ -180,7 +180,7 @@ struct ActivityView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "folder").font(.system(size: 13, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
                     Text(selectedWorkspaceName).font(.system(size: 14)).csForeground(CSColor.textPrimary).lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.textTertiary)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
@@ -192,7 +192,7 @@ struct ActivityView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "desktopcomputer").font(.system(size: 13, weight: .medium)).csForeground(CSColor.textSecondary).accessibilityHidden(true)
                     Text("This Mac").font(.system(size: 14)).csForeground(CSColor.textPrimary).lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.textTertiary)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
                 .background(Capsule().fill(Color.cs(CSColor.surface).opacity(0.9)))
@@ -394,7 +394,7 @@ struct ActivityView: View {
                     }
                 }
                 if !ov.appUsages.isEmpty {
-                    Text("Click an app to see files and sessions →").font(.caption2).csForeground(CSColor.textTertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 2)
+                    Text("Click an app to see files and sessions →").font(.csTiny).csForeground(CSColor.textTertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 2)
                 }
             }
         }
@@ -411,7 +411,7 @@ struct ActivityView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Web activity unavailable — permission not granted", systemImage: "eye.slash").font(.callout.weight(.medium)).csForeground(CSColor.warning)
                             Text("To enable privacy-first web activity (domain + title only, no URL parameters or content), allow Automation for your browser.").font(.caption).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
-                            Text("System Settings → Privacy & Security → Automation → ContextSphere → Safari / Chrome").font(.caption2.monospaced()).csForeground(CSColor.textTertiary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            Text("System Settings → Privacy & Security → Automation → ContextSphere → Safari / Chrome").font(.csTiny.monospaced()).csForeground(CSColor.textTertiary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             HStack(spacing: 8) {
                                 Button("Open System Settings") {
                                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
@@ -522,7 +522,7 @@ struct ActivityView: View {
                     Text("CURRENT CONTEXT").font(.csEyebrow(size: 12)).tracking(0.7).csForeground(CSColor.textSecondary).textCase(.uppercase)
                     Spacer()
                     Circle().fill(Color.cs(corr.hasData ? CSColor.success : CSColor.textTertiary)).frame(width: 7, height: 7).accessibilityHidden(true)
-                    Text(corr.hasData ? "Active" : "Idle").font(.caption2.weight(.semibold)).csForeground(corr.hasData ? CSColor.success : CSColor.textTertiary)
+                    Text(corr.hasData ? "Active" : "Idle").font(.csSmallLabel).csForeground(corr.hasData ? CSColor.success : CSColor.textTertiary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(corr.workspaceName).font(.system(size: 18, weight: .semibold)).tracking(-0.2).csForeground(CSColor.textPrimary)
@@ -556,19 +556,19 @@ struct ActivityView: View {
                 }
                 Hairline()
                 HStack(spacing: 16) {
-                    Label("\(corr.filesModified) modified", systemImage: "doc.badge.ellipsis").font(.caption2).csForeground(CSColor.textSecondary)
-                    Label("\(corr.filesOpened) opened", systemImage: "doc").font(.caption2).csForeground(CSColor.textSecondary)
-                    Label("\(corr.webPages) related pages", systemImage: "globe").font(.caption2).csForeground(CSColor.textSecondary)
+                    Label("\(corr.filesModified) modified", systemImage: "doc.badge.ellipsis").font(.csTiny).csForeground(CSColor.textSecondary)
+                    Label("\(corr.filesOpened) opened", systemImage: "doc").font(.csTiny).csForeground(CSColor.textSecondary)
+                    Label("\(corr.webPages) related pages", systemImage: "globe").font(.csTiny).csForeground(CSColor.textSecondary)
                 }
                 .labelStyle(.titleAndIcon)
                 HStack(spacing: 3) {
                     ForEach(["App","Web","File","Workspace","Timeline"], id: \.self) { part in
-                        Text(part).font(.system(size: 10.5, weight: .medium)).csForeground(CSColor.textTertiary)
+                        Text(part).font(.csTiny.weight(.medium)).csForeground(CSColor.textTertiary)
                             .padding(.horizontal, 4).padding(.vertical, 2)
                             .background(Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.08)))
                     }
-                    Text("=").font(.system(size: 10, weight: .semibold)).csForeground(CSColor.textTertiary)
-                    Text("Context").font(.system(size: 10.5, weight: .bold)).foregroundStyle(Color.accentColor)
+                    Text("=").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.textTertiary)
+                    Text("Context").font(.system(size: 12, weight: .bold)).foregroundStyle(Color.accentColor)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(Capsule().fill(Color.accentColor.opacity(0.14)))
                 }
@@ -589,7 +589,7 @@ struct ActivityView: View {
                             Text("WHAT HAPPENED?").font(.csEyebrow(size: 13)).tracking(0.6).csForeground(CSColor.textPrimary).textCase(.uppercase)
                         }
                         Spacer()
-                        Text(wh.dateLabel).font(.caption2.weight(.medium)).csForeground(CSColor.textSecondary)
+                        Text(wh.dateLabel).font(.csTiny.weight(.medium)).csForeground(CSColor.textSecondary)
                             .padding(.horizontal, 7).padding(.vertical, 3)
                             .background(Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)))
                     }
@@ -599,13 +599,13 @@ struct ActivityView: View {
                     }
                     HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("APPS").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase)
-                            Text(wh.apps.map { $0.joined(separator: " ") }.joined(separator: " · ")).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2)
+                            Text("APPS").font(.csSmallLabel).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase)
+                            Text(wh.apps.map { $0.joined(separator: " ") }.joined(separator: " · ")).font(.csTiny).csForeground(CSColor.textSecondary).lineLimit(2)
                         }
                         Spacer()
-                        VStack(alignment: .leading, spacing: 4) { Text("FILES").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.files)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
-                        VStack(alignment: .leading, spacing: 4) { Text("SESSIONS").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.sessions)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
-                        VStack(alignment: .leading, spacing: 4) { Text("WEB").font(.system(size: 11, weight: .semibold)).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.webPages) pages").font(.caption.weight(.medium)).csForeground(CSColor.textSecondary) }
+                        VStack(alignment: .leading, spacing: 4) { Text("FILES").font(.csSmallLabel).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.files)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
+                        VStack(alignment: .leading, spacing: 4) { Text("SESSIONS").font(.csSmallLabel).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.sessions)").font(.system(size: 17, weight: .semibold).monospacedDigit()).csForeground(CSColor.textPrimary) }
+                        VStack(alignment: .leading, spacing: 4) { Text("WEB").font(.csSmallLabel).tracking(0.5).csForeground(CSColor.textTertiary).textCase(.uppercase); Text("\(wh.webPages) pages").font(.csTiny.weight(.medium)).csForeground(CSColor.textSecondary) }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.cs(CSColor.surfaceElevated).opacity(0.7)))
@@ -613,7 +613,7 @@ struct ActivityView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
                             Image(systemName: wh.hasSufficientEvidence ? "checkmark.seal.fill" : "info.circle").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.cs(wh.hasSufficientEvidence ? CSColor.success : CSColor.textSecondary)).accessibilityHidden(true)
-                            Text(wh.hasSufficientEvidence ? "Outcome" : "Note").font(.caption.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5)
+                            Text(wh.hasSufficientEvidence ? "Outcome" : "Note").font(.csSmallLabel).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.5)
                         }
                         Text(wh.outcome ?? "ContextSphere found activity related to \(wh.workspace), but there is not enough evidence to determine what was completed.").font(.callout).csForeground(CSColor.textPrimary)
                     }
@@ -670,13 +670,13 @@ struct ActivityView: View {
                                     }.frame(width: 28, height: 28).accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1)
-                                        Text(item.subtitle).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1)
+                                        Text(item.subtitle).font(.csTiny).csForeground(CSColor.textSecondary).lineLimit(1)
                                     }
                                     Spacer(minLength: 8)
                                     VStack(alignment: .trailing, spacing: 1) {
-                                        Text(item.dateLabel).font(.caption2.weight(.medium)).foregroundStyle(selectedMemoryID == item.id ? Color.accentColor : Color.cs(CSColor.textTertiary))
+                                        Text(item.dateLabel).font(.csTiny.weight(.medium)).foregroundStyle(selectedMemoryID == item.id ? Color.accentColor : Color.cs(CSColor.textTertiary))
                                     }
-                                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(selectedMemoryID == item.id ? Color.accentColor : Color.clear).accessibilityHidden(true)
+                                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(selectedMemoryID == item.id ? Color.accentColor : Color.clear).accessibilityHidden(true)
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 8)
                                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selectedMemoryID == item.id ? Color.cs(CSColor.selectionFill) : Color.clear))
@@ -713,8 +713,8 @@ struct ActivityView: View {
                     .font(.callout).csForeground(CSColor.textSecondary).fixedSize(horizontal: false, vertical: true)
                 Text("Active time, focus sessions, applications and websites are calculated from real observations. Demo values like “4h 32m” are never shown unless backed by recorded events.").font(.caption).csForeground(CSColor.textTertiary)
                 HStack(spacing: 8) {
-                    Image(systemName: "lock.shield").font(.caption2).csForeground(CSColor.textTertiary)
-                    Text("Activity stays on this Mac. No cloud upload, no hidden telemetry.").font(.caption2).csForeground(CSColor.textTertiary)
+                    Image(systemName: "lock.shield").font(.csTiny).csForeground(CSColor.textTertiary)
+                    Text("Activity stays on this Mac. No cloud upload, no hidden telemetry.").font(.csTiny).csForeground(CSColor.textTertiary)
                 }
                 Button("Refresh") { viewModel.refresh() }.buttonStyle(.bordered).controlSize(.small)
             }
@@ -738,7 +738,7 @@ private struct ActivitySessionBlockProduction: View {
                     }.frame(width: 28, height: 28).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(session.title).font(.system(size: 13, weight: .semibold)).tracking(0.5).csForeground(CSColor.textPrimary).textCase(.uppercase)
-                        Text(session.timeRange + " · " + session.appsDescription).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1)
+                        Text(session.timeRange + " · " + session.appsDescription).font(.csTiny).csForeground(CSColor.textSecondary).lineLimit(1)
                         Text(session.detail).font(.system(size: 12.5)).csForeground(CSColor.textTertiary).lineLimit(1)
                     }
                     Spacer(minLength: 8)
@@ -761,7 +761,7 @@ private struct ActivitySessionBlockProduction: View {
                             VStack(alignment: .leading, spacing: 1) { Text(event.title).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Text(event.subtitle).font(.system(size: 13.5)).csForeground(CSColor.textSecondary).lineLimit(1) }
                             Spacer(minLength: 8)
                             if let mins = event.durationMinutes { Text("\(mins)m").font(.system(size: 13).monospacedDigit()).csForeground(CSColor.textTertiary) }
-                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.5))
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.cs(CSColor.textTertiary).opacity(0.5))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .contentShape(Rectangle())
@@ -786,7 +786,7 @@ private struct ProductionAppRow: View {
                 HStack(spacing: 6) { Text(usage.displayName).font(.system(size: 14.5, weight: .medium)).csForeground(CSColor.textPrimary).lineLimit(1); Spacer(minLength: 4); Text(displayMinutes).font(.system(size: 13, weight: .medium).monospacedDigit()).csForeground(CSColor.textSecondary) }
                 GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : (usage.percent>0 ? 0.08 : 0); ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:5); Capsule().fill(appColor).frame(width: geo.size.width*frac, height:5) } }.frame(height:5).accessibilityHidden(true)
             }
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(isSelected ? appColor : Color.clear)
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(isSelected ? appColor : Color.clear)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isSelected ? Color.cs(CSColor.selectionFill) : Color.clear))
@@ -813,7 +813,7 @@ private struct ProductionWebRow: View {
                 Text(usage.domain + " · \(usage.pages) pages").font(.system(size: 12.5)).csForeground(CSColor.textTertiary).lineLimit(1)
                 GeometryReader { geo in let frac = maxMinutes>0 ? CGFloat(usage.minutes)/CGFloat(maxMinutes) : 0; ZStack(alignment:.leading) { Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.10)).frame(height:4); Capsule().fill(Color(red: 0.35, green: 0.55, blue: 0.85)).frame(width: geo.size.width*frac, height:4) } }.frame(height:4).accessibilityHidden(true)
             }
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(isSelected ? Color.accentColor : Color.clear)
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(isSelected ? Color.accentColor : Color.clear)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isSelected ? Color.cs(CSColor.selectionFill) : Color.clear))
@@ -899,7 +899,7 @@ private struct ProductionDonut: View {
             let maxLabelWidth = max(56, holeDiameter - 14)
             VStack(spacing: 1) {
                 Text(seg.label)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -989,7 +989,7 @@ private struct ActivityAppDetailPanel: View {
             }
             if !usage.sessions.isEmpty {
                 VStack(alignment: .leading, spacing: 6) { Text("Sessions").font(.csEyebrow(size: 12)).tracking(0.6).csForeground(CSColor.textTertiary).textCase(.uppercase)
-                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { ForEach(usage.sessions, id: \.self) { s in Text(s).font(.caption2.monospacedDigit()).csForeground(CSColor.textSecondary).padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.08))).overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)) } } } }
+                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { ForEach(usage.sessions, id: \.self) { s in Text(s).font(.csTiny.monospacedDigit()).csForeground(CSColor.textSecondary).padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Color.cs(CSColor.textTertiary).opacity(0.08))).overlay(Capsule().strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5)) } } } }
             }
         }.padding(16).frame(width: 320).lgInspector()
     }
@@ -1002,7 +1002,7 @@ private struct ActivityWebDetailPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 ZStack { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.cs(CSColor.textTertiary).opacity(0.10)); Image(systemName: "globe").font(.system(size: 16, weight: .medium)).csForeground(CSColor.textSecondary) }.frame(width: 32, height: 32).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) { Text(usage.title).font(.system(size: 15, weight: .semibold)).csForeground(CSColor.textPrimary).lineLimit(1); Text(usage.domain).font(.caption2).csForeground(CSColor.textTertiary).lineLimit(1) }
+                VStack(alignment: .leading, spacing: 1) { Text(usage.title).font(.system(size: 15, weight: .semibold)).csForeground(CSColor.textPrimary).lineLimit(1); Text(usage.domain).font(.csTiny).csForeground(CSColor.textTertiary).lineLimit(1) }
                 Spacer()
                 Button { onClose() } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).frame(width: 22, height: 22).background(Circle().fill(Color.cs(CSColor.textTertiary).opacity(0.10))) }.buttonStyle(.plain).csForeground(CSColor.textSecondary).keyboardShortcut(.escape, modifiers: []).accessibilityLabel("Close detail")
             }

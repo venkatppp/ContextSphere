@@ -399,11 +399,11 @@ struct GraphScreen: View {
                                     .csForeground(CSColor.textPrimary)
                                 HStack(spacing: 6) {
                                     Text(node.nodeType.title)
-                                        .font(.caption2.weight(.medium))
+                                        .font(.csTiny.weight(.medium))
                                         .csForeground(CSColor.textSecondary)
                                     if let ws = viewModel.workspaceName(for: node) {
                                         Text("· \(ws)")
-                                            .font(.caption2)
+                                            .font(.csTiny)
                                             .csForeground(CSColor.textTertiary)
                                             .lineLimit(1)
                                     }
@@ -459,7 +459,7 @@ struct GraphScreen: View {
                 Button("Load demo fixture") { viewModel.loadFixture() }
                 Button("Clear demo") { viewModel.refresh() }
                 if viewModel.isUsingFixture {
-                    Text("Using demo data").font(.caption2).csForeground(CSColor.textTertiary)
+                    Text("Using demo data").font(.csTiny).csForeground(CSColor.textTertiary)
                 }
 #endif
             } label: {
@@ -507,17 +507,17 @@ struct GraphScreen: View {
                 .csForeground(CSColor.textSecondary)
             if viewModel.isTruncated {
                 Text("· showing first \(viewModel.nodes.count) of \(viewModel.totalNodeCount)")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.warning)
             }
             if viewModel.contextFocusID != nil {
                 Text("· focused")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.warning)
             }
             if camera.semanticLevel == .overview {
                 Text("· overview")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
             }
         }
