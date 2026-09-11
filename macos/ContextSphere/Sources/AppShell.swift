@@ -146,6 +146,7 @@ struct AppShell: View {
     @StateObject private var maintenance = MaintenanceViewModel()
     @StateObject private var recovery = RecoveryViewModel()
     @StateObject private var activity = ActivityViewModel()
+    @StateObject private var intelligence = WorkspaceIntelligenceViewModel()
     @StateObject private var proactiveNotifier = ProactiveNotifier()
     @State private var workspaceReloadTask: Task<Void, Never>?
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
@@ -155,26 +156,34 @@ struct AppShell: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 232, max: 280)
         } detail: {
-            ZStack(alignment: .topTrailing) {
-                DetailHost(section: router.selection ?? .dashboard,
-                           workspaces: workspaces,
-                           loaded: loaded,
-                           loadFailed: loadFailed,
-                           timeline: timeline,
-                           search: search,
-                           graph: graph,
-                           memory: memory,
-                           learning: learning,
-                           performance: performance,
-                           maintenance: maintenance,
-                           recovery: recovery,
-                           activity: activity,
-                           onRevealWorkspace: revealWorkspace)
-                    .background(ContentBackdrop())
-                ProactiveSuggestionTray(notifier: proactiveNotifier)
-                    .padding(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 16))
-                    .transition(AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
-                    .zIndex(10)
+            GeometryReader { geo in
+                ZStack(alignment: .topTrailing) {
+                    DetailHost(section: router.selection ?? .dashboard,
+                               workspaces: workspaces,
+                               loaded: loaded,
+                               loadFailed: loadFailed,
+                               timeline: timeline,
+                               search: search,
+                               graph: graph,
+                               memory: memory,
+                               learning: learning,
+                               performance: performance,
+                               maintenance: maintenance,
+                               recovery: recovery,
+                               activity: activity,
+                               intelligence: intelligence,
+                               onRevealWorkspace: revealWorkspace)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ContentBackdrop())
+
+                    ProactiveSuggestionTray(notifier: proactiveNotifier)
+                        .frame(maxWidth: max(280, min(480, geo.size.width - 32)), alignment: .trailing)
+                        .padding(.top, 12)
+                        .padding(.trailing, 16)
+                        .transition(AnyTransition.opacity.combined(with: .scale(scale: 0.96)))
+                        .zIndex(10)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -280,6 +289,7 @@ struct AppShell: View {
             search.handle(event: event, payload: payload)
             graph.handle(event: event, payload: payload)
             activity.handle(event: event, payload: payload)
+            intelligence.handle(event: event, payload: payload)
             if event.hasPrefix("workspace:") {
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .workspacesDidChange, object: nil)
@@ -360,7 +370,7 @@ private struct SidebarRow: View {
             if let key = section.shortcutKey {
                 ViewThatFits(in: .horizontal) {
                     Text("⌘\(String(key.character))")
-                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .csForeground(isSelected ? CSColor.sidebarSelectedTint : CSColor.textTertiary)
                         .opacity(isSelected ? 1 : (isHovered ? 0.7 : 0.55))
                         .padding(.horizontal, 3.5)
@@ -419,7 +429,7 @@ private struct SidebarGroupHeader: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: group.symbol)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .csForeground(CSColor.textTertiary)
                 .opacity(0.9)
             Text(group.title.uppercased())
@@ -501,7 +511,7 @@ private struct SidebarHeader: View {
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
                     .opacity(0.85)
             }
@@ -547,7 +557,7 @@ private struct ToolbarBreadcrumb: View {
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .csForeground(CSColor.textTertiary)
                     .opacity(0.6)
                     .accessibilityHidden(true)
@@ -591,6 +601,7 @@ struct DetailHost: View {
     let maintenance: MaintenanceViewModel
     let recovery: RecoveryViewModel
     let activity: ActivityViewModel
+    let intelligence: WorkspaceIntelligenceViewModel
     let onRevealWorkspace: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -611,14 +622,14 @@ struct DetailHost: View {
                 content
             }
         }
-        .frame(minWidth: 760, minHeight: 560)
+        .frame(minWidth: 480, minHeight: 400)
     }
 
     @ViewBuilder
     private var content: some View {
         Group {
             switch section {
-            case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace, activity: activity)
+            case .dashboard: DashboardView(workspaces: workspaces, onRevealWorkspace: onRevealWorkspace, activity: activity, intelligence: intelligence)
             case .workspaces: WorkspacesView(workspaces: workspaces, onWorkspacesChanged: { AppRouter.shared.reloadRequest = true })
             case .timeline: TimelineView(viewModel: timeline)
             case .activity: ActivityView(viewModel: activity)

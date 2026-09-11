@@ -97,7 +97,7 @@ struct RecoveryView: View {
             historyCard
             if let h = viewModel.selfHealResult { selfHealCard(h) }
             if let r = viewModel.rollbackResult { rollbackCard(r) }
-            if let t = viewModel.lastTick { Text("Watchdog tick \(t)").font(.caption2).csForeground(CSColor.textTertiary) }
+            if let t = viewModel.lastTick { Text("Watchdog tick \(t)").font(.csTiny).csForeground(CSColor.textTertiary) }
             if let err = viewModel.lastError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.circle").csForeground(CSColor.warning)
@@ -122,12 +122,12 @@ struct RecoveryView: View {
                             .font(.system(size: 32, weight: .bold).monospacedDigit())
                             .foregroundStyle(s.status == "healthy" ? Color.cs(CSColor.success) : s.status == "degraded" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Score / 100").font(.caption2).csForeground(CSColor.textSecondary)
-                            Text(s.capturedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                            Text("Score / 100").font(.csTiny).csForeground(CSColor.textSecondary)
+                            Text(s.capturedAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
                             if let j = viewModel.latestCheckpoint {
-                                Text("Checkpoint #\(j.id) · \(j.createdAt.relativeTime)").font(.caption2).csForeground(CSColor.textSecondary)
+                                Text("Checkpoint #\(j.id) · \(j.createdAt.relativeTime)").font(.csTiny).csForeground(CSColor.textSecondary)
                             } else {
-                                Text("No checkpoint yet").font(.caption2).csForeground(CSColor.textTertiary)
+                                Text("No checkpoint yet").font(.csTiny).csForeground(CSColor.textTertiary)
                             }
                         }
                     }
@@ -136,13 +136,13 @@ struct RecoveryView: View {
                         if let h = viewModel.history, !h.runs.isEmpty {
                             let recovered = h.runs.filter { $0.outcome == "recovered" }.count
                             Text("\(h.runs.count) recovery runs").font(.caption.weight(.medium)).csForeground(CSColor.textSecondary)
-                            Text("\(recovered) recovered").font(.caption2).csForeground(CSColor.success)
+                            Text("\(recovered) recovered").font(.csTiny).csForeground(CSColor.success)
                         } else if viewModel.crashes.isEmpty {
-                            Text("No interruptions").font(.caption2).csForeground(CSColor.textTertiary)
+                            Text("No interruptions").font(.csTiny).csForeground(CSColor.textTertiary)
                         }
                         if !s.issues.isEmpty {
                             ForEach(s.issues.prefix(2), id: \.self) { issue in
-                                Text(issue).font(.caption2).csForeground(CSColor.warning).lineLimit(1)
+                                Text(issue).font(.csTiny).csForeground(CSColor.warning).lineLimit(1)
                             }
                         }
                     }
@@ -179,8 +179,8 @@ struct RecoveryView: View {
                         HStack {
                             Text(w.worker).font(.caption.weight(.medium))
                             Spacer()
-                            Text(w.status).font(.caption2.weight(.semibold)).foregroundStyle(w.status == "healthy" ? Color.cs(CSColor.success) : w.status == "stalled" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
-                            Text("\(w.executionCount) runs · \(w.consecutiveMisses) misses").font(.caption2).csForeground(CSColor.textSecondary).monospacedDigit()
+                            Text(w.status).font(.csSmallLabel).foregroundStyle(w.status == "healthy" ? Color.cs(CSColor.success) : w.status == "stalled" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                            Text("\(w.executionCount) runs · \(w.consecutiveMisses) misses").font(.csTiny).csForeground(CSColor.textSecondary).monospacedDigit()
                         }
                     }
                 }
@@ -195,14 +195,14 @@ struct RecoveryView: View {
                 HStack(spacing: 16) {
                     Text("\(String(format: "%.0f", s.overallScore))").font(.system(size: 30, weight: .bold).monospacedDigit()).foregroundStyle(s.status == "healthy" ? Color.cs(CSColor.success) : s.status == "degraded" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Score / 100").font(.caption2).csForeground(CSColor.textSecondary)
-                        Text(s.capturedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("Score / 100").font(.csTiny).csForeground(CSColor.textSecondary)
+                        Text(s.capturedAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                     Spacer()
                     if !s.issues.isEmpty {
                         VStack(alignment: .trailing, spacing: 2) {
                             ForEach(s.issues.prefix(3), id: \.self) { issue in
-                                Text(issue).font(.caption2).csForeground(CSColor.warning).lineLimit(1)
+                                Text(issue).font(.csTiny).csForeground(CSColor.warning).lineLimit(1)
                             }
                         }
                     }
@@ -213,8 +213,8 @@ struct RecoveryView: View {
                         HStack {
                             Text(w.worker).font(.caption.weight(.medium))
                             Spacer()
-                            Text(w.status).font(.caption2.weight(.semibold)).foregroundStyle(w.status == "healthy" ? Color.cs(CSColor.success) : w.status == "stalled" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
-                            Text("\(w.executionCount) runs · \(w.consecutiveMisses) misses").font(.caption2).csForeground(CSColor.textSecondary).monospacedDigit()
+                            Text(w.status).font(.csSmallLabel).foregroundStyle(w.status == "healthy" ? Color.cs(CSColor.success) : w.status == "stalled" ? Color.cs(CSColor.warning) : Color.cs(CSColor.error)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                            Text("\(w.executionCount) runs · \(w.consecutiveMisses) misses").font(.csTiny).csForeground(CSColor.textSecondary).monospacedDigit()
                         }
                     }
                 }
@@ -227,9 +227,9 @@ struct RecoveryView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Latest Checkpoint", systemImage: "flag.checkered").font(.callout.weight(.semibold))
                 Text("ID \(j.id) · \(j.entryType) · \(j.scope)/\(j.entity) · \(j.state)").font(.caption).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                Text(j.createdAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                Text(j.createdAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
                 if j.checksum != "0000000000000000" {
-                    Text("Checksum \(j.checksum.prefix(8))…").font(.caption2.monospaced()).csForeground(CSColor.textTertiary)
+                    Text("Checksum \(j.checksum.prefix(8))…").font(.csTiny.monospaced()).csForeground(CSColor.textTertiary)
                 }
             }
         }
@@ -240,7 +240,7 @@ struct RecoveryView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Interruptions", subtitle: "\(viewModel.crashes.count) total", symbol: "exclamationmark.octagon")
                 Text("Timeout · Unexpected shutdown · Crash · Recovered — each is logged and, when recovered, does not affect current health.")
-                    .font(.caption2).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(.csTiny).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
                 if viewModel.crashes.isEmpty {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").csForeground(CSColor.success)
@@ -258,7 +258,7 @@ struct RecoveryView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text(c.component).font(.callout.weight(.medium)).lineLimit(1)
-                                        Text(crashLabel(c)).font(.caption2.weight(.semibold))
+                                        Text(crashLabel(c)).font(.csSmallLabel)
                                             .foregroundStyle(crashColor(c))
                                             .padding(.horizontal, 6).padding(.vertical, 2)
                                             .background(crashColor(c).opacity(0.13), in: Capsule())
@@ -266,7 +266,7 @@ struct RecoveryView: View {
                                         CSStatusBadge(text: c.wasRecovered ? "Recovered" : "Unrecovered", kind: c.wasRecovered ? .success : .error)
                                     }
                                     Text(c.message).font(.caption).csForeground(CSColor.textSecondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                                    Text("\(c.reportedAt.relativeTime) · \(c.severity.capitalized)").font(.caption2).csForeground(CSColor.textTertiary)
+                                    Text("\(c.reportedAt.relativeTime) · \(c.severity.capitalized)").font(.csTiny).csForeground(CSColor.textTertiary)
                                 }
                             }
                             .padding(.horizontal, 10).padding(.vertical, 8)
@@ -275,7 +275,7 @@ struct RecoveryView: View {
                         }
                     }
                     if viewModel.crashes.count > 5 {
-                        Text("\(viewModel.crashes.count - 5) older interruptions retained").font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("\(viewModel.crashes.count - 5) older interruptions retained").font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                 }
             }
@@ -316,14 +316,14 @@ struct RecoveryView: View {
                 SectionHeader(title: "Recovery journal", subtitle: viewModel.history.map { "\($0.journal.count) entries · \(viewModel.history?.runs.count ?? 0) runs" } ?? "—", symbol: "list.bullet.rectangle")
                 if let h = viewModel.history, !h.journal.isEmpty {
                     Text("Every checkpoint and recovery run is appended here. The latest checkpoint is the restore point; runs show what was healed.")
-                        .font(.caption2).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
+                        .font(.csTiny).csForeground(CSColor.textTertiary).fixedSize(horizontal: false, vertical: true)
                     VStack(spacing: 4) {
                         ForEach(h.journal.prefix(6), id: \.id) { e in
                             HStack(spacing: 8) {
                                 Text(e.entryType).font(.caption.weight(.medium)).csForeground(CSColor.textPrimary).frame(width: 96, alignment: .leading).lineLimit(1)
-                                Text(e.scope + "/" + e.entity).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle)
+                                Text(e.scope + "/" + e.entity).font(.csTiny).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text(e.createdAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                                Text(e.createdAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color.cs(CSColor.surfaceElevated).opacity(0.4), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -331,14 +331,14 @@ struct RecoveryView: View {
                     }
                     if !h.runs.isEmpty {
                         Divider().opacity(0.4)
-                        Text("Recent recovery runs").font(.caption2.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.4)
+                        Text("Recent recovery runs").font(.csSmallLabel).csForeground(CSColor.textSecondary).textCase(.uppercase).tracking(0.4)
                         VStack(spacing: 6) {
                             ForEach(h.runs.prefix(3), id: \.id) { r in
                                 HStack(spacing: 8) {
                                     Text(r.trigger).font(.caption.weight(.medium)).lineLimit(1)
-                                    Text(r.outcome).font(.caption2.weight(.semibold)).foregroundStyle(r.outcome == "recovered" ? Color.cs(CSColor.success) : Color.cs(CSColor.warning)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
+                                    Text(r.outcome).font(.csSmallLabel).foregroundStyle(r.outcome == "recovered" ? Color.cs(CSColor.success) : Color.cs(CSColor.warning)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
                                     Spacer()
-                                    Text("\(r.actions.count) actions · \(r.durationMs) ms").font(.caption2).csForeground(CSColor.textSecondary).monospacedDigit()
+                                    Text("\(r.actions.count) actions · \(r.durationMs) ms").font(.csTiny).csForeground(CSColor.textSecondary).monospacedDigit()
                                 }
                                 .padding(.horizontal, 8).padding(.vertical, 6)
                                 .background(Color.cs(CSColor.surfaceElevated).opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -369,7 +369,7 @@ struct RecoveryView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label(r.ok ? "Rollback Succeeded" : "Rollback", systemImage: r.ok ? "checkmark.circle.fill" : "arrow.uturn.backward.circle").font(.callout.weight(.semibold)).foregroundStyle(r.ok ? Color.cs(CSColor.success) : .secondary)
                 Text(r.message).font(.callout).csForeground(CSColor.textSecondary)
-                if let to = r.rolledBackTo { Text("To journal \(to)").font(.caption2).csForeground(CSColor.textTertiary) }
+                if let to = r.rolledBackTo { Text("To journal \(to)").font(.csTiny).csForeground(CSColor.textTertiary) }
             }
         }
     }

@@ -101,7 +101,7 @@ struct SettingsView: View {
                         .font(.system(size: 12, weight: .medium))
                         .csForeground(CSColor.textTertiary)
                     Text("ContextSphere v\(CoreBridge.shared.backendVersion ?? "—")")
-                        .font(.caption2.monospacedDigit())
+                        .font(.csTiny.monospacedDigit())
                         .csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 14)
@@ -348,11 +348,11 @@ struct SettingsView: View {
                 HStack(spacing: 4) {
                     if isActive {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                     }
                     Text(mode.title)
-                        .font(.caption2.weight(isActive ? .semibold : .regular))
+                        .font(.csTiny.weight(isActive ? .semibold : .regular))
                         .csForeground(isActive ? CSColor.sidebarSelectedTint : CSColor.textSecondary)
                 }
             }
@@ -385,7 +385,7 @@ struct SettingsView: View {
                                   lineWidth: isActive ? 2 : 0.5)
             )
             Text(label)
-                .font(.caption2.weight(isActive ? .semibold : .regular))
+                .font(.csTiny.weight(isActive ? .semibold : .regular))
                 .csForeground(isActive ? CSColor.sidebarSelectedTint : CSColor.textSecondary)
         }
     }
@@ -483,7 +483,7 @@ struct SettingsView: View {
                             CSStatusBadge(text: score.status.capitalized, kind: score.status == "excellent" || score.status == "good" ? .success : score.status == "fair" ? .warning : .error)
                         }
                         Text("\(score.passedChecks) of \(score.totalChecks) checks passed · \(score.failedChecks) failed").font(.caption).csForeground(CSColor.textSecondary)
-                        Text("Checked \(score.scoredAt.relativeTime)").font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("Checked \(score.scoredAt.relativeTime)").font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                     Spacer(minLength: 12)
                     VStack(alignment: .trailing, spacing: 6) {
@@ -496,20 +496,20 @@ struct SettingsView: View {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(unresolved.count) unresolved finding\(unresolved.count == 1 ? "" : "s")").font(.caption.weight(.semibold)).csForeground(CSColor.warning)
                                 ForEach(unresolved.prefix(2), id: \.id) { f in
-                                    Text(f.checkName.replacingOccurrences(of: "_", with: " ").capitalized).font(.caption2).csForeground(CSColor.textSecondary).lineLimit(1)
+                                    Text(f.checkName.replacingOccurrences(of: "_", with: " ").capitalized).font(.csTiny).csForeground(CSColor.textSecondary).lineLimit(1)
                                 }
                             }
                         }
                         if !viewModel.securityRecommendations.isEmpty {
                             let open = viewModel.securityRecommendations.filter { $0.status == "open" }.count
                             if open > 0 {
-                                Text("\(open) actionable recommendation\(open == 1 ? "" : "s")").font(.caption2).csForeground(CSColor.info)
+                                Text("\(open) actionable recommendation\(open == 1 ? "" : "s")").font(.csTiny).csForeground(CSColor.info)
                             }
                         }
                     }
                 }
                 if let err = viewModel.securityStatusError {
-                    Text(err).font(.caption2).csForeground(CSColor.textTertiary)
+                    Text(err).font(.csTiny).csForeground(CSColor.textTertiary)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -520,10 +520,10 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         Label("Monitoring every \(viewModel.monitorIntervalSeconds)s", systemImage: "clock.arrow.circlepath").font(.caption).csForeground(CSColor.textSecondary)
                         Spacer()
-                        Text("Findings will appear after the first monitor pass").font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("Findings will appear after the first monitor pass").font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                     if let err = viewModel.securityStatusError {
-                        Text(err).font(.caption2).csForeground(CSColor.warning)
+                        Text(err).font(.csTiny).csForeground(CSColor.warning)
                     }
                 }
             }
@@ -541,7 +541,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack(spacing: 6) {
                                     Text(rec.title).font(.callout.weight(.medium)).lineLimit(1)
-                                    Text(rec.severity.capitalized).font(.caption2.weight(.semibold))
+                                    Text(rec.severity.capitalized).font(.csSmallLabel)
                                         .foregroundStyle(rec.severity == "critical" ? Color.cs(CSColor.error) : rec.severity == "warning" ? Color.cs(CSColor.warning) : Color.cs(CSColor.info))
                                         .padding(.horizontal, 6).padding(.vertical, 2).background(Color.cs(CSColor.borderSubtle), in: Capsule())
                                 }
@@ -554,7 +554,7 @@ struct SettingsView: View {
                         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.cs(CSColor.borderSubtle), lineWidth: 0.5))
                     }
                     if viewModel.securityRecommendations.filter({ $0.status == "open" }).count > 4 {
-                        Text("\(viewModel.securityRecommendations.filter({ $0.status == "open" }).count - 4) more recommendations retained").font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("\(viewModel.securityRecommendations.filter({ $0.status == "open" }).count - 4) more recommendations retained").font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                 }
             }

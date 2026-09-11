@@ -14,10 +14,12 @@ use crate::analytics::engine::AnalyticsEngine;
 use crate::context_memory::models::CreateSnapshotRequest;
 use crate::context_memory::ContextMemoryEngine;
 use crate::duplicates::DuplicateDetectionEngine;
+use crate::intelligence::continuity::ContextContinuityEngine;
 use crate::intelligence::health::WorkspaceHealthEngine;
 use crate::intelligence::recommendation::{
     RecommendationCategory, RecommendationEngine, RecommendationPriority,
 };
+use crate::intelligence::workspace::WorkspaceIntelligenceEngine;
 use crate::maintenance::MaintenanceEngine;
 use crate::performance::PerformanceEngine;
 use crate::predictive::models::CreateAutomationRuleRequest;
@@ -79,6 +81,24 @@ pub async fn dispatch_admin(
         "get_workspace_recommendations" => rpc_state_tail!(app, params, RecommendationEngine, crate::commands::intelligence::get_workspace_recommendations, ("workspace_id": String)),
         "get_category_recommendations" => rpc_state_tail!(app, params, RecommendationEngine, crate::commands::intelligence::get_category_recommendations, ("workspace_id": String, "category": RecommendationCategory)),
         "get_priority_recommendations" => rpc_state_tail!(app, params, RecommendationEngine, crate::commands::intelligence::get_priority_recommendations, ("workspace_id": String, "min_priority": RecommendationPriority)),
+        "get_workspace_intelligence" => rpc_state_tail!(app, params, WorkspaceIntelligenceEngine, crate::commands::intelligence::get_workspace_intelligence, ("workspace_id": String)),
+        "get_active_workspace_inference" => rpc_state!(app, params, WorkspaceIntelligenceEngine, crate::commands::intelligence::get_active_workspace_inference, ()),
+        "list_workspaces_intelligence" => rpc_state!(app, params, WorkspaceIntelligenceEngine, crate::commands::intelligence::list_workspaces_intelligence, ()),
+        "reconstruct_workspace_context" => rpc_state_tail!(app, params, ContextContinuityEngine, crate::commands::intelligence::reconstruct_workspace_context, ("workspace_id": String)),
+        "get_smart_resume_context" => rpc_state!(app, params, ContextContinuityEngine, crate::commands::intelligence::get_smart_resume_context, ()),
+        "snapshot_work_episode" => {
+            let workspace_id: String = pget(params, "workspace_id")?;
+            let snapshot_type: Option<crate::context_memory::models::SnapshotType> = pget(params, "snapshot_type")?;
+            let r = crate::commands::intelligence::snapshot_work_episode(
+                workspace_id,
+                snapshot_type,
+                app.state::<ContextContinuityEngine>(),
+                app.state::<IntelligenceEmitter>(),
+            )
+            .await
+            .map_err(|e| RpcError::message(e))?;
+            serde_json::to_value(r).map_err(|e| RpcError::message(e.to_string()))?
+        }
 
         // ---------------------------------------------------------- predictive
         "get_predictions_summary" => rpc_state!(app, params, PredictiveEngine, crate::commands::predictive::get_predictions_summary, ()),

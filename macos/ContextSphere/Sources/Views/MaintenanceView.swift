@@ -142,7 +142,7 @@ struct MaintenanceView: View {
                     Image(systemName: "checkmark.circle.fill").font(.system(size: 12, weight: .semibold)).csForeground(CSColor.success)
                     Text("No pending restore").font(.caption).csForeground(CSColor.textSecondary)
                     Spacer()
-                    Text("A staged restore applies on next launch").font(.caption2).csForeground(CSColor.textTertiary)
+                    Text("A staged restore applies on next launch").font(.csTiny).csForeground(CSColor.textTertiary)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Color.cs(CSColor.surface).opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -176,22 +176,22 @@ struct MaintenanceView: View {
                             Text(r.ok ? "Integrity OK" : "Integrity issues").font(.caption.weight(.semibold)).csForeground(r.ok ? CSColor.success : CSColor.error)
                             Text("· \(viewModel.backups.count) backups").font(.caption).csForeground(CSColor.textSecondary)
                             if let rep = viewModel.lastOptimize {
-                                Text("· last vacuum \(rep.checkedAt.relativeTime)").font(.caption2).csForeground(CSColor.textTertiary)
+                                Text("· last vacuum \(rep.checkedAt.relativeTime)").font(.csTiny).csForeground(CSColor.textTertiary)
                             }
                         }
-                        Text(r.dbPath).font(.caption2.monospaced()).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Text(r.dbPath).font(.csTiny.monospaced()).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         Text("\(ByteCountFormatter.string(fromByteCount: r.main.databaseSizeBytes, countStyle: .file)) · \(r.main.pageCount) pages · \(r.main.journalMode) · freelist \(r.main.freelistCount)")
-                            .font(.caption2).csForeground(CSColor.textTertiary)
+                            .font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                     Spacer(minLength: 12)
                 }
                 HStack(spacing: 8) {
                     Label(r.main.integrity.ok ? "integrity_check OK" : "integrity_check failed", systemImage: r.main.integrity.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .font(.caption2).foregroundStyle(r.main.integrity.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
+                        .font(.csTiny).foregroundStyle(r.main.integrity.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
                     Label(r.main.quickCheck.ok ? "quick_check OK" : "quick_check failed", systemImage: r.main.quickCheck.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .font(.caption2).foregroundStyle(r.main.quickCheck.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
+                        .font(.csTiny).foregroundStyle(r.main.quickCheck.ok ? Color.cs(CSColor.success) : Color.cs(CSColor.error))
                     if !r.main.foreignKeyCheck.isEmpty {
-                        Text("· \(r.main.foreignKeyCheck.count) foreign-key issues").font(.caption2).csForeground(CSColor.error)
+                        Text("· \(r.main.foreignKeyCheck.count) foreign-key issues").font(.csTiny).csForeground(CSColor.error)
                     }
                 }
             }
@@ -203,7 +203,7 @@ struct MaintenanceView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Pending Restore", systemImage: "arrow.triangle.branch").font(.callout.weight(.semibold))
                 Text(p.message).font(.callout).csForeground(CSColor.textSecondary)
-                Text("Applies on next launch · \(p.backupPath)").font(.caption2).csForeground(CSColor.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text("Applies on next launch · \(p.backupPath)").font(.csTiny).csForeground(CSColor.textTertiary).lineLimit(1).truncationMode(.middle)
                 Button("Cancel Pending Restore") { showCancelRestoreConfirm = true }.buttonStyle(.bordered).controlSize(.small).tint(Color.cs(CSColor.error))
             }
         }
@@ -216,7 +216,7 @@ struct MaintenanceView: View {
                     SectionHeader(title: "Recent backups", subtitle: "\(viewModel.backups.count) total", symbol: "externaldrive")
                     Spacer()
                     if !viewModel.backups.isEmpty {
-                        Text("Showing last 5").font(.caption2).csForeground(CSColor.textTertiary)
+                        Text("Showing last 5").font(.csTiny).csForeground(CSColor.textTertiary)
                     }
                 }
                 if viewModel.backups.isEmpty {
@@ -233,12 +233,12 @@ struct MaintenanceView: View {
                             HStack(spacing: 10) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
-                                        Text(run.kind.capitalized).font(.caption2.weight(.semibold)).csForeground(CSColor.textSecondary).textCase(.uppercase)
-                                        Text(run.status.capitalized).font(.caption2.weight(.semibold))
+                                        Text(run.kind.capitalized).font(.csSmallLabel).csForeground(CSColor.textSecondary).textCase(.uppercase)
+                                        Text(run.status.capitalized).font(.csSmallLabel)
                                             .foregroundStyle(run.status == "success" ? Color.cs(CSColor.success) : run.status == "failed" ? Color.cs(CSColor.error) : Color.cs(CSColor.warning))
                                             .padding(.horizontal, 5).padding(.vertical, 1).background(Color.cs(CSColor.borderSubtle), in: Capsule())
-                                        Text(run.startedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
-                                        Text("· \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file))").font(.caption2).csForeground(CSColor.textTertiary)
+                                        Text(run.startedAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
+                                        Text("· \(ByteCountFormatter.string(fromByteCount: run.sizeBytes, countStyle: .file))").font(.csTiny).csForeground(CSColor.textTertiary)
                                     }
                                     Text(run.path.isEmpty ? run.detail : run.path).font(.caption).csForeground(CSColor.textSecondary).lineLimit(1).truncationMode(.middle)
                                 }
@@ -254,7 +254,7 @@ struct MaintenanceView: View {
                         }
                     }
                     if viewModel.backups.count > 5 {
-                        Text("\(viewModel.backups.count - 5) older backups retained").font(.caption2).csForeground(CSColor.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
+                        Text("\(viewModel.backups.count - 5) older backups retained").font(.csTiny).csForeground(CSColor.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     HStack(spacing: 8) {
                         Button { Task { await viewModel.runBackup() } } label: { Label("Create Backup", systemImage: "plus.circle.fill") }
@@ -274,7 +274,7 @@ struct MaintenanceView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Last Maintenance", systemImage: "hammer").font(.callout.weight(.semibold))
                 Text("Freed \(r.freedPages) pages · \(ByteCountFormatter.string(fromByteCount: r.recoveredBytes, countStyle: .file)) · Vacuum \(r.vacuumRan ? "yes" : "no") · Checkpoint \(r.checkpointedFrames) frames").font(.caption).csForeground(CSColor.textSecondary)
-                Text(r.checkedAt.relativeTime).font(.caption2).csForeground(CSColor.textTertiary)
+                Text(r.checkedAt.relativeTime).font(.csTiny).csForeground(CSColor.textTertiary)
             }
         }
     }

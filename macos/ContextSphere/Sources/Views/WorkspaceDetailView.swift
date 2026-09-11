@@ -14,6 +14,9 @@ struct WorkspaceDetailView: View {
     @State private var healthHistory: [WorkspaceHealthReport] = []
     @State private var healthError: String?
     @State private var isLoadingHealth = false
+    @State private var intelligence: WorkspaceIntelligence?
+    @State private var reconstructedContext: ReconstructedContext?
+    @State private var isLoadingIntelligence = false
 
     var body: some View {
         ScrollView {
@@ -23,6 +26,33 @@ struct WorkspaceDetailView: View {
                     StatusBanner(message: "Action failed", style: .error, detail: error)
                 }
                 metrics
+                if let ctx = reconstructedContext, ctx.isResumable {
+                    ContextContinuityCard(
+                        context: ctx,
+                        onResume: { _ in onSwitch?() },
+                        onSnapshot: {
+                            Task {
+                                try? await CoreBridge.shared.call(
+                                    "snapshot_work_episode",
+                                    params: ["workspace_id": workspace.id]
+                                )
+                            }
+                        }
+                    )
+                }
+                if let intel = intelligence {
+                    WorkspaceIntelligenceCard(
+                        intelligence: intel,
+                        onResumeEpisode: {
+                            onSwitch?()
+                        },
+                        onExecuteSuggestion: { sug in
+                            if sug.actionType == "resume_workspace" {
+                                onSwitch?()
+                            }
+                        }
+                    )
+                }
                 workspaceHealthCard
                 if let description = workspace.description, !description.isEmpty {
                     descriptionCard(description)
@@ -38,7 +68,9 @@ struct WorkspaceDetailView: View {
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .defaultScrollAnchor(.top)
         .task(id: workspace.id) {
-            await loadHealth()
+            async let h: () = loadHealth()
+            async let i: () = loadIntelligence()
+            _ = await (h, i)
         }
         // Live health pushes (`health:updated`) refresh the card without
         // a manual reload.
@@ -47,7 +79,15 @@ struct WorkspaceDetailView: View {
         ) { note in
             guard let id = note.userInfo?["workspaceId"] as? String,
                   id == workspace.id else { return }
-            Task { await loadHealth() }
+            Task {
+                await loadHealth()
+                await loadIntelligence()
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .intelligenceDidChange)
+        ) { _ in
+            Task { await loadIntelligence() }
         }
     }
 
@@ -93,7 +133,7 @@ struct WorkspaceDetailView: View {
                             .foregroundStyle(healthColor(report.overallScore))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("of 100")
-                                .font(.caption2)
+                                .font(.csTiny)
                                 .csForeground(CSColor.textSecondary)
                             if let trend = report.trend {
                                 Label(trend >= 0
@@ -101,7 +141,7 @@ struct WorkspaceDetailView: View {
                                       : String(format: "%.0f%%", trend * 100),
                                       systemImage: trend >= 0
                                       ? "arrow.up.right" : "arrow.down.right")
-                                .font(.caption2.weight(.medium))
+                                .font(.csTiny.weight(.medium))
                                 .foregroundStyle(trend >= 0 ? Color.cs(CSColor.success) : Color.cs(CSColor.warning))
                             }
                         }
@@ -113,19 +153,19 @@ struct WorkspaceDetailView: View {
                         }
                     }
                     ForEach(report.factors.sorted { $0.score < $1.score }.prefix(4)) { factor in
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(factor.name).font(.caption.weight(.medium))
+                                Text(factor.name).font(.csMetadata.weight(.medium))
                                 Spacer()
                                 Text("\(Int((factor.score * 100).rounded()))%")
-                                    .font(.caption2.monospacedDigit())
+                                    .font(.csTiny.monospacedDigit())
                                     .csForeground(CSColor.textSecondary)
                             }
                             ProgressView(value: factor.score)
                                 .tint(factor.score >= 0.6 ? Color.cs(CSColor.success)
                                       : factor.score >= 0.35 ? Color.cs(CSColor.warning) : Color.cs(CSColor.error))
                             Text(factor.description)
-                                .font(.caption2)
+                                .font(.csTiny)
                                 .csForeground(CSColor.textTertiary)
                                 .lineLimit(1)
                         }
@@ -135,18 +175,18 @@ struct WorkspaceDetailView: View {
                 } else if let healthError {
                     VStack(alignment: .leading, spacing: 6) {
                         Label(healthError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
+                            .font(.csTiny)
                             .csForeground(CSColor.warning)
                         Button("Retry") { Task { await loadHealth() } }
                             .buttonStyle(.link)
-                            .font(.caption)
+                            .font(.csTiny)
                     }
                 } else if isLoadingHealth {
                     ProgressView()
                         .controlSize(.small)
                 } else {
                     Text("Health intelligence appears once the workspace has activity.")
-                        .font(.caption)
+                        .font(.csTiny)
                         .csForeground(CSColor.textSecondary)
                 }
             }
@@ -184,6 +224,28 @@ struct WorkspaceDetailView: View {
         }
     }
 
+    private func loadIntelligence() async {
+        isLoadingIntelligence = true
+        defer { isLoadingIntelligence = false }
+        do {
+            async let intelTask: WorkspaceIntelligence = CoreBridge.shared.request(
+                "get_workspace_intelligence",
+                params: ["workspace_id": workspace.id],
+                as: WorkspaceIntelligence.self
+            )
+            async let contextTask: ReconstructedContext = CoreBridge.shared.request(
+                "reconstruct_workspace_context",
+                params: ["workspace_id": workspace.id],
+                as: ReconstructedContext.self
+            )
+            let (intel, ctx) = try await (intelTask, contextTask)
+            intelligence = intel
+            reconstructedContext = ctx
+        } catch {
+            // Degrade silently if intelligence cannot be computed
+        }
+    }
+
     private var identity: some View {
         HStack(alignment: .top, spacing: 16) {
             ZStack {
@@ -209,7 +271,7 @@ struct WorkspaceDetailView: View {
                         .textSelection(.enabled)
                 }
                 Text(workspace.id)
-                    .font(.caption2.monospaced())
+                    .font(.csTiny.monospaced())
                     .csForeground(CSColor.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -251,7 +313,7 @@ struct WorkspaceDetailView: View {
                     Text(workspace.createdAt.isoDate?.formatted(date: .abbreviated, time: .omitted) ?? "—")
                         .font(.callout.weight(.medium))
                     Text(workspace.createdAt.relativeTime)
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,7 +326,7 @@ struct WorkspaceDetailView: View {
                     Text(workspace.lastActiveAt.relativeTime)
                         .font(.callout.weight(.medium))
                     Text(workspace.lastActiveAt.isoDate?.formatted(date: .abbreviated, time: .shortened) ?? "")
-                        .font(.caption2)
+                        .font(.csTiny)
                         .csForeground(CSColor.textTertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -350,7 +412,7 @@ struct WorkspaceDetailView: View {
                     }
                 }
                 Text("Switch makes this workspace current for Dashboard, Timeline, and Search. Archive moves between Active/Archived. Delete removes the workspace record only — files on disk are not deleted.")
-                    .font(.caption2)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -381,7 +443,7 @@ struct HealthSparkline: View {
             .accessibilityHidden(true)
         } else {
             Text("Not enough history yet")
-                .font(.caption2)
+                .font(.csTiny)
                 .csForeground(CSColor.textTertiary)
         }
     }

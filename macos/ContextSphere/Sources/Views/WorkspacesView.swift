@@ -108,7 +108,7 @@ struct WorkspacesView: View {
             if !workspaces.isEmpty {
                 HStack(spacing: 6) {
                     Text("\(activeWorkspaces.count) active")
-                        .font(.caption2.weight(.medium))
+                        .font(.csTiny.weight(.medium))
                         .csForeground(CSColor.success)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -117,7 +117,7 @@ struct WorkspacesView: View {
                             in: Capsule(style: .continuous)
                         )
                     Text("\(archivedWorkspaces.count) archived")
-                        .font(.caption2.weight(.medium))
+                        .font(.csTiny.weight(.medium))
                         .csForeground(CSColor.textSecondary)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)

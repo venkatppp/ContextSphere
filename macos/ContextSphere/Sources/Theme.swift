@@ -383,10 +383,13 @@ enum Theme {
 
     // MARK: Layout
     static let contentMaxWidth: CGFloat = 1280
+    /// Dashboard cards and intelligence panels use a narrower content width
+    /// so information groups tightly rather than stretching across wide windows.
+    static let dashboardContentMaxWidth: CGFloat = 920
     static let sidebarWidth: CGFloat = 232
-    static let cardPadding: CGFloat = 16
-    static let cardPaddingLarge: CGFloat = 20
-    static let sectionGap: CGFloat = 22
+    static let cardPadding: CGFloat = 14
+    static let cardPaddingLarge: CGFloat = 16
+    static let sectionGap: CGFloat = 18
 
     // MARK: Control heights
     enum Control {
@@ -486,27 +489,46 @@ enum Theme {
 }
 
 // MARK: - Typography
+//
+// Scale (minimum 12pt for any user-facing text):
+//   csTiny / csLabel       12pt   — smallest readable text; badges, chips, tertiary metadata
+//   csSmallLabel           12pt semibold  — uppercase eyebrows, signal names, factor labels
+//   csMetadata             13pt   — secondary metadata, factor descriptions, timestamps
+//   csBody / csSecondary   13.5pt — general body text, list items, descriptions
+//   csCardTitle            15pt semibold  — card/section titles
+//   csSectionTitle         17pt semibold  — in-content section headings
+//   csScreenTitle          24pt semibold  — page/screen titles (Dashboard, Activity, etc.)
+//   csPageTitle            24pt semibold  — page header title
+//   csMetric(size:)        28–36pt rounded semibold  — hero numeric values
 
 extension Font {
-    static let csScreenTitle  = Font.system(size: 19, weight: .semibold, design: .default)
-    static let csSectionTitle = Font.system(size: 16, weight: .semibold, design: .default)
+    static let csScreenTitle  = Font.system(size: 24, weight: .semibold, design: .default)
+    static let csSectionTitle = Font.system(size: 17, weight: .semibold, design: .default)
     static let csCardTitle    = Font.system(size: 15, weight: .semibold, design: .default)
-    static let csBody         = Font.system(size: 14.5, weight: .regular, design: .default)
-    static let csSecondary    = Font.system(size: 14.5, weight: .regular, design: .default)
+    static let csBody         = Font.system(size: 13.5, weight: .regular, design: .default)
+    static let csSecondary    = Font.system(size: 13.5, weight: .regular, design: .default)
     static let csMetadata     = Font.system(size: 13, weight: .regular, design: .default)
+
+    /// 12pt label — the minimum for any user-visible text. Use for tertiary
+    /// metadata, timestamps, badges, chips, and secondary annotations.
+    static let csTiny         = Font.system(size: 12, weight: .regular, design: .default)
+
+    /// 12pt semibold — uppercase eyebrows, signal row labels, factor names.
+    static let csSmallLabel   = Font.system(size: 12, weight: .semibold, design: .default)
+
     static let csEyebrowFont: Font = .system(size: 12, weight: .semibold, design: .default)
     static func csEyebrow(size: CGFloat = 12) -> Font {
-        .system(size: size, weight: .semibold, design: .default)
+        .system(size: max(size, 12), weight: .semibold, design: .default)
     }
     static func csMetric(size: CGFloat = 30) -> Font {
         .system(size: size, weight: .semibold, design: .rounded)
     }
-    /// Compact page title (native macOS — 17pt semibold, -0.4 tracking).
-    static let csPageTitle = Font.system(size: 19, weight: .semibold, design: .default)
-    /// Eyebrow / kicker (10pt semibold caps, 0.7 tracking).
+    /// Page title — 24pt semibold for strong visual anchor.
+    static let csPageTitle = Font.system(size: 24, weight: .semibold, design: .default)
+    /// Eyebrow / kicker (12pt semibold caps, 0.7 tracking).
     static let csPageEyebrow = Font.system(size: 12, weight: .semibold, design: .default)
-    /// Page subtitle (12.5pt regular secondary).
-    static let csPageSubtitle = Font.system(size: 14.5, weight: .regular, design: .default)
+    /// Page subtitle (13.5pt regular secondary).
+    static let csPageSubtitle = Font.system(size: 13.5, weight: .regular, design: .default)
 }
 
 // MARK: - Foreground helpers
@@ -1016,14 +1038,14 @@ struct ScreenHeader<Content: View>: View {
                 HStack(spacing: 7) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 15.5, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .csForeground(CSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                     Text(title)
                         .font(.csPageTitle)
                         .csForeground(CSColor.textPrimary)
-                        .tracking(-0.4)
+                        .tracking(-0.5)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .accessibilityLabel(title)
@@ -1055,7 +1077,7 @@ struct SectionHeader: View {
         HStack(spacing: 7) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .csForeground(CSColor.textSecondary)
                     .accessibilityHidden(true)
             }
@@ -1068,7 +1090,7 @@ struct SectionHeader: View {
                 Text("·")
                     .csForeground(CSColor.textTertiary)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(.csTiny)
                     .csForeground(CSColor.textTertiary)
                     .lineLimit(1)
             }
@@ -1197,14 +1219,14 @@ struct StandardPageHeader<Content: View>: View {
                 HStack(spacing: 7) {
                     if let symbol {
                         Image(systemName: symbol)
-                            .font(.system(size: 15.5, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .csForeground(CSColor.textSecondary)
                             .accessibilityHidden(true)
                     }
                     Text(title)
                         .font(.csPageTitle)
                         .csForeground(CSColor.textPrimary)
-                        .tracking(-0.4)
+                        .tracking(-0.5)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .accessibilityLabel(title)
@@ -1409,13 +1431,13 @@ struct CSStatusBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage ?? kind.symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
             Text(text)
-                .font(.caption2.weight(.semibold))
+                .font(.csSmallLabel)
         }
         .csForeground(kind.token)
         .padding(.horizontal, 7)
-        .padding(.vertical, 2.5)
+        .padding(.vertical, 3)
         .background(Color.cs(kind.token).opacity(0.14), in: Capsule(style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text)
@@ -1431,14 +1453,14 @@ struct MetaChip: View {
         HStack(spacing: 3) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
             }
             Text(text)
-                .font(.caption2)
+                .font(.csTiny)
         }
         .csForeground(tint)
         .padding(.horizontal, 6)
-        .padding(.vertical, 2)
+        .padding(.vertical, 2.5)
         .background(Color.cs(CSColor.textTertiary).opacity(0.10), in: Capsule(style: .continuous))
     }
 }
@@ -1474,9 +1496,9 @@ struct CSStatTile: View {
             if let trend {
                 HStack(spacing: 2) {
                     Image(systemName: trend.isPositive ? "arrow.up.right" : "arrow.down.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(trend.text)
-                        .font(.caption2)
+                        .font(.csTiny)
                 }
                 .csForeground(trend.isPositive ? CSColor.success : CSColor.warning)
             }
